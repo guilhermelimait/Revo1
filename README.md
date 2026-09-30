@@ -259,12 +259,9 @@ Needs Python 3.10 or newer.
 ```powershell
 python -m pip install -r requirements.txt
 python -m revo1                        # run from source
-python -m unittest discover -s tests -v      # tests
 .\packaging\build.ps1                         # Revo1.exe + installer in dist\
 ```
 
-- `install.ps1` sets up a from-source copy with Start Menu and sign-in
-  shortcuts, for development.
 - `packaging/build.ps1` bundles the app with PyInstaller
   (`packaging/Revo1.spec`) and wraps it with
   [Inno Setup 6](https://jrsoftware.org/isinfo.php)
@@ -278,7 +275,7 @@ python -m unittest discover -s tests -v      # tests
 - `firmware/` is the ESP-IDF / PlatformIO project; see
   [firmware/README.md](firmware/README.md) for how to build it and how the
   renderer, encoder and touch handling work.
-- GitHub Actions runs the tests and builds the installers and the firmware on
+- GitHub Actions checks the code and builds the installers and the firmware on
   every push. Pushing a `v*` tag publishes a release with
   `Revo1-Setup-<version>.exe`, the ARM64 installer and the merged
   firmware image.

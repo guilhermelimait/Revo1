@@ -18,6 +18,10 @@ backups/
 *.bin
 *.elf
 
+# Development-only files, kept out of the public repository
+tests/
+install.ps1
+
 # Editors and OS
 .vscode/
 .idea/
