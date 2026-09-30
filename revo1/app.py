@@ -95,6 +95,7 @@ class App(DashboardPage, ScreensaverPage):
         root.minsize(self.kit.px(SIDEBAR_WIDTH + MAIN_WIDTH), self.kit.px(WINDOW_HEIGHT))
         root.configure(bg=ui.MAIN_BG)
         root.protocol("WM_DELETE_WINDOW", self.close)
+        self.in_tray = False
         root.bind("<Unmap>", self.on_unmap)
 
         self.dial = DialRenderer(background=ui.rgb(ui.MAIN_BG), scale=self.scale)
@@ -129,6 +130,7 @@ class App(DashboardPage, ScreensaverPage):
         root.after(300, self.refresh_media)
         root.after(250, self.tick_pomodoro)
         root.after(500, self.refresh_levels)
+        self.center_window()
         if start_minimized:
             root.after(0, self.minimize)
 
@@ -852,6 +854,45 @@ class App(DashboardPage, ScreensaverPage):
             note.pack(anchor="w", pady=(k.px(6), 0))
         self.fit_window()
 
+    def center_window(self):
+        """Places the window in the middle of the work area (the screen
+        minus the taskbar) of the monitor under the mouse pointer."""
+        root = self.root
+        root.update_idletasks()
+        width = max(root.winfo_width(), root.winfo_reqwidth())
+        height = max(root.winfo_height(), root.winfo_reqheight())
+        left, top = 0, 0
+        right, bottom = root.winfo_screenwidth(), root.winfo_screenheight()
+        frame_w = frame_h = 0
+        try:
+            from ctypes import wintypes
+
+            class MonitorInfo(ctypes.Structure):
+                _fields_ = [("cbSize", wintypes.DWORD), ("rcMonitor", wintypes.RECT),
+                            ("rcWork", wintypes.RECT), ("dwFlags", wintypes.DWORD)]
+
+            user32 = ctypes.windll.user32
+            user32.MonitorFromPoint.restype = wintypes.HANDLE
+            user32.MonitorFromPoint.argtypes = [wintypes.POINT, wintypes.DWORD]
+            point = wintypes.POINT()
+            user32.GetCursorPos(ctypes.byref(point))
+            monitor = user32.MonitorFromPoint(point, 2)  # MONITOR_DEFAULTTONEAREST
+            info = MonitorInfo(cbSize=ctypes.sizeof(MonitorInfo))
+            if user32.GetMonitorInfoW(monitor, ctypes.byref(info)):
+                work = info.rcWork
+                left, top, right, bottom = work.left, work.top, work.right, work.bottom
+            # geometry() sizes the client area; the borders and title bar
+            # (SM_CYCAPTION, SM_CXSIZEFRAME, SM_CYSIZEFRAME, SM_CXPADDEDBORDER)
+            # come on top of it.
+            padded = user32.GetSystemMetrics(92)
+            frame_w = 2 * (user32.GetSystemMetrics(32) + padded)
+            frame_h = user32.GetSystemMetrics(4) + 2 * (user32.GetSystemMetrics(33) + padded)
+        except (AttributeError, OSError):
+            pass
+        x = left + max(0, (right - left - width - frame_w) // 2)
+        y = top + max(0, (bottom - top - height - frame_h) // 2)
+        root.geometry(f"+{x}+{y}")
+
     def fit_window(self, page=None):
         """Grows the window when a page no longer fits, so every device
         and orientation button stays visible."""
@@ -886,13 +927,15 @@ class App(DashboardPage, ScreensaverPage):
 
     def on_unmap(self, event):
         if (event.widget is self.root and self.tray and self.settings["minimize_to_tray"]
-                and self.root.state() == "iconic"):
+                and not self.in_tray and self.root.state() == "iconic"):
+            self.in_tray = True
             self.root.withdraw()
             self.tray.show()
 
     def minimize(self):
         """Starts out of the way, as when launched at sign-in."""
         if self.tray and self.settings["minimize_to_tray"]:
+            self.in_tray = True
             self.root.withdraw()
             self.tray.show()
         else:
@@ -901,6 +944,7 @@ class App(DashboardPage, ScreensaverPage):
     def show_window(self):
         if self.tray:
             self.tray.hide()
+        self.in_tray = False
         self.root.deiconify()
         self.root.lift()
         self.root.focus_force()
