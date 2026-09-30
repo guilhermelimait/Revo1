@@ -1,0 +1,25 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+*.egg-info/
+
+# Firmware build output and downloaded components (restored by the build)
+firmware/.pio/
+firmware/managed_components/
+firmware/build/
+firmware/sdkconfig.old
+
+# Release artefacts and flash dumps (a dump contains the vendor's firmware)
+dist/
+backups/
+*.bin
+*.elf
+
+# Editors and OS
+.vscode/
+.idea/
+Thumbs.db
+Desktop.ini
+.DS_Store

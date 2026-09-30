@@ -1,0 +1,21 @@
+# Third-party notices
+
+RoundScreen's own code is under the [MIT License](LICENSE). It includes or
+builds on the following third-party work, which keeps its own licence.
+
+| Component | Where | Licence |
+| --- | --- | --- |
+| [Montserrat](https://github.com/JulietaUla/Montserrat) typeface | `roundscreen/fonts/` (bundled) | SIL Open Font License 1.1, see [roundscreen/fonts/OFL.txt](roundscreen/fonts/OFL.txt) |
+| [LVGL](https://github.com/lvgl/lvgl) 8.4, including its built-in Montserrat fonts | firmware, downloaded at build time | MIT |
+| [esp_lcd_sh8601](https://components.espressif.com/components/waveshare/esp_lcd_sh8601) panel driver | firmware, downloaded at build time | Apache-2.0 |
+| [cmake_utilities](https://components.espressif.com/components/espressif/cmake_utilities) | firmware, downloaded at build time | Apache-2.0 |
+| [ESP-IDF](https://github.com/espressif/esp-idf) | firmware framework | Apache-2.0 |
+| SH8601 panel initialisation table and board pin mapping | `firmware/main/panel_init.inc`, `firmware/main/main.c` | Adapted from Waveshare's [ESP32-S3-Knob-Touch-LCD-1.8 demo](https://www.waveshare.com/wiki/ESP32-S3-Knob-Touch-LCD-1.8) |
+| [pyserial](https://github.com/pyserial/pyserial) | Python dependency | BSD-3-Clause |
+| [pycaw](https://github.com/AndreMiras/pycaw) | Python dependency | MIT |
+| [winsdk](https://github.com/pywinrt/python-winsdk) | Python dependency | MIT |
+| [NumPy](https://numpy.org) | Python dependency | BSD-3-Clause |
+| [Pillow](https://python-pillow.org) | Python dependency | MIT-CMU |
+
+Waveshare and ESP32 are trademarks of their respective owners. This project
+is not affiliated with or endorsed by Waveshare or Espressif.
