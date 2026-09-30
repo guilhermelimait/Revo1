@@ -28,6 +28,8 @@ WINDOW_HEIGHT = 560
 NAV_WIDTH = 188
 NAV_HEIGHT = 44
 CARD_WIDTH = MAIN_WIDTH - 56
+# Settings sit straight on the page, lined up with the tabs, not in boxes.
+PANEL_BG = ui.MAIN_BG
 DEVICE_ROW_HEIGHT = 36
 DEVICE_SCAN_MS = 2000
 NUMBER_LABELS = {24: "Small", 32: "Medium", 40: "Large", 48: "X-Large"}
@@ -188,9 +190,7 @@ class App:
 
     def build_device_tab(self, tab):
         k = self.kit
-        card = ui.Card(tab, k, CARD_WIDTH, ui.MAIN_BG)
-        card.pack(padx=k.px(28), anchor="w")
-        body = card.body
+        body = self.section(tab)
         self.caption(body, "DEVICE NAME").pack(anchor="w")
         self.name_entry = tk.Entry(body, font=(ui.TK_FAMILY, 11), bg="#FFFFFF", fg=ui.INK,
                                    relief="flat", highlightthickness=1,
@@ -201,30 +201,26 @@ class App:
         self.name_entry.bind("<FocusOut>", self.save_name)
         self.name_entry.pack(fill="x", pady=(k.px(6), k.px(12)), ipady=k.px(4), ipadx=k.px(6))
         self.caption(body, "DEVICES").pack(anchor="w")
-        self.connection_text = ui.Picture(body, ui.CARD_BG)
+        self.connection_text = ui.Picture(body, PANEL_BG)
         self.connection_text.pack(anchor="w", pady=(k.px(2), 0))
-        self.device_list = tk.Frame(body, bg=ui.CARD_BG)
+        self.device_list = tk.Frame(body, bg=PANEL_BG)
         self.device_list.pack(fill="x")
 
     def build_controls_tab(self, tab):
         k = self.kit
-        card = ui.Card(tab, k, CARD_WIDTH, ui.MAIN_BG)
-        card.pack(padx=k.px(28), anchor="w")
-        body = card.body
+        body = self.section(tab)
         self.caption(body, "SCREEN ORIENTATION").pack(anchor="w")
-        row = tk.Frame(body, bg=ui.CARD_BG)
+        row = tk.Frame(body, bg=PANEL_BG)
         row.pack(anchor="w", pady=(k.px(6), 0))
         self.orientation_buttons = []
         for value in config.ORIENTATIONS:
-            button = ui.Button(row, ui.CARD_BG,
+            button = ui.Button(row, PANEL_BG,
                                lambda hover, value=value: self.paint_orientation(value, hover),
                                lambda value=value: self.set_orientation(value))
             button.pack(side="left", padx=(0, k.px(8)))
             self.orientation_buttons.append(button)
 
-        card = ui.Card(tab, k, CARD_WIDTH, ui.MAIN_BG)
-        card.pack(padx=k.px(28), pady=(k.px(12), k.px(20)), anchor="w")
-        body = card.body
+        body = self.section(tab)
         self.caption(body, "KNOB DIRECTION").pack(anchor="w")
         self.invert_toggles = []
         for key, title, detail in (
@@ -232,7 +228,7 @@ class App:
                  "Turning clockwise scrolls up instead of down"),
                 ("invert_zoom", "Invert zoom",
                  "Turning clockwise zooms out instead of in")):
-            toggle = ui.Button(body, ui.CARD_BG,
+            toggle = ui.Button(body, PANEL_BG,
                                lambda hover, key=key, title=title, detail=detail:
                                    self.paint_toggle(self.settings[key], title, detail, hover),
                                lambda key=key: self.toggle_setting(key))
@@ -241,81 +237,85 @@ class App:
 
     def build_interface_tab(self, tab):
         k = self.kit
-        card = ui.Card(tab, k, CARD_WIDTH, ui.MAIN_BG)
-        card.pack(padx=k.px(28), anchor="w")
-        body = card.body
+        body = self.section(tab)
         self.caption(body, "BAR COLOUR").pack(anchor="w")
         self.accent_buttons = []
-        row = tk.Frame(body, bg=ui.CARD_BG)
+        row = tk.Frame(body, bg=PANEL_BG)
         row.pack(anchor="w", pady=(k.px(6), 0))
         for key in ("standard", "custom"):
-            button = ui.Button(row, ui.CARD_BG,
+            button = ui.Button(row, PANEL_BG,
                                lambda hover, key=key: self.paint_accent_choice(key, hover),
                                lambda key=key: self.pick_accent_choice(key))
             button.pack(side="left", padx=(0, k.px(8)))
             self.accent_buttons.append(button)
-        row = tk.Frame(body, bg=ui.CARD_BG)
+        row = tk.Frame(body, bg=PANEL_BG)
         row.pack(anchor="w", pady=(k.px(10), 0))
         for colour in dial.PRESET_ACCENTS:
-            button = ui.Button(row, ui.CARD_BG,
+            button = ui.Button(row, PANEL_BG,
                                lambda hover, colour=colour: self.paint_swatch(colour, hover),
                                lambda colour=colour: self.set_accent(colour))
             button.pack(side="left", padx=(0, k.px(6)))
             self.accent_buttons.append(button)
 
-        card = ui.Card(tab, k, CARD_WIDTH, ui.MAIN_BG)
-        card.pack(padx=k.px(28), pady=(k.px(12), k.px(20)), anchor="w")
-        body = card.body
+        body = self.section(tab)
         self.caption(body, "NUMBER SIZE").pack(anchor="w")
-        row = tk.Frame(body, bg=ui.CARD_BG)
+        row = tk.Frame(body, bg=PANEL_BG)
         row.pack(anchor="w", pady=(k.px(6), 0))
         self.size_buttons = []
         for size in config.NUMBER_SIZES:
-            button = ui.Button(row, ui.CARD_BG,
+            button = ui.Button(row, PANEL_BG,
                                lambda hover, size=size: self.paint_number_size(size, hover),
                                lambda size=size: self.set_number_size(size))
             button.pack(side="left", padx=(0, k.px(8)))
             self.size_buttons.append(button)
 
-        card = ui.Card(tab, k, CARD_WIDTH, ui.MAIN_BG)
-        card.pack(padx=k.px(28), pady=(0, k.px(20)), anchor="w")
-        body = card.body
+        body = self.section(tab)
         self.caption(body, "WINDOW").pack(anchor="w")
-        self.tray_toggle = ui.Button(body, ui.CARD_BG, self.paint_tray_toggle,
+        self.tray_toggle = ui.Button(body, PANEL_BG, self.paint_tray_toggle,
                                      self.toggle_tray)
         self.tray_toggle.pack(anchor="w", pady=(k.px(6), 0))
 
     def build_about_tab(self, tab):
         k = self.kit
-        card = ui.Card(tab, k, CARD_WIDTH, ui.MAIN_BG)
-        card.pack(padx=k.px(28), anchor="w")
-        body = card.body
-        header = ui.Picture(body, ui.CARD_BG)
+        body = self.section(tab)
+        header = ui.Picture(body, PANEL_BG)
         header.show(self.paint_about_header())
         header.pack(anchor="w")
-        row = tk.Frame(body, bg=ui.CARD_BG)
+        row = tk.Frame(body, bg=PANEL_BG)
         row.pack(anchor="w", pady=(k.px(12), 0))
         for label, url in (("GitHub", updater.PROJECT_URL),
                            ("Releases", updater.RELEASES_URL),
                            ("Licence", updater.PROJECT_URL + "/blob/main/LICENSE")):
-            ui.Button(row, ui.CARD_BG,
+            ui.Button(row, PANEL_BG,
                       lambda hover, label=label: self.paint_pill(label, hover),
                       lambda url=url: webbrowser.open(url)).pack(side="left",
                                                                  padx=(0, k.px(8)))
 
-        card = ui.Card(tab, k, CARD_WIDTH, ui.MAIN_BG)
-        card.pack(padx=k.px(28), pady=(k.px(12), k.px(20)), anchor="w")
-        body = card.body
+        body = self.section(tab)
         self.caption(body, "UPDATES").pack(anchor="w")
-        self.about_info = ui.Picture(body, ui.CARD_BG)
+        self.about_info = ui.Picture(body, PANEL_BG)
         self.about_info.pack(anchor="w", pady=(k.px(4), 0))
-        self.about_actions = tk.Frame(body, bg=ui.CARD_BG)
+        self.about_actions = tk.Frame(body, bg=PANEL_BG)
         self.about_actions.pack(anchor="w", pady=(k.px(10), 0))
         self.refresh_about()
 
+    def section(self, tab):
+        """One group of settings. Groups after the first are set off by a
+        hairline rather than each sitting in its own rounded box."""
+        k = self.kit
+        if tab.winfo_children():
+            rule = ui.Picture(tab, PANEL_BG)
+            image = k.canvas(CARD_WIDTH, 1, PANEL_BG)
+            k.rounded(image, (0, 0, CARD_WIDTH, 1), 0.1, ui.CARD_EDGE)
+            rule.show(image)
+            rule.pack(padx=k.px(28), pady=(0, k.px(18)), anchor="w")
+        body = tk.Frame(tab, bg=PANEL_BG)
+        body.pack(padx=k.px(28), pady=(0, k.px(18)), anchor="w")
+        return body
+
     def caption(self, parent, text):
-        picture = ui.Picture(parent, ui.CARD_BG)
-        image = self.kit.canvas(CARD_WIDTH - 36, 16, ui.CARD_BG)
+        picture = ui.Picture(parent, PANEL_BG)
+        image = self.kit.canvas(CARD_WIDTH, 16, PANEL_BG)
         x = 0.0
         for ch in text:
             self.kit.text(image, x, 8, ch, "semibold", 8, ui.MUTED_INK)
@@ -350,8 +350,8 @@ class App:
 
     def paint_device(self, port, description, hover):
         k = self.kit
-        width, height = CARD_WIDTH - 36, DEVICE_ROW_HEIGHT
-        image = k.canvas(width, height, ui.CARD_BG)
+        width, height = CARD_WIDTH, DEVICE_ROW_HEIGHT
+        image = k.canvas(width, height, PANEL_BG)
         chosen = self.settings["port"].upper() == port.upper()
         k.rounded(image, (0, 0, width, height), 9,
                   "#FFFFFF" if hover or chosen else ui.CARD_BG, ui.CARD_EDGE)
@@ -370,7 +370,7 @@ class App:
     def paint_orientation(self, value, hover):
         k = self.kit
         width, height = 64, 32
-        image = k.canvas(width, height, ui.CARD_BG)
+        image = k.canvas(width, height, PANEL_BG)
         if value == self.settings["orientation"]:
             k.rounded(image, (0, 0, width, height), 9, ui.INK)
             ink = "#FFFFFF"
@@ -381,29 +381,38 @@ class App:
         k.text(image, width / 2, height / 2, f"{value}°", "semibold", 10, ink, anchor="mm")
         return image
 
+    def tab_width(self, key):
+        """Tabs are as wide as their label plus a gap; the last one runs on to
+        the edge so the hairline under them spans the whole page."""
+        font = self.kit.font("semibold", 10)
+        widths = [font.getlength(label) / self.kit.scale + 28 for _, label in SETTINGS_TABS]
+        index = [key for key, _ in SETTINGS_TABS].index(key)
+        if index == len(SETTINGS_TABS) - 1:
+            return CARD_WIDTH - sum(round(width) for width in widths[:-1])
+        return round(widths[index])
+
     def paint_tab(self, key, label, hover):
-        """Underline tabs: plain labels on one hairline, the open one marked by
-        a bar in the current accent."""
+        """Underline tabs: labels on one hairline, the open one in bold with a
+        bar in the current accent. The first label lines up with the settings."""
         k = self.kit
-        # The row spans the card width, however many tabs there are.
-        width, height = CARD_WIDTH // len(SETTINGS_TABS), 34
-        image = k.canvas(width, height, ui.MAIN_BG)
+        width, height = self.tab_width(key), 34
+        image = k.canvas(width, height, PANEL_BG)
         active = key == self.settings_tab
         k.rounded(image, (0, height - 1, width, height), 0.1, ui.CARD_EDGE)
+        text = k.font("semibold", 10).getlength(label) / k.scale
         if active:
-            k.rounded(image, (8, height - 3, width - 8, height), 1.5, self.accent(self.mode))
+            k.rounded(image, (0, height - 3, text, height), 1.5, self.accent(self.mode))
         elif hover:
-            k.rounded(image, (8, height - 2, width - 8, height), 1, ui.MUTED_INK)
+            k.rounded(image, (0, height - 2, text, height), 1, ui.MUTED_INK)
         ink = ui.INK if active else (ui.SUBTLE_INK if hover else ui.MUTED_INK)
-        k.text(image, width / 2, (height - 3) / 2, label, "semibold" if active else "device",
-               10, ink, anchor="mm")
+        k.text(image, 0, (height - 3) / 2, label, "semibold" if active else "device", 10, ink)
         return image
 
     def paint_accent_choice(self, key, hover):
         """"Standard" keeps a colour per control; "Custom" opens a colour picker."""
         k = self.kit
         width, height = 140, 36
-        image = k.canvas(width, height, ui.CARD_BG)
+        image = k.canvas(width, height, PANEL_BG)
         accent = self.settings["accent"]
         if key == "standard":
             chosen = accent == config.STANDARD_ACCENT
@@ -433,21 +442,21 @@ class App:
     def paint_swatch(self, colour, hover):
         k = self.kit
         size = 34
-        image = k.canvas(size, size, ui.CARD_BG)
+        image = k.canvas(size, size, PANEL_BG)
         c = size / 2
         if self.settings["accent"] == colour:
             k.dot(image, c, c, 16, ui.INK)
-            k.dot(image, c, c, 14, ui.CARD_BG)
+            k.dot(image, c, c, 14, PANEL_BG)
         elif hover:
             k.dot(image, c, c, 16, ui.CARD_EDGE)
-            k.dot(image, c, c, 14.5, ui.CARD_BG)
+            k.dot(image, c, c, 14.5, PANEL_BG)
         k.dot(image, c, c, 11.5, colour)
         return image
 
     def paint_number_size(self, size, hover):
         k = self.kit
         width, height = 76, 56
-        image = k.canvas(width, height, ui.CARD_BG)
+        image = k.canvas(width, height, PANEL_BG)
         if size == self.settings["number_size"]:
             k.rounded(image, (0, 0, width, height), 10, ui.INK)
             ink, label_ink = "#FFFFFF", "#C8C8D2"
@@ -467,8 +476,8 @@ class App:
 
     def paint_toggle(self, on, title, detail, hover):
         k = self.kit
-        width, height = CARD_WIDTH - 36, 40
-        image = k.canvas(width, height, ui.CARD_BG)
+        width, height = CARD_WIDTH, 40
+        image = k.canvas(width, height, PANEL_BG)
         k.text(image, 0, 12, title, "semibold", 10, ui.INK)
         k.text(image, 0, 30, detail, "regular", 8.5, ui.MUTED_INK, width=width - 60)
         x0, y0 = width - 44, height / 2 - 12
@@ -481,7 +490,7 @@ class App:
         k = self.kit
         font = k.font("semibold", 9.5)
         width, height = round(font.getlength(label) / k.scale) + 28, 30
-        image = k.canvas(width, height, ui.CARD_BG)
+        image = k.canvas(width, height, PANEL_BG)
         if primary and enabled:
             fill = dial.label_ink(self.accent(self.mode)) if hover else ui.INK
             k.rounded(image, (0, 0, width, height), 15, fill)
@@ -495,8 +504,8 @@ class App:
 
     def paint_about_header(self):
         k = self.kit
-        width, height = CARD_WIDTH - 36, 64
-        image = k.canvas(width, height, ui.CARD_BG)
+        width, height = CARD_WIDTH, 64
+        image = k.canvas(width, height, PANEL_BG)
         try:
             with Image.open(ui.ICON_FILE.with_suffix(".png")) as logo:
                 logo = logo.convert("RGBA").resize((k.px(56), k.px(56)), Image.LANCZOS)
@@ -542,10 +551,10 @@ class App:
 
     def paint_about_info(self):
         k = self.kit
-        width = CARD_WIDTH - 36
+        width = CARD_WIDTH
         rows = self.about_rows()
         extra = 28 if self.update_text else 0
-        image = k.canvas(width, len(rows) * 24 + extra, ui.CARD_BG)
+        image = k.canvas(width, len(rows) * 24 + extra, PANEL_BG)
         for index, (label, value) in enumerate(rows):
             y = index * 24 + 12
             k.text(image, 0, y, label, "regular", 9.5, ui.SUBTLE_INK)
@@ -570,9 +579,9 @@ class App:
         self.identity.show(image)
 
     def refresh_status(self):
-        image = self.kit.canvas(CARD_WIDTH - 36, 20, ui.CARD_BG)
+        image = self.kit.canvas(CARD_WIDTH, 20, PANEL_BG)
         self.kit.text(image, 0, 10, self.status.get(), "regular", 10, ui.SUBTLE_INK,
-                      width=CARD_WIDTH - 36)
+                      width=CARD_WIDTH)
         self.connection_text.show(image)
         for button in self.device_rows:
             button.refresh()
@@ -685,14 +694,14 @@ class App:
         k = self.kit
         self.device_rows = []
         for port, description in [("", "first Revo1 found")] + list(self.devices):
-            button = ui.Button(self.device_list, ui.CARD_BG,
+            button = ui.Button(self.device_list, PANEL_BG,
                                lambda hover, p=port, d=description: self.paint_device(p, d, hover),
                                lambda p=port: self.use_port(p))
             button.pack(anchor="w", pady=(k.px(6), 0))
             self.device_rows.append(button)
         if not self.devices:
-            note = ui.Picture(self.device_list, ui.CARD_BG)
-            image = k.canvas(CARD_WIDTH - 36, 22, ui.CARD_BG)
+            note = ui.Picture(self.device_list, PANEL_BG)
+            image = k.canvas(CARD_WIDTH, 22, PANEL_BG)
             k.text(image, 0, 11, "No Revo1 found. Check the USB cable.", "regular", 9,
                    ui.MUTED_INK)
             note.show(image)
@@ -783,17 +792,17 @@ class App:
             actions.insert(0, ("Update app", lambda: webbrowser.open(self.release["url"]),
                                True, True))
         # Wraps onto a second line when the buttons don't fit side by side.
-        room = self.kit.px(CARD_WIDTH - 36)
+        room = self.kit.px(CARD_WIDTH)
         line, used = None, room
         for label, command, primary, enabled in actions:
             width = self.paint_pill(label, False).width + self.kit.px(8)
             if used + width > room + self.kit.px(8):
-                line = tk.Frame(self.about_actions, bg=ui.CARD_BG)
+                line = tk.Frame(self.about_actions, bg=PANEL_BG)
                 line.pack(anchor="w", pady=(0 if used == room else self.kit.px(8), 0))
                 used = 0
             used += width
             button = ui.Button(
-                line, ui.CARD_BG,
+                line, PANEL_BG,
                 lambda hover, label=label, primary=primary, enabled=enabled:
                     self.paint_pill(label, hover, primary, enabled),
                 (command if enabled else (lambda: None)))
