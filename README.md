@@ -10,14 +10,30 @@ brightness and media controller for Windows.**
 
 Revo1 is custom firmware for the
 [Waveshare ESP32-S3-Knob-Touch-LCD-1.8](https://www.waveshare.com/wiki/ESP32-S3-Knob-Touch-LCD-1.8)
-(a 360 x 360 round AMOLED with a rotary knob and touch) plus a Windows
+([Amazon](https://link.amazon/B061NfG3G); a 360 x 360 round AMOLED with a
+rotary knob and touch) plus a Windows
 companion app. The screen and the app draw the same Nest-style dial: a light,
 sculpted face with a glowing arc in the control's colour, and they stay in
 sync as you turn the knob.
 
-| Volume | Media | Menu | Settings |
-| --- | --- | --- | --- |
-| ![Volume](docs/images/app-volume.png) | ![Media](docs/images/app-media.png) | ![Menu](docs/images/app-menu.png) | ![Settings](docs/images/app-settings.png) |
+<table>
+  <tr>
+    <th>Volume</th>
+    <th>Media</th>
+  </tr>
+  <tr>
+    <td><img src="./docs/images/app-volume.png" alt="Volume dial" width="400"></td>
+    <td><img src="./docs/images/app-media.png" alt="Media screen" width="400"></td>
+  </tr>
+  <tr>
+    <th>Menu</th>
+    <th>Settings</th>
+  </tr>
+  <tr>
+    <td><img src="./docs/images/app-menu.png" alt="Radial menu" width="400"></td>
+    <td><img src="./docs/images/app-settings.png" alt="Settings" width="400"></td>
+  </tr>
+</table>
 
 *Screenshots of the Windows app; the device shows the same dial.*
 
@@ -43,8 +59,12 @@ sync as you turn the knob.
 
 ## What you need
 
-- A **Waveshare ESP32-S3-Knob-Touch-LCD-1.8** and a USB-C data cable.
+- A **Waveshare ESP32-S3-Knob-Touch-LCD-1.8**
+  ([buy on Amazon](https://link.amazon/B061NfG3G)) and a USB-C data cable.
 - **Windows 10 or 11** (x64 or ARM64). Nothing else: Python is bundled.
+
+*The Amazon link is an affiliate link: as an Amazon Associate I earn from
+qualifying purchases, at no extra cost to you.*
 
 ## Get started
 
