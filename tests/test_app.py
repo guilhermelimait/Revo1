@@ -5,8 +5,8 @@ from unittest.mock import patch
 
 from pathlib import Path
 
-from roundscreen import dial, ui
-from roundscreen.app import App
+from revo1 import dial, ui
+from revo1.app import App
 
 
 class AppTests(unittest.TestCase):
@@ -15,12 +15,12 @@ class AppTests(unittest.TestCase):
         root.withdraw()
         saved = {"mode": "Volume", "orientation": 0, "port": ""}
         release = {"tag": "v1.1.0", "version": "1.1.0", "published": None, "url": "u",
-                   "firmware_name": "roundscreen-firmware-1.1.0.bin",
+                   "firmware_name": "revo1-firmware-1.1.0.bin",
                    "firmware_url": "https://example.test/fw.bin", "firmware_size": 1}
-        with patch("roundscreen.app.config.load", return_value=saved), \
-             patch("roundscreen.app.config.save"), \
-             patch("roundscreen.app.DeviceBridge"), \
-             patch("roundscreen.app.controls.volume_level", return_value=60):
+        with patch("revo1.app.config.load", return_value=saved), \
+             patch("revo1.app.config.save"), \
+             patch("revo1.app.DeviceBridge"), \
+             patch("revo1.app.controls.volume_level", return_value=60):
             app = App(root)
             app.events.put(("release", ("ok", release)))
             app.events.put(("hello", "COM9"))
@@ -36,16 +36,38 @@ class AppTests(unittest.TestCase):
             self.assertFalse(app.firmware_update_available())
             app.close()
 
+    def test_restarted_knob_gets_its_state_again(self):
+        root = tk.Tk()
+        root.withdraw()
+        saved = {"mode": "Volume", "orientation": 270, "port": ""}
+        with patch("revo1.app.config.load", return_value=saved), \
+             patch("revo1.app.config.save"), \
+             patch("revo1.app.DeviceBridge"), \
+             patch("revo1.app.controls.volume_level", return_value=60):
+            app = App(root)
+            app.events.put(("hello", "COM9"))
+            app.events.put(("sync", "COM9"))
+            app.poll()
+            # The SYNC that arrives with the first HELLO is already answered.
+            self.assertEqual(app.bridge.send_state.call_count, 1)
+            app.state_pushed -= 3
+            app.events.put(("sync", "COM9"))
+            app.poll()
+            self.assertEqual(app.bridge.send_state.call_count, 2)
+            app.bridge.send_state.assert_called_with("Volume", 60, 270)
+            self.assertEqual(app.bridge.send_style.call_count, 2)
+            app.close()
+
     def test_minimise_goes_to_the_tray_only_when_enabled(self):
         root = tk.Tk()
         saved = {"mode": "Volume", "orientation": 0, "port": "", "minimize_to_tray": False}
         tray = SimpleNamespace(show=lambda: shown.append(True), hide=lambda: None,
                                stop=lambda: None)
         shown = []
-        with patch("roundscreen.app.config.load", return_value=saved), \
-             patch("roundscreen.app.config.save"), \
-             patch("roundscreen.app.DeviceBridge"), \
-             patch("roundscreen.app.controls.volume_level", return_value=60):
+        with patch("revo1.app.config.load", return_value=saved), \
+             patch("revo1.app.config.save"), \
+             patch("revo1.app.DeviceBridge"), \
+             patch("revo1.app.controls.volume_level", return_value=60):
             app = App(root, tray=tray)
             with patch.object(root, "state", return_value="iconic"):
                 app.on_unmap(SimpleNamespace(widget=root))
@@ -60,10 +82,10 @@ class AppTests(unittest.TestCase):
         root = tk.Tk()
         root.withdraw()
         saved = {"mode": "Volume", "orientation": 0, "port": ""}
-        with patch("roundscreen.app.config.load", return_value=saved), \
-             patch("roundscreen.app.config.save") as save, \
-             patch("roundscreen.app.DeviceBridge") as bridge, \
-             patch("roundscreen.app.controls.volume_level", return_value=60):
+        with patch("revo1.app.config.load", return_value=saved), \
+             patch("revo1.app.config.save") as save, \
+             patch("revo1.app.DeviceBridge") as bridge, \
+             patch("revo1.app.controls.volume_level", return_value=60):
             app = App(root)
             app.events.put(("swipe", "LEFT"))
             app.poll()
@@ -79,11 +101,11 @@ class AppTests(unittest.TestCase):
         root = tk.Tk()
         root.withdraw()
         saved = {"mode": "Volume", "orientation": 0, "port": ""}
-        with patch("roundscreen.app.config.load", return_value=saved), \
-             patch("roundscreen.app.config.save"), \
-             patch("roundscreen.app.DeviceBridge"), \
-             patch("roundscreen.app.controls.volume_level", return_value=60), \
-             patch("roundscreen.app.controls.brightness_level", return_value=75):
+        with patch("revo1.app.config.load", return_value=saved), \
+             patch("revo1.app.config.save"), \
+             patch("revo1.app.DeviceBridge"), \
+             patch("revo1.app.controls.volume_level", return_value=60), \
+             patch("revo1.app.controls.brightness_level", return_value=75):
             app = App(root)
             app.canvas_click(SimpleNamespace(x=180, y=180))
             self.assertTrue(app.menu)
@@ -100,11 +122,11 @@ class AppTests(unittest.TestCase):
         root = tk.Tk()
         root.withdraw()
         saved = {"mode": "Volume", "orientation": 0, "port": ""}
-        with patch("roundscreen.app.config.load", return_value=saved), \
-             patch("roundscreen.app.config.save"), \
-             patch("roundscreen.app.DeviceBridge"), \
-             patch("roundscreen.app.controls.volume_level", return_value=60), \
-             patch("roundscreen.app.controls.brightness_level", return_value=75):
+        with patch("revo1.app.config.load", return_value=saved), \
+             patch("revo1.app.config.save"), \
+             patch("revo1.app.DeviceBridge"), \
+             patch("revo1.app.controls.volume_level", return_value=60), \
+             patch("revo1.app.controls.brightness_level", return_value=75):
             app = App(root)
             app.events.put(("menu", None))
             app.events.put(("cursor", 2))
@@ -121,11 +143,11 @@ class AppTests(unittest.TestCase):
         root.withdraw()
         saved = {"mode": "Volume", "orientation": 0, "port": "", "name": "Knob"}
         devices = [(f"COM{n}", "USB Serial Device") for n in range(3, 8)]
-        with patch("roundscreen.app.config.load", return_value=saved), \
-             patch("roundscreen.app.config.save"), \
-             patch("roundscreen.app.DeviceBridge"), \
-             patch("roundscreen.app.controls.volume_level", return_value=60), \
-             patch("roundscreen.app.find_devices", return_value=devices[:1]) as find:
+        with patch("revo1.app.config.load", return_value=saved), \
+             patch("revo1.app.config.save"), \
+             patch("revo1.app.DeviceBridge"), \
+             patch("revo1.app.controls.volume_level", return_value=60), \
+             patch("revo1.app.find_devices", return_value=devices[:1]) as find:
             app = App(root)
             find.assert_not_called()
             app.navigate("Settings")
@@ -142,9 +164,9 @@ class AppTests(unittest.TestCase):
         root.withdraw()
         saved = {"mode": "Media", "orientation": 0, "port": "", "name": "Knob",
                  "accent": "standard", "number_size": 32}
-        with patch("roundscreen.app.config.load", return_value=saved), \
-             patch("roundscreen.app.config.save") as save, \
-             patch("roundscreen.app.DeviceBridge") as bridge:
+        with patch("revo1.app.config.load", return_value=saved), \
+             patch("revo1.app.config.save") as save, \
+             patch("revo1.app.DeviceBridge") as bridge:
             app = App(root)
             app.connected = True
             self.assertEqual(app.accent("Volume"), (0, 176, 255))
@@ -171,9 +193,9 @@ class AppTests(unittest.TestCase):
         root = tk.Tk()
         root.withdraw()
         saved = {"mode": "Scroll", "orientation": 0, "port": ""}
-        with patch("roundscreen.app.config.load", return_value=saved), \
-             patch("roundscreen.app.config.save"), \
-             patch("roundscreen.app.DeviceBridge"):
+        with patch("revo1.app.config.load", return_value=saved), \
+             patch("revo1.app.config.save"), \
+             patch("revo1.app.DeviceBridge"):
             app = App(root)
             start = dial.GAUGE_START << 8
             for steps in (3, -1, 5, 40):
@@ -190,9 +212,9 @@ class AppTests(unittest.TestCase):
         root = tk.Tk()
         root.withdraw()
         saved = {"mode": "Volume", "orientation": 90, "port": ""}
-        with patch("roundscreen.app.config.load", return_value=saved), \
-             patch("roundscreen.app.DeviceBridge") as bridge, \
-             patch("roundscreen.app.controls.volume_level", side_effect=[40, 65, 65]):
+        with patch("revo1.app.config.load", return_value=saved), \
+             patch("revo1.app.DeviceBridge") as bridge, \
+             patch("revo1.app.controls.volume_level", side_effect=[40, 65, 65]):
             app = App(root)
             app.connected = True
             app.refresh_external_volume()
@@ -206,10 +228,10 @@ class AppTests(unittest.TestCase):
         root = tk.Tk()
         root.withdraw()
         saved = {"mode": "Media", "orientation": 0, "port": ""}
-        with patch("roundscreen.app.config.load", return_value=saved), \
-             patch("roundscreen.app.config.save"), \
-             patch("roundscreen.app.DeviceBridge") as bridge, \
-             patch("roundscreen.app.controls.volume_level", return_value=40):
+        with patch("revo1.app.config.load", return_value=saved), \
+             patch("revo1.app.config.save"), \
+             patch("revo1.app.DeviceBridge") as bridge, \
+             patch("revo1.app.controls.volume_level", return_value=40):
             app = App(root)
             app.connected = True
             app.menu = False

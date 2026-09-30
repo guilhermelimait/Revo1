@@ -1,4 +1,4 @@
-"""Builds roundscreen/assets/roundscreen.ico. Large sizes use the real dial
+"""Builds revo1/assets/revo1.ico. Large sizes use the real dial
 renderer, so the icon is the dial the device shows; small sizes use a bolder
 drawing of the same dial, because a 164 px ring's thin arc disappears at 16 px."""
 
@@ -6,10 +6,10 @@ from pathlib import Path
 
 from PIL import Image, ImageDraw
 
-from roundscreen import dial
+from revo1 import dial
 
 ROOT = Path(__file__).resolve().parents[1]
-ASSETS = ROOT / "roundscreen" / "assets"
+ASSETS = ROOT / "revo1" / "assets"
 SIZES = [16, 20, 24, 32, 40, 48, 64, 128, 256]
 FILL = 0.72
 ACCENT = dial.ACCENTS["Volume"]
@@ -27,19 +27,25 @@ def disc_alpha(size, inset):
     return big.resize((size, size), Image.LANCZOS)
 
 
-# A lightning bolt on the cap, in a unit box (x, y from the top left).
-BOLT = [(0.56, 0.00), (0.16, 0.58), (0.46, 0.58), (0.36, 1.00),
-        (0.84, 0.40), (0.54, 0.40), (0.74, 0.00)]
+# The "1" of Revo1 on the cap: a bold stem with a slanted flag, in a unit
+# box (x, y from the top left). Drawn rather than typed, so it stays solid
+# down to 16 px.
+ONE = [(0.00, 0.26), (0.62, 0.00), (1.00, 0.00), (1.00, 1.00),
+       (0.58, 1.00), (0.58, 0.40), (0.00, 0.58)]
+# Where the stem sits, so the figure is centred on the stem, not its box.
+STEM_CENTRE = 0.79
 
 
-def add_bolt(image, height, shadow=True, aspect=0.78, depth=0.85):
-    """Draws the bolt in the middle of `image`, shaded from the ring's deep
+def add_one(image, height, shadow=True, aspect=0.56, depth=0.85):
+    """Draws the "1" in the middle of `image`, shaded from the ring's deep
     tail colour at the bottom to its bright accent at the top."""
     n = image.width
     big = n * SS
     width = height * aspect
-    x0, y0 = (big - width * SS) / 2, (big - height * SS) / 2
-    points = [(x0 + x * width * SS, y0 + y * height * SS) for x, y in BOLT]
+    # Centre between the stem and the box so the flag doesn't pull it left.
+    x0 = big / 2 - width * SS * (STEM_CENTRE + 0.5) / 2
+    y0 = (big - height * SS) / 2
+    points = [(x0 + x * width * SS, y0 + y * height * SS) for x, y in ONE]
     mask = Image.new("L", (big, big), 0)
     ImageDraw.Draw(mask).polygon(points, fill=255)
     mask = mask.resize((n, n), Image.LANCZOS)
@@ -64,7 +70,7 @@ def detailed(size):
     art = frame.convert("RGBA")
     art.putalpha(disc_alpha(dial.SIZE, 1))
     art = art.resize((size, size), Image.LANCZOS)
-    return add_bolt(art, size * 0.29)
+    return add_one(art, size * 0.25)
 
 
 def bold(size):
@@ -91,16 +97,16 @@ def bold(size):
     draw.ellipse((c - cap, c - cap, c + cap, c + cap), fill=(248, 248, 250, 255))
     image = image.resize((size, size), Image.LANCZOS)
     if size <= 24:
-        return add_bolt(image, size * 0.56, shadow=False, aspect=0.9, depth=1.0)
-    return add_bolt(image, size * 0.44, shadow=True, aspect=0.84)
+        return add_one(image, size * 0.46, shadow=False, aspect=0.62, depth=1.0)
+    return add_one(image, size * 0.38, shadow=True)
 
 
 def main():
     images = [bold(s) if s <= 48 else detailed(s) for s in SIZES]
-    target = ASSETS / "roundscreen.ico"
+    target = ASSETS / "revo1.ico"
     images[-1].save(target, format="ICO", sizes=[(s, s) for s in SIZES],
                     append_images=images[:-1])
-    images[-1].save(ASSETS / "roundscreen.png")
+    images[-1].save(ASSETS / "revo1.png")
     print(target, target.stat().st_size)
 
 

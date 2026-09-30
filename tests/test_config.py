@@ -3,7 +3,7 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 import unittest
 
-from roundscreen import config
+from revo1 import config
 
 
 class ConfigTests(unittest.TestCase):
@@ -11,7 +11,7 @@ class ConfigTests(unittest.TestCase):
         with TemporaryDirectory() as folder:
             self.assertEqual(config.load(Path(folder) / "settings.json"),
                              {"mode": "Volume", "orientation": 0, "port": "",
-                              "name": "RoundScreen", "accent": "standard",
+                              "name": "Revo1", "accent": "standard",
                               "number_size": 32, "minimize_to_tray": False})
 
     def test_selection_and_orientation_survive_restart(self):

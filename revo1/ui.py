@@ -8,17 +8,17 @@ from pathlib import Path
 import numpy as np
 from PIL import Image, ImageDraw, ImageFont, ImageTk
 
-from roundscreen import icons
+from revo1 import icons
 
 # Montserrat everywhere, the family the device's LVGL fonts are built from, so
 # the window and the screen read as one product. "device" is the exact file
 # LVGL converted (lvgl/scripts/built_in_font/Montserrat-Medium.ttf), used for
 # everything drawn on the dial. SIL Open Font License 1.1, see fonts/OFL.txt.
 FONT_DIR = Path(__file__).with_name("fonts")
-ICON_FILE = Path(__file__).with_name("assets") / "roundscreen.ico"
+ICON_FILE = Path(__file__).with_name("assets") / "revo1.ico"
 # Groups the window with its Start Menu shortcut on the taskbar (the installer
 # gives the shortcut the same ID).
-APP_ID = "guilhermelimait.RoundScreen"
+APP_ID = "guilhermelimait.Revo1"
 FONT_FILES = {
     "regular": FONT_DIR / "Montserrat-Regular.ttf",
     "device": FONT_DIR / "Montserrat-Medium.ttf",

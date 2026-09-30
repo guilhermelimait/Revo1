@@ -6,7 +6,7 @@ from tempfile import NamedTemporaryFile
 
 MODES = ("Volume", "Scroll", "Brightness", "Mic", "Zoom", "Media")
 ORIENTATIONS = (0, 90, 180, 270)
-DEFAULT_NAME = "RoundScreen"
+DEFAULT_NAME = "Revo1"
 # "standard" gives each control its own colour; otherwise one "#RRGGBB" for all.
 STANDARD_ACCENT = "standard"
 NUMBER_SIZES = (24, 32, 40, 48)
@@ -27,7 +27,7 @@ def valid_accent(value):
 
 
 def config_path():
-    return Path(os.environ["LOCALAPPDATA"]) / "RoundScreen" / "settings.json"
+    return Path(os.environ["LOCALAPPDATA"]) / "Revo1" / "settings.json"
 
 
 def load(path=None):

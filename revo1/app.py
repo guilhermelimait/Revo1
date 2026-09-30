@@ -7,17 +7,18 @@ import threading
 import time
 import tkinter as tk
 import webbrowser
-from tkinter import colorchooser, messagebox
+from pathlib import Path
+from tkinter import colorchooser, filedialog, messagebox
 
 from comtypes import COMError, CoInitialize, CoUninitialize
 import numpy as np
 from PIL import Image, ImageDraw, ImageTk
 
-from roundscreen import __version__, config, dial, icons, tray, ui, updater
-from roundscreen import windows_controls as controls
-from roundscreen.bridge import DeviceBridge, find_devices
-from roundscreen.dial import DialRenderer
-from roundscreen.media import MediaSession
+from revo1 import __version__, config, dial, icons, tray, ui, updater
+from revo1 import windows_controls as controls
+from revo1.bridge import DeviceBridge, find_devices
+from revo1.dial import DialRenderer
+from revo1.media import MediaSession
 
 LEVEL_MODES = ("Volume", "Mic", "Brightness")
 # Window layout, in 96-dpi pixels.
@@ -49,6 +50,7 @@ class App:
         self.actions = queue.Queue()
         self.worker = threading.Thread(target=self.run_actions, daemon=True)
         self._connected = False
+        self.state_pushed = 0.0
         self.connected_port = None
         self.menu = False
         # The option the knob points at while the menu is open.
@@ -68,7 +70,7 @@ class App:
         self.update_text = ""
         self.update_progress = None
 
-        root.title("RoundScreen")
+        root.title("Revo1")
         try:
             root.iconbitmap(default=str(ui.ICON_FILE))
         except tk.TclError:
@@ -439,7 +441,7 @@ class App:
         image = k.canvas(width, height, ui.CARD_BG)
         on = self.settings["minimize_to_tray"]
         k.text(image, 0, 12, "Minimise to the notification area", "semibold", 10, ui.INK)
-        k.text(image, 0, 30, "Keeps RoundScreen running next to the clock", "regular", 8.5,
+        k.text(image, 0, 30, "Keeps Revo1 running next to the clock", "regular", 8.5,
                ui.MUTED_INK, width=width - 60)
         x0, y0 = width - 44, height / 2 - 12
         track = ui.INK if on else (ui.SUBTLE_INK if hover else ui.IDLE_GREY)
@@ -473,7 +475,7 @@ class App:
                 image.paste(logo, (0, k.px(4)), logo)
         except OSError:
             pass
-        k.text(image, 70, 16, "RoundScreen", "semibold", 14, ui.INK)
+        k.text(image, 70, 16, "Revo1", "semibold", 14, ui.INK)
         k.text(image, 70, 36, f"Version {__version__}", "regular", 9.5, ui.SUBTLE_INK)
         k.text(image, 70, 53, "Companion for the Waveshare ESP32-S3 knob",
                "regular", 8.5, ui.MUTED_INK, width=width - 70)
@@ -653,7 +655,7 @@ class App:
             child.destroy()
         k = self.kit
         self.device_rows = []
-        for port, description in [("", "first RoundScreen found")] + list(self.devices):
+        for port, description in [("", "first Revo1 found")] + list(self.devices):
             button = ui.Button(self.device_list, ui.CARD_BG,
                                lambda hover, p=port, d=description: self.paint_device(p, d, hover),
                                lambda p=port: self.use_port(p))
@@ -662,7 +664,7 @@ class App:
         if not self.devices:
             note = ui.Picture(self.device_list, ui.CARD_BG)
             image = k.canvas(CARD_WIDTH - 36, 22, ui.CARD_BG)
-            k.text(image, 0, 11, "No RoundScreen found. Check the USB cable.", "regular", 9,
+            k.text(image, 0, 11, "No Revo1 found. Check the USB cable.", "regular", 9,
                    ui.MUTED_INK)
             note.show(image)
             note.pack(anchor="w", pady=(k.px(6), 0))
@@ -738,6 +740,9 @@ class App:
             child.destroy()
         actions = [("Check again", self.check_release, False,
                     self.release_state != "checking" and not self.update_busy)]
+        if self.connected or self.update_busy:
+            actions.insert(0, ("Install from file\u2026", self.install_firmware_file, False,
+                               not self.update_busy))
         if self.firmware_update_available() or self.update_busy:
             actions.insert(0, ("Update firmware", self.update_firmware, True,
                                not self.update_busy))
@@ -777,24 +782,58 @@ class App:
                 f"(it has {current})?\n\nKeep the USB cable plugged in until it finishes. "
                 "The screen restarts at the end.", parent=self.root):
             return
+        self.start_firmware_update(port, release=release)
+
+    def install_firmware_file(self):
+        """Flashes a revo1-firmware-x.y.z.bin the user picked, e.g. a release
+        downloaded by hand or a local build."""
+        if self.update_busy or not self.connected:
+            return
+        port = self.connected_port
+        path = filedialog.askopenfilename(
+            parent=self.root, title="Choose the Revo1 firmware",
+            filetypes=[("Revo1 firmware", "revo1-firmware-*.bin"),
+                       ("Firmware images", "*.bin")])
+        if not path:
+            return
+        try:
+            version = updater.check_image(path)
+        except updater.UpdateError as exc:
+            messagebox.showerror("Install firmware", f"Can't install it: {exc}.",
+                                 parent=self.root)
+            return
+        current = self.device_version or "an older version"
+        name = f"firmware {version}" if version else "this firmware"
+        if not messagebox.askyesno(
+                "Install firmware",
+                f"Install {name} on the knob at {port} (it has {current})?\n\n"
+                "Keep the USB cable plugged in until it finishes. "
+                "The screen restarts at the end.", parent=self.root):
+            return
+        self.start_firmware_update(port, image=Path(path), version=version)
+
+    def start_firmware_update(self, port, release=None, image=None, version=None):
         self.update_busy = True
         self.update_text = "Starting\u2026"
         self.update_progress = None
         self.refresh_about()
-        threading.Thread(target=self.run_firmware_update, args=(release, port),
+        threading.Thread(target=self.run_firmware_update, args=(port, release, image, version),
                          name="firmware-update", daemon=True).start()
 
-    def run_firmware_update(self, release, port):
+    def run_firmware_update(self, port, release=None, image=None, version=None):
         def report(text, fraction=None):
             self.events.put(("update", (text, fraction)))
 
         paused = False
         try:
-            image = updater.data_dir() / "firmware" / release["firmware_name"]
-            if not image.exists():
-                report("Downloading the firmware\u2026", 0.0)
-                updater.download(release["firmware_url"], image,
-                                 lambda f: report("Downloading the firmware\u2026", f))
+            if release:
+                version = release["version"]
+                image = updater.data_dir() / "firmware" / release["firmware_name"]
+                if not image.exists():
+                    report("Downloading the firmware\u2026", 0.0)
+                    updater.download(release["firmware_url"], image,
+                                     lambda f: report("Downloading the firmware\u2026", f))
+                updater.check_image(image)
             report("Getting the flashing tool\u2026", None)
             command = updater.esptool_command(
                 lambda f: report("Downloading the flashing tool (once)\u2026", f))
@@ -805,7 +844,8 @@ class App:
             report(f"Connecting to the knob on {port}\u2026", None)
             updater.flash(command, port, image,
                           lambda f: report(f"Writing the firmware\u2026 {round(f * 100)}%", f))
-            self.events.put(("update_done", (True, f"Firmware {release['version']} installed. "
+            installed = f"Firmware {version}" if version else "The firmware"
+            self.events.put(("update_done", (True, f"{installed} installed. "
                                                    "The knob is restarting.")))
         except updater.UpdateError as exc:
             self.events.put(("update_done", (False, f"Update failed: {exc}")))
@@ -1112,6 +1152,21 @@ class App:
         finally:
             CoUninitialize()
 
+    def push_device_state(self):
+        """Sends the app's style and view to the knob, as on a fresh connection."""
+        self.state_pushed = time.monotonic()
+        # Start both comets from the same place, even if the device kept
+        # running while the app was closed.
+        self.reset_comet()
+        self.bridge.send_comet_reset()
+        self.bridge.send_style(self.settings["accent"], self.settings["number_size"])
+        try:
+            self.refresh_value()
+        except (COMError, OSError, RuntimeError, ValueError,
+                subprocess.SubprocessError) as exc:
+            self.status.set(f"{self.mode}: {exc}")
+            self.sync()
+
     def poll(self):
         try:
             while True:
@@ -1154,20 +1209,14 @@ class App:
                     if not self.connected:
                         self.connected_port = payload
                         self.connected = True
-                        # Start both comets from the same place, even if the
-                        # device kept running while the app was closed.
-                        self.reset_comet()
-                        self.bridge.send_comet_reset()
                         self.status.set(f"Connected on {payload}")
                         self.refresh_about()
-                        self.bridge.send_style(self.settings["accent"],
-                                               self.settings["number_size"])
-                        try:
-                            self.refresh_value()
-                        except (COMError, OSError, RuntimeError, ValueError,
-                                subprocess.SubprocessError) as exc:
-                            self.status.set(f"{self.mode}: {exc}")
-                            self.sync()
+                        self.push_device_state()
+                elif (kind == "sync" and self.connected
+                      and time.monotonic() - self.state_pushed > 2):
+                    # The knob restarted and asks for its state again; the
+                    # first reply may still be in flight, hence the grace time.
+                    self.push_device_state()
                 elif kind == "rotate":
                     if not self.menu:
                         self.rotate(payload)
@@ -1208,7 +1257,7 @@ def main():
     kernel.CreateMutexW.argtypes = [ctypes.c_void_p, ctypes.c_bool, ctypes.c_wchar_p]
     kernel.CreateMutexW.restype = ctypes.c_void_p
     kernel.CloseHandle.argtypes = [ctypes.c_void_p]
-    handle = kernel.CreateMutexW(None, False, "Local\\RoundScreenCompanion")
+    handle = kernel.CreateMutexW(None, False, "Local\\Revo1Companion")
     if not handle:
         raise ctypes.WinError(ctypes.get_last_error())
     if ctypes.get_last_error() == 183:
@@ -1229,7 +1278,7 @@ def main():
     ui.register_fonts()
     root = tk.Tk()
     events = []
-    icon = tray.TrayIcon("RoundScreen", ui.ICON_FILE,
+    icon = tray.TrayIcon("Revo1", ui.ICON_FILE,
                          lambda: events and events[0].put(("show", None)),
                          lambda: events and events[0].put(("quit", None)))
     icon.start()
@@ -1239,7 +1288,7 @@ def main():
             events.append(app.events)
         except (OSError, ValueError, RuntimeError) as exc:
             icon.stop()
-            messagebox.showerror("RoundScreen startup failed", str(exc))
+            messagebox.showerror("Revo1 startup failed", str(exc))
             root.destroy()
             return
         root.mainloop()

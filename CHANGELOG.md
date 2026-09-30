@@ -17,9 +17,14 @@ First public release.
   at sign-in.
 - About page: app and firmware versions, the latest GitHub release, and a
   one-click firmware update over USB. The firmware reports its version with
-  `VERSION,<x.y.z>`; it's taken from `roundscreen/__init__.py` at build time.
+  `VERSION,<x.y.z>`; it's taken from `revo1/__init__.py` at build time.
+  **Install from file...** flashes a downloaded or locally built image, after
+  checking that it really is Revo1 firmware.
+- The knob keeps its last control, orientation, colour and number size in
+  flash, so a restart doesn't undo them; after a restart it asks the app
+  (`SYNC`) for the current state.
 - Accented letters in song titles are shown without accents instead of "?".
-- `RoundScreen-Setup.exe`: a per-user Windows installer with Python bundled,
+- `Revo1-Setup.exe`: a per-user Windows installer with Python bundled,
   its own icon, a Start Menu entry, an optional start at sign-in, and an
   uninstaller in Apps & features. Built by GitHub Actions for every release.
 - `scripts/flash-firmware.ps1` for flashing, with an automatic backup of the

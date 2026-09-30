@@ -1,6 +1,6 @@
 $ErrorActionPreference = "Stop"
 $project = $PSScriptRoot
-# Runs RoundScreen from source. Most people should use RoundScreen-Setup.exe
+# Runs Revo1 from source. Most people should use Revo1-Setup.exe
 # from the GitHub releases instead, which needs no Python.
 $supported = "3.14", "3.13", "3.12", "3.11", "3.10"
 $python = $null
@@ -33,17 +33,17 @@ if ($LASTEXITCODE -ne 0) {
 
 $shell = New-Object -ComObject WScript.Shell
 $locations = @(
-    (Join-Path $env:APPDATA "Microsoft\Windows\Start Menu\Programs\RoundScreen.lnk"),
-    (Join-Path $env:APPDATA "Microsoft\Windows\Start Menu\Programs\Startup\RoundScreen.lnk")
+    (Join-Path $env:APPDATA "Microsoft\Windows\Start Menu\Programs\Revo1.lnk"),
+    (Join-Path $env:APPDATA "Microsoft\Windows\Start Menu\Programs\Startup\Revo1.lnk")
 )
 foreach ($path in $locations) {
     $shortcut = $shell.CreateShortcut($path)
     $shortcut.TargetPath = $pythonw
-    $shortcut.Arguments = if ($path -like "*\Startup\*") { "-m roundscreen.app --minimized" } else { "-m roundscreen.app" }
+    $shortcut.Arguments = if ($path -like "*\Startup\*") { "-m revo1.app --minimized" } else { "-m revo1.app" }
     $shortcut.WorkingDirectory = $project
-    $shortcut.Description = "RoundScreen knob controls for volume, scrolling, brightness and media"
+    $shortcut.Description = "Revo1 knob controls for volume, scrolling, brightness and media"
     $shortcut.Save()
 }
-Write-Host "RoundScreen installed in the Start Menu and enabled at Windows sign-in."
-Write-Host "Settings are stored in $env:LOCALAPPDATA\RoundScreen\settings.json"
+Write-Host "Revo1 installed in the Start Menu and enabled at Windows sign-in."
+Write-Host "Settings are stored in $env:LOCALAPPDATA\Revo1\settings.json"
 Write-Host "Run it now from the Start Menu; the USB device needs companion firmware."

@@ -6,6 +6,9 @@ from serial.tools import list_ports
 
 # USB IDs of the ESP32-S3 native USB Serial/JTAG port the knob enumerates as.
 DEVICE_IDS = (0x303A, 0x1001)
+# The firmware's greeting. Early builds, made while the project was called
+# RoundScreen, still say so; they're accepted so the app can update them.
+HELLO_LINES = ("HELLO,REVO1,1", "HELLO,ROUNDSCREEN,1")
 
 
 def find_devices():
@@ -106,7 +109,7 @@ class DeviceBridge:
                             break
                         line = connection.read_until(b"\n", 128).decode(
                             "ascii", errors="replace").strip()
-                        if line == "HELLO,ROUNDSCREEN,1":
+                        if line in HELLO_LINES:
                             self.events.put(("hello", port))
                             last_error = None
                         elif line.startswith("VERSION,"):
@@ -124,6 +127,8 @@ class DeviceBridge:
                             self.events.put(("swipe", line[6:]))
                         elif line == "MENU":
                             self.events.put(("menu", None))
+                        elif line == "SYNC":
+                            self.events.put(("sync", port))
                         elif line.startswith("MEDIA,"):
                             command = line[6:]
                             if command in ("PREV", "PLAYPAUSE", "NEXT"):

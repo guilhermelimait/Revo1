@@ -1,6 +1,6 @@
 import unittest
 
-from roundscreen.media import TEXT_MAX, clean
+from revo1.media import TEXT_MAX, clean
 
 
 class CleanTests(unittest.TestCase):

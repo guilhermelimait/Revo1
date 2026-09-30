@@ -7,8 +7,8 @@ import unittest
 import urllib.error
 from unittest.mock import patch
 
-from roundscreen import updater
-from roundscreen.bridge import DeviceBridge
+from revo1 import updater
+from revo1.bridge import DeviceBridge
 
 
 class Response(io.BytesIO):
@@ -24,6 +24,35 @@ class Response(io.BytesIO):
 
 
 class VersionTests(unittest.TestCase):
+    def test_only_merged_revo1_images_are_accepted(self):
+        import tempfile
+        from pathlib import Path
+
+        def image(app_magic=0xE9, marker=b"HELLO,REVO1,1", size=0x20000):
+            data = bytearray(size)
+            data[0] = 0xE9
+            if size > updater.APP_OFFSET + 0x200:
+                data[updater.APP_OFFSET] = app_magic
+                data[0x10100:0x10100 + len(marker)] = marker
+            return bytes(data)
+
+        with tempfile.TemporaryDirectory() as folder:
+            def write(name, data):
+                path = Path(folder) / name
+                path.write_bytes(data)
+                return path
+
+            good = write("revo1-firmware-1.2.3.bin", image())
+            self.assertEqual(updater.check_image(good), "1.2.3")
+            legacy = write("old.bin", image(marker=b"HELLO,ROUNDSCREEN,1"))
+            self.assertIsNone(updater.check_image(legacy))
+            for bad in (image(app_magic=0), image(marker=b"SOMETHING,ELSE"),
+                        image(size=0x8000)):
+                with self.assertRaises(updater.UpdateError):
+                    updater.check_image(write("bad.bin", bad))
+            with self.assertRaises(updater.UpdateError):
+                updater.check_image(Path(folder) / "missing.bin")
+
     def test_parse(self):
         self.assertEqual(updater.parse_version("v1.2.3"), (1, 2, 3))
         self.assertEqual(updater.parse_version("1.4"), (1, 4, 0))
@@ -45,14 +74,14 @@ class ReleaseTests(unittest.TestCase):
         body = json.dumps({
             "tag_name": "v1.2.0", "published_at": "2026-03-04T10:00:00Z",
             "html_url": "https://example.test/r",
-            "assets": [{"name": "RoundScreen-Setup-1.2.0.exe", "browser_download_url": "x"},
-                       {"name": "roundscreen-firmware-1.2.0.bin", "size": 5,
+            "assets": [{"name": "Revo1-Setup-1.2.0.exe", "browser_download_url": "x"},
+                       {"name": "revo1-firmware-1.2.0.bin", "size": 5,
                         "browser_download_url": "https://example.test/fw.bin"}]}).encode()
         with patch("urllib.request.urlopen", return_value=Response(body)):
             release = updater.latest_release()
         self.assertEqual(release["version"], "1.2.0")
         self.assertEqual(release["published"].year, 2026)
-        self.assertEqual(release["firmware_name"], "roundscreen-firmware-1.2.0.bin")
+        self.assertEqual(release["firmware_name"], "revo1-firmware-1.2.0.bin")
         self.assertEqual(release["firmware_url"], "https://example.test/fw.bin")
 
     def test_no_release_yet(self):
@@ -81,7 +110,7 @@ class FlashTests(unittest.TestCase):
 
 class BridgePauseTests(unittest.TestCase):
     def test_pause_frees_the_port_and_resume_reconnects(self):
-        with patch("roundscreen.bridge.list_ports.comports", return_value=[]):
+        with patch("revo1.bridge.list_ports.comports", return_value=[]):
             bridge = DeviceBridge(queue.Queue())
             bridge.start()
             try:

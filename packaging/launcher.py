@@ -1,6 +1,6 @@
-"""Entry point for the packaged RoundScreen.exe."""
+"""Entry point for the packaged Revo1.exe."""
 
-from roundscreen.app import main
+from revo1.app import main
 
 if __name__ == "__main__":
     main()

@@ -16,6 +16,8 @@
 #include "freertos/queue.h"
 #include "freertos/task.h"
 #include "lvgl.h"
+#include "nvs.h"
+#include "nvs_flash.h"
 #include "esp_lcd_sh8601.h"
 
 #define LCD_WIDTH 360
@@ -76,7 +78,7 @@
 /* Scroll and zoom: each detent moves the comet a fixed number of segments
    (q8), and the head eases a quarter of the way there per frame. The PC app
    applies the same rule to the same ROT stream, so both come to rest on the
-   same segment. roundscreen/dial.py holds the same constants. */
+   same segment. revo1/dial.py holds the same constants. */
 #define COMET_STEP_Q8 (32 << 8)
 #define COMET_SNAP_Q8 (2 << 8)
 
@@ -163,6 +165,106 @@ static uint16_t touch_start_x;
 static uint16_t touch_start_y;
 static int64_t encoder_last_edge;
 static esp_err_t touch_error;
+/* Set once the PC has sent a STATE since boot; until then the firmware asks
+   for one, so a restarted knob gets its settings back from a connected app. */
+static bool state_received;
+
+static const lv_font_t *font_for_size(int size)
+{
+    switch (size) {
+    case 24: return &lv_font_montserrat_24;
+    case 32: return &lv_font_montserrat_32;
+    case 40: return &lv_font_montserrat_40;
+    case 48: return &lv_font_montserrat_48;
+    default: return NULL;
+    }
+}
+
+/* The view survives a restart: mode, orientation and style live in NVS, so the
+   knob comes back the way it was even before the PC app is running. */
+#define SETTINGS_NAMESPACE "revo1"
+#define STANDARD_ACCENT 0xFFFFFFFFu
+
+typedef struct {
+    uint8_t mode;
+    uint8_t orientation;
+    uint8_t number_size;
+    uint32_t accent;
+} stored_settings_t;
+
+static bool settings_ready;
+static stored_settings_t saved_settings;
+
+static stored_settings_t current_settings(void)
+{
+    stored_settings_t settings = {
+        .mode = (uint8_t)selected_mode,
+        .orientation = (uint8_t)(orientation / 90),
+        .number_size = 32,
+        .accent = custom_accent ? ((uint32_t)custom_rgb[0] << 16 |
+                                   (uint32_t)custom_rgb[1] << 8 | custom_rgb[2])
+                                : STANDARD_ACCENT,
+    };
+    static const int sizes[] = {24, 32, 40, 48};
+    for (size_t index = 0; index < sizeof(sizes) / sizeof(sizes[0]); index++) {
+        if (font_for_size(sizes[index]) == number_font) settings.number_size = (uint8_t)sizes[index];
+    }
+    return settings;
+}
+
+static void load_settings(void)
+{
+    esp_err_t err = nvs_flash_init();
+    if (err == ESP_ERR_NVS_NO_FREE_PAGES || err == ESP_ERR_NVS_NEW_VERSION_FOUND) {
+        nvs_flash_erase();
+        err = nvs_flash_init();
+    }
+    if (err != ESP_OK) return;
+    settings_ready = true;
+    nvs_handle_t handle;
+    if (nvs_open(SETTINGS_NAMESPACE, NVS_READONLY, &handle) == ESP_OK) {
+        uint8_t byte;
+        uint32_t accent;
+        if (nvs_get_u8(handle, "mode", &byte) == ESP_OK && byte < 6) {
+            selected_mode = byte;
+            show_menu = false;
+        }
+        if (nvs_get_u8(handle, "orient", &byte) == ESP_OK && byte < 4) orientation = byte * 90;
+        if (nvs_get_u8(handle, "numsize", &byte) == ESP_OK && font_for_size(byte)) {
+            number_font = font_for_size(byte);
+        }
+        if (nvs_get_u32(handle, "accent", &accent) == ESP_OK && accent <= 0xFFFFFF) {
+            custom_accent = true;
+            custom_rgb[0] = (uint8_t)(accent >> 16);
+            custom_rgb[1] = (uint8_t)(accent >> 8);
+            custom_rgb[2] = (uint8_t)accent;
+        }
+        nvs_close(handle);
+    }
+    saved_settings = current_settings();
+}
+
+/* Called after every change; flash is only written when something differs. */
+static void save_settings(void)
+{
+    if (!settings_ready) return;
+    const stored_settings_t settings = current_settings();
+    if (settings.mode == saved_settings.mode &&
+        settings.orientation == saved_settings.orientation &&
+        settings.number_size == saved_settings.number_size &&
+        settings.accent == saved_settings.accent) {
+        return;
+    }
+    nvs_handle_t handle;
+    if (nvs_open(SETTINGS_NAMESPACE, NVS_READWRITE, &handle) != ESP_OK) return;
+    const bool ok = nvs_set_u8(handle, "mode", settings.mode) == ESP_OK &&
+                    nvs_set_u8(handle, "orient", settings.orientation) == ESP_OK &&
+                    nvs_set_u8(handle, "numsize", settings.number_size) == ESP_OK &&
+                    nvs_set_u32(handle, "accent", settings.accent) == ESP_OK &&
+                    nvs_commit(handle) == ESP_OK;
+    nvs_close(handle);
+    if (ok) saved_settings = settings;
+}
 static int encoder_lines[2] = {0, 1};
 static volatile int64_t encoder_line_edge[2];
 static volatile int64_t encoder_last_step;
@@ -694,7 +796,7 @@ static void fill_span(int y, int x0, int x1, uint16_t colour)
 }
 
 /* Menu icons as small vector shapes, rasterised with signed distances so the
-   edges are anti-aliased. roundscreen/icons.py holds the same table; keep the
+   edges are anti-aliased. revo1/icons.py holds the same table; keep the
    two in step. Coordinates are pixels from the icon centre, y pointing down. */
 enum { PART_SEG, PART_CAPSULE, PART_ARC, PART_DISC, PART_POLY };
 
@@ -1163,6 +1265,7 @@ static void confirm_menu(int mode)
 {
     selected_mode = mode;
     show_menu = false;
+    save_settings();
     dial_value_q8 = 0;
     reset_comet();
     printf("TAP,%d\n", mode);
@@ -1201,17 +1304,12 @@ static void handle_command(char *line)
             rgb[1] = (uint8_t)(hex >> 8);
             rgb[2] = (uint8_t)hex;
         }
-        const lv_font_t *font;
-        switch (size) {
-        case 24: font = &lv_font_montserrat_24; break;
-        case 32: font = &lv_font_montserrat_32; break;
-        case 40: font = &lv_font_montserrat_40; break;
-        case 48: font = &lv_font_montserrat_48; break;
-        default: return;
-        }
+        const lv_font_t *font = font_for_size(size);
+        if (!font) return;
         custom_accent = custom;
         memcpy(custom_rgb, rgb, sizeof(custom_rgb));
         number_font = font;
+        save_settings();
         refresh_screen();
         printf("STYLE_OK\n");
         return;
@@ -1283,6 +1381,8 @@ static void handle_command(char *line)
     selected_value = parsed_value;
     orientation = parsed_orientation;
     show_menu = false;
+    state_received = true;
+    save_settings();
     if (view_changed) {
         /* Entering a view sweeps the arc up from nothing. */
         dial_value_q8 = 0;
@@ -1302,6 +1402,7 @@ static void send_touch_event(void)
         const char *direction = delta_x < 0 ? "LEFT" : "RIGHT";
         selected_mode = (selected_mode + (delta_x < 0 ? 1 : 5)) % 6;
         show_menu = false;
+        save_settings();
         dial_value_q8 = 0;
         reset_comet();
         printf("SWIPE,%s\n", direction);
@@ -1645,6 +1746,7 @@ static bool dial_advance(void)
 
 void app_main(void)
 {
+    load_settings();
     build_screen_tables();
     initialize_display();
     initialize_touch();
@@ -1703,8 +1805,9 @@ void app_main(void)
             last_frame = now;
         }
         if (now - last_hello >= 1000000) {
-            printf("HELLO,ROUNDSCREEN,1\n");
-            printf("VERSION,%s\n", ROUNDSCREEN_VERSION);
+            printf("HELLO,REVO1,1\n");
+            printf("VERSION,%s\n", REVO1_VERSION);
+            if (!state_received) printf("SYNC\n");
             last_hello = now;
         }
         vTaskDelay(1);

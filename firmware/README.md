@@ -1,8 +1,8 @@
-# RoundScreen ESP32-S3 firmware
+# Revo1 ESP32-S3 firmware
 
 PlatformIO / ESP-IDF 5.5 project for the Waveshare ESP32-S3-Knob-Touch-LCD-1.8.
 Most people do not need to build it: download
-`roundscreen-firmware-<version>.bin` from the GitHub releases and flash it
+`revo1-firmware-<version>.bin` from the GitHub releases and flash it
 with `scripts\flash-firmware.ps1` as described in the [main README](../README.md).
 
 ## Build
@@ -33,7 +33,7 @@ Back up the stock firmware first if you may want it back:
 To produce the single image used by the release, which is flashed at `0x0`:
 
 ```powershell
-python -m esptool --chip esp32s3 merge-bin -o roundscreen-firmware.bin `
+python -m esptool --chip esp32s3 merge-bin -o revo1-firmware.bin `
   0x0 .pio\build\waveshare-knob\bootloader.bin `
   0x8000 .pio\build\waveshare-knob\partitions.bin `
   0x10000 .pio\build\waveshare-knob\firmware.bin
@@ -43,7 +43,7 @@ If `pio run` fails inside PlatformIO's SCons launcher (for example
 `ModuleNotFoundError: SCons.Tool.FortranCommon`) after a first configure,
 running `ninja` in `.pio\build\waveshare-knob` with PlatformIO's toolchain
 on `PATH` builds the same project; its application image is
-`roundscreen_firmware.bin` and the partition table is
+`revo1_firmware.bin` and the partition table is
 `partition_table\partition-table.bin`.
 
 ## Hardware and sources
@@ -64,9 +64,9 @@ LVGL 8.4 and the panel driver are declared in `main\idf_component.yml`.
 | Touch interrupt | GPIO 9 (polled touch data is used) |
 
 The native USB Serial/JTAG console runs at 115200 baud and implements the
-`HELLO,ROUNDSCREEN,1`, `ROT`, `MENU`, `CURSOR`, `TAP`, `SWIPE`, `MEDIA`, `STATE`,
+`HELLO,REVO1,1`, `VERSION`, `SYNC`, `ROT`, `MENU`, `CURSOR`, `TAP`, `SWIPE`, `MEDIA`, `STATE`,
 `SHOWMENU`, `COMETRESET`, `STYLE`, `TRACK`, `ARTIST`, and `PLAY` lines used by
-`roundscreen\bridge.py`. The six sectors follow the host mode order.
+`revo1\bridge.py`. The six sectors follow the host mode order.
 
 ## Media transport screen
 
@@ -132,8 +132,22 @@ colour, `accent_of` returns it for every mode instead of `mode_accents`, so
 the bars, the menu highlight and the media button all use it. The size picks
 the Montserrat font for the big number (`number_font`). Montserrat 24, 40 and
 48 are enabled in `sdkconfig.waveshare-knob` and `sdkconfig.defaults` for
-this. The device does not store the style: the app sends it on every
-connection.
+this.
+
+## Saved settings
+
+The last mode, orientation, bar colour and number size are kept in NVS
+(namespace `revo1`: `mode`, `orient`, `numsize`, `accent`, with
+`0xFFFFFFFF` meaning standard colours). `load_settings` reads them before the
+display starts, so a restarted knob comes back in the same view and the same
+orientation even when the PC app isn't running. `save_settings` runs after
+`STATE`, `STYLE`, a menu tap or a swipe, and only writes flash when a value
+actually changed. The level itself isn't stored; it comes from Windows.
+
+Until the first `STATE` after boot, the firmware sends `SYNC` with every
+`HELLO`, and a connected app answers with its style and state. The merged
+release image covers the NVS partition, so a firmware update clears the saved
+settings; the app sends them again straight after the update.
 
 Performance is the main design constraint:
 
@@ -151,8 +165,8 @@ Performance is the main design constraint:
 - `dial_advance` reports whether anything moved, and an idle dial costs no
   redraw. Label text is only touched on state changes, because label work used
   to cost more per frame than drawing.
-- `firmware\main\main.c` and `roundscreen\dial.py` share the same maths, and
-  the menu icon table is mirrored in `roundscreen\icons.py`; keep them in step
+- `firmware\main\main.c` and `revo1\dial.py` share the same maths, and
+  the menu icon table is mirrored in `revo1\icons.py`; keep them in step
   so the PC window matches the screen.
 
 Other constraints:

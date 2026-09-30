@@ -13,20 +13,20 @@ import zipfile
 from datetime import datetime
 from pathlib import Path
 
-from roundscreen import __version__
+from revo1 import __version__
 
-REPOSITORY = "guilhermelimait/RoundScreen"
+REPOSITORY = "guilhermelimait/Revo1"
 PROJECT_URL = f"https://github.com/{REPOSITORY}"
 RELEASES_URL = f"{PROJECT_URL}/releases"
 LATEST_API = f"https://api.github.com/repos/{REPOSITORY}/releases/latest"
-FIRMWARE_ASSET = re.compile(r"^roundscreen-firmware-.*\.bin$", re.IGNORECASE)
+FIRMWARE_ASSET = re.compile(r"^revo1-firmware-.*\.bin$", re.IGNORECASE)
 # Espressif's standalone build: esptool is GPL-2.0, so it runs as a separate
-# program downloaded on demand rather than being bundled into RoundScreen.
+# program downloaded on demand rather than being bundled into Revo1.
 ESPTOOL_VERSION = "v5.4.0"
 ESPTOOL_URL = ("https://github.com/espressif/esptool/releases/download/"
                f"{ESPTOOL_VERSION}/esptool-{ESPTOOL_VERSION}-windows-amd64.zip")
 TIMEOUT = 15
-USER_AGENT = f"RoundScreen/{__version__}"
+USER_AGENT = f"Revo1/{__version__}"
 PROGRESS = re.compile(rb"(\d{1,3}(?:\.\d+)?)\s*%")
 
 
@@ -53,7 +53,7 @@ def is_newer(candidate, current):
 
 
 def data_dir():
-    return Path(os.environ["LOCALAPPDATA"]) / "RoundScreen"
+    return Path(os.environ["LOCALAPPDATA"]) / "Revo1"
 
 
 def _open(url):
@@ -121,7 +121,7 @@ def download(url, destination, progress=None):
 def esptool_command(progress=None):
     """A command line that runs esptool: the Python module when this is a
     source install that has it, otherwise Espressif's standalone esptool.exe,
-    downloaded once into %LOCALAPPDATA%\\RoundScreen\\tools."""
+    downloaded once into %LOCALAPPDATA%\\Revo1\\tools."""
     if not getattr(sys, "frozen", False):
         if importlib.util.find_spec("esptool"):
             return [sys.executable, "-m", "esptool"]
@@ -143,6 +143,30 @@ def esptool_command(progress=None):
     if not found:
         raise UpdateError("esptool.exe is missing from the download")
     return [str(found)]
+
+
+IMAGE_MAGIC = 0xE9
+APP_OFFSET = 0x10000
+FLASH_SIZE = 16 * 1024 * 1024
+FIRMWARE_MARKERS = (b"HELLO,REVO1,1", b"HELLO,ROUNDSCREEN,1")
+
+
+def check_image(path):
+    """Refuses anything but a merged Revo1 image (bootloader at 0x0, app at
+    0x10000), so a wrong file can't be written over the knob's flash."""
+    try:
+        data = Path(path).read_bytes()
+    except OSError as exc:
+        raise UpdateError(f"can't read the file ({exc.strerror or exc})") from exc
+    if not APP_OFFSET < len(data) <= FLASH_SIZE:
+        raise UpdateError("that file is not a Revo1 firmware image (wrong size)")
+    if data[0] != IMAGE_MAGIC or data[APP_OFFSET] != IMAGE_MAGIC:
+        raise UpdateError("that file is not a merged ESP32-S3 image; "
+                          "use the revo1-firmware-x.y.z.bin from a release")
+    if not any(marker in data for marker in FIRMWARE_MARKERS):
+        raise UpdateError("that image is not Revo1 firmware")
+    match = re.search(r"(\d+\.\d+\.\d+)", Path(path).name)
+    return match.group(1) if match else None
 
 
 def flash(command, port, image, progress=None):

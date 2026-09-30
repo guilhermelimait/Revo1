@@ -9,7 +9,7 @@ import ctypes
 import threading
 from ctypes import wintypes
 
-WINDOW_CLASS = "RoundScreenTray"
+WINDOW_CLASS = "Revo1Tray"
 WM_DESTROY = 0x0002
 WM_CLOSE = 0x0010
 WM_NULL = 0x0000
@@ -104,7 +104,7 @@ kernel32.GetModuleHandleW.restype = wintypes.HMODULE
 
 
 def activate_running_instance():
-    """Asks an already running RoundScreen to show its window. Returns False
+    """Asks an already running Revo1 to show its window. Returns False
     when there is none to ask."""
     window = user32.FindWindowW(WINDOW_CLASS, None)
     # Lets the running copy take the foreground, which this launch owns.
@@ -174,7 +174,7 @@ class TrayIcon:
 
     def _menu(self):
         menu = user32.CreatePopupMenu()
-        user32.AppendMenuW(menu, MF_STRING, MENU_OPEN, "Open RoundScreen")
+        user32.AppendMenuW(menu, MF_STRING, MENU_OPEN, "Open Revo1")
         user32.AppendMenuW(menu, MF_SEPARATOR, 0, None)
         user32.AppendMenuW(menu, MF_STRING, MENU_QUIT, "Quit")
         user32.SetMenuDefaultItem(menu, MENU_OPEN, 0)
@@ -228,7 +228,7 @@ class TrayIcon:
         user32.RegisterClassW(ctypes.byref(window_class))
         # A hidden top-level window (not message-only), so it also receives
         # Explorer's "TaskbarCreated" broadcast.
-        self.window = user32.CreateWindowExW(0, WINDOW_CLASS, "RoundScreen tray", 0, 0, 0, 0, 0,
+        self.window = user32.CreateWindowExW(0, WINDOW_CLASS, "Revo1 tray", 0, 0, 0, 0, 0,
                                              None, None, instance, None)
         size = user32.GetSystemMetrics(49)  # SM_CXSMICON
         self.icon = user32.LoadImageW(None, self.icon_path, IMAGE_ICON, size, size,

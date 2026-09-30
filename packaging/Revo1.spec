@@ -1,5 +1,5 @@
-# PyInstaller spec for RoundScreen.exe (a windowed, one-folder build).
-# Build with packaging\build.ps1, or: pyinstaller packaging\RoundScreen.spec
+# PyInstaller spec for Revo1.exe (a windowed, one-folder build).
+# Build with packaging\build.ps1, or: pyinstaller packaging\Revo1.spec
 import re
 from pathlib import Path
 
@@ -9,7 +9,7 @@ from PyInstaller.utils.win32.versioninfo import (
     VSVersionInfo)
 
 ROOT = Path(SPECPATH).parent
-PACKAGE = ROOT / "roundscreen"
+PACKAGE = ROOT / "revo1"
 VERSION = re.search(r'__version__ = "([^"]+)"', (PACKAGE / "__init__.py").read_text()).group(1)
 numbers = tuple(int(part) for part in VERSION.split(".")[:3]) + (0,)
 
@@ -18,12 +18,12 @@ version_info = VSVersionInfo(
     kids=[
         StringFileInfo([StringTable("040904B0", [
             StringStruct("CompanyName", "guilhermelimait"),
-            StringStruct("FileDescription", "RoundScreen"),
+            StringStruct("FileDescription", "Revo1"),
             StringStruct("FileVersion", VERSION),
-            StringStruct("InternalName", "RoundScreen"),
+            StringStruct("InternalName", "Revo1"),
             StringStruct("LegalCopyright", "MIT License"),
-            StringStruct("OriginalFilename", "RoundScreen.exe"),
-            StringStruct("ProductName", "RoundScreen"),
+            StringStruct("OriginalFilename", "Revo1.exe"),
+            StringStruct("ProductName", "Revo1"),
             StringStruct("ProductVersion", VERSION),
         ])]),
         VarFileInfo([VarStruct("Translation", [0x0409, 1200])]),
@@ -33,8 +33,8 @@ version_info = VSVersionInfo(
 a = Analysis(
     [str(ROOT / "packaging" / "launcher.py")],
     pathex=[str(ROOT)],
-    datas=[(str(PACKAGE / "fonts"), "roundscreen/fonts"),
-           (str(PACKAGE / "assets"), "roundscreen/assets")],
+    datas=[(str(PACKAGE / "fonts"), "revo1/fonts"),
+           (str(PACKAGE / "assets"), "revo1/assets")],
     # The WinRT projections are imported lazily, so name the ones used.
     hiddenimports=collect_submodules("winrt.windows.media.control")
     + collect_submodules("winrt.windows.foundation")
@@ -48,10 +48,10 @@ exe = EXE(
     a.scripts,
     [],
     exclude_binaries=True,
-    name="RoundScreen",
-    icon=str(PACKAGE / "assets" / "roundscreen.ico"),
+    name="Revo1",
+    icon=str(PACKAGE / "assets" / "revo1.ico"),
     version=version_info,
     console=False,
     upx=False,
 )
-coll = COLLECT(exe, a.binaries, a.datas, name="RoundScreen", upx=False)
+coll = COLLECT(exe, a.binaries, a.datas, name="Revo1", upx=False)

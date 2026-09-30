@@ -1,11 +1,11 @@
 # Third-party notices
 
-RoundScreen's own code is under the [MIT License](LICENSE). It includes or
+Revo1's own code is under the [MIT License](LICENSE). It includes or
 builds on the following third-party work, which keeps its own licence.
 
 | Component | Where | Licence |
 | --- | --- | --- |
-| [Montserrat](https://github.com/JulietaUla/Montserrat) typeface | `roundscreen/fonts/` (bundled) | SIL Open Font License 1.1, see [roundscreen/fonts/OFL.txt](roundscreen/fonts/OFL.txt) |
+| [Montserrat](https://github.com/JulietaUla/Montserrat) typeface | `revo1/fonts/` (bundled) | SIL Open Font License 1.1, see [revo1/fonts/OFL.txt](revo1/fonts/OFL.txt) |
 | [LVGL](https://github.com/lvgl/lvgl) 8.4, including its built-in Montserrat fonts | firmware, downloaded at build time | MIT |
 | [esp_lcd_sh8601](https://components.espressif.com/components/waveshare/esp_lcd_sh8601) panel driver | firmware, downloaded at build time | Apache-2.0 |
 | [cmake_utilities](https://components.espressif.com/components/espressif/cmake_utilities) | firmware, downloaded at build time | Apache-2.0 |
@@ -14,8 +14,8 @@ builds on the following third-party work, which keeps its own licence.
 | [pyserial](https://github.com/pyserial/pyserial) | Python dependency | BSD-3-Clause |
 | [pycaw](https://github.com/AndreMiras/pycaw) | Python dependency | MIT |
 | [PyWinRT](https://github.com/pywinrt/pywinrt) (`winrt-*`) | Python dependency | MIT |
-| [PyInstaller](https://pyinstaller.org) bootloader | `RoundScreen.exe` | GPL-2.0 with an exception that allows distributing the bundled app under any licence |
-| [Python](https://www.python.org) runtime and Tcl/Tk | bundled in `RoundScreen.exe` | PSF License, Tcl/Tk License |
+| [PyInstaller](https://pyinstaller.org) bootloader | `Revo1.exe` | GPL-2.0 with an exception that allows distributing the bundled app under any licence |
+| [Python](https://www.python.org) runtime and Tcl/Tk | bundled in `Revo1.exe` | PSF License, Tcl/Tk License |
 | [NumPy](https://numpy.org) | Python dependency | BSD-3-Clause |
 | [Pillow](https://python-pillow.org) | Python dependency | MIT-CMU |
 | [esptool](https://github.com/espressif/esptool) standalone build | downloaded on demand by the About page and `scripts/flash-firmware.ps1`, run as a separate program; not bundled | GPL-2.0-or-later |

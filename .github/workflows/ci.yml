@@ -20,7 +20,7 @@ jobs:
           python-version: "3.12"
           cache: pip
       - run: python -m pip install -r requirements.txt pyflakes
-      - run: python -m pyflakes roundscreen tests
+      - run: python -m pyflakes revo1 tests
       - run: python -m unittest discover -s tests -v
 
   installer:
@@ -50,18 +50,18 @@ jobs:
           $setup = Join-Path $env:RUNNER_TEMP "innosetup.exe"
           Invoke-WebRequest https://github.com/jrsoftware/issrc/releases/download/is-6_7_3/innosetup-6.7.3.exe -OutFile $setup
           Start-Process $setup -ArgumentList "/VERYSILENT", "/SUPPRESSMSGBOXES", "/NORESTART", "/CURRENTUSER" -Wait
-      - name: Build RoundScreen-Setup.exe
+      - name: Build Revo1-Setup.exe
         shell: pwsh
         run: ./packaging/build.ps1
       - uses: actions/upload-artifact@v4
         with:
           name: installer-${{ matrix.arch }}
-          path: dist/RoundScreen-Setup-*.exe
+          path: dist/Revo1-Setup-*.exe
       - name: Attach to the GitHub release
         if: startsWith(github.ref, 'refs/tags/v')
         uses: softprops/action-gh-release@v2
         with:
-          files: dist/RoundScreen-Setup-*.exe
+          files: dist/Revo1-Setup-*.exe
 
   firmware:
     name: Firmware build
@@ -85,7 +85,7 @@ jobs:
           [ "$GITHUB_REF_TYPE" = tag ] || version="dev-${GITHUB_SHA::7}"
           build=firmware/.pio/build/waveshare-knob
           mkdir -p dist
-          esptool --chip esp32s3 merge-bin -o "dist/roundscreen-firmware-$version.bin" \
+          esptool --chip esp32s3 merge-bin -o "dist/revo1-firmware-$version.bin" \
             0x0 "$build/bootloader.bin" 0x8000 "$build/partitions.bin" 0x10000 "$build/firmware.bin"
       - uses: actions/upload-artifact@v4
         with:

@@ -1,13 +1,13 @@
-# RoundScreen
+# Revo1
 
 **Turn a Waveshare round knob display into a beautiful volume, scroll,
 brightness and media controller for Windows.**
 
-[![CI](https://github.com/guilhermelimait/RoundScreen/actions/workflows/ci.yml/badge.svg)](https://github.com/guilhermelimait/RoundScreen/actions/workflows/ci.yml)
+[![CI](https://github.com/guilhermelimait/Revo1/actions/workflows/ci.yml/badge.svg)](https://github.com/guilhermelimait/Revo1/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 ![Windows](https://img.shields.io/badge/platform-Windows%2010%20%7C%2011-0078D6)
 
-RoundScreen is custom firmware for the
+Revo1 is custom firmware for the
 [Waveshare ESP32-S3-Knob-Touch-LCD-1.8](https://www.waveshare.com/wiki/ESP32-S3-Knob-Touch-LCD-1.8)
 (a 360 x 360 round AMOLED with a rotary knob and touch) plus a Windows
 companion app. The screen and the app draw the same Nest-style dial: a light,
@@ -49,14 +49,14 @@ sync as you turn the knob.
 
 ### 1. Install the app
 
-Download **`RoundScreen-Setup-<version>.exe`** from the
-[latest release](https://github.com/guilhermelimait/RoundScreen/releases/latest)
-and run it. (On a Windows on ARM PC, `RoundScreen-Setup-<version>-arm64.exe`
+Download **`Revo1-Setup-<version>.exe`** from the
+[latest release](https://github.com/guilhermelimait/Revo1/releases/latest)
+and run it. (On a Windows on ARM PC, `Revo1-Setup-<version>-arm64.exe`
 is the native build; the regular one works too.)
 
 - It installs for your user only, so no administrator prompt, into
-  `%LOCALAPPDATA%\Programs\RoundScreen`.
-- It adds **RoundScreen** to the Start Menu and, if you keep the box ticked,
+  `%LOCALAPPDATA%\Programs\Revo1`.
+- It adds **Revo1** to the Start Menu and, if you keep the box ticked,
   starts it when you sign in.
 - Installing a newer version over it closes the running app and keeps your
   settings. Remove it any time from **Settings > Apps > Installed apps**.
@@ -66,23 +66,23 @@ The installer is not code-signed yet, so Windows SmartScreen may say
 
 ### 2. Flash the firmware (once)
 
-Download `roundscreen-firmware-<version>.bin` from the same release, and this
+Download `revo1-firmware-<version>.bin` from the same release, and this
 repository (**Code > Download ZIP**) for the flashing script.
 
 The knob's single USB-C socket reaches a **different chip depending on which
-way round the plug is inserted**. RoundScreen needs the ESP32-S3, which
+way round the plug is inserted**. Revo1 needs the ESP32-S3, which
 Windows lists as a *USB Serial Device* (USB ID `303A:1001`). If it shows up as
 a *CH340* port instead, unplug the cable, turn the plug over and plug it back in.
 
 In PowerShell, in the downloaded folder:
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File .\scripts\flash-firmware.ps1 -Firmware <path to roundscreen-firmware-*.bin>
+powershell -ExecutionPolicy Bypass -File .\scripts\flash-firmware.ps1 -Firmware <path to revo1-firmware-*.bin>
 ```
 
 The script finds the device, downloads Espressif's standalone `esptool` the
 first time (no Python needed), **saves a full backup of the current flash** to
-`backups\` before the first RoundScreen flash, and then writes RoundScreen.
+`backups\` before the first Revo1 flash, and then writes Revo1.
 To go back to the original Waveshare firmware later:
 
 ```powershell
@@ -92,7 +92,7 @@ powershell -ExecutionPolicy Bypass -File .\scripts\flash-firmware.ps1 -Restore .
 (Use your own backup file name. Keep it: it is the only copy of the stock
 firmware.)
 
-Then start RoundScreen from the Start Menu: the sidebar shows **Connected**
+Then start Revo1 from the Start Menu: the sidebar shows **Connected**
 once the knob answers.
 
 ## Using it
@@ -118,24 +118,28 @@ Pick a control in the left sidebar. **Settings** has three tabs:
 - **Interface:** **Standard** colours (one per control), a swatch, or
   **Custom...** for any single bar colour; and the number size (Small, Medium,
   Large or X-Large). Under **Window**, turn on **Minimise to the notification
-  area** to hide RoundScreen next to the clock when you minimise it (click the
+  area** to hide Revo1 next to the clock when you minimise it (click the
   icon to bring it back, right-click for **Quit**). When it's on, the
   start-at-sign-in shortcut starts it there too.
 - **About:** the app version, the firmware version on the knob, and the
   latest release on GitHub. When the release has newer firmware than the
   knob, **Update firmware** downloads and flashes it (the first time it also
   downloads Espressif's standalone `esptool`, about 65 MB); keep the cable
-  plugged in until it says it's done. **Update app** opens the release page
-  when there's a newer installer.
+  plugged in until it says it's done. **Install from file...** flashes a
+  `revo1-firmware-x.y.z.bin` you downloaded or built yourself; it's always
+  there while a knob is connected, and it refuses files that aren't a Revo1
+  image. **Update app** opens the release page when there's a newer installer.
 
-Settings are saved in `%LOCALAPPDATA%\RoundScreen\settings.json` straight
-away. Volume, microphone and brightness levels are always read from Windows,
+Settings are saved in `%LOCALAPPDATA%\Revo1\settings.json` straight
+away. The knob also remembers its last control, orientation, colour and
+number size, so it comes back the same way after a restart, even before the
+app is running. Volume, microphone and brightness levels are always read from Windows,
 never overwritten with old saved values.
 
 ## Troubleshooting
 
 - **"Waiting for companion firmware".** The app found a serial port but no
-  RoundScreen firmware answered. Flash the firmware (step 2), and check you
+  Revo1 firmware answered. Flash the firmware (step 2), and check you
   are on the ESP32-S3 side of the USB-C plug.
 - **"Not connected" and no device in Settings.** Turn the USB-C plug over, or
   try another cable (some cables only charge).
@@ -163,21 +167,21 @@ Needs Python 3.10 or newer.
 
 ```powershell
 python -m pip install -r requirements.txt
-python -m roundscreen                        # run from source
+python -m revo1                        # run from source
 python -m unittest discover -s tests -v      # tests
-.\packaging\build.ps1                         # RoundScreen.exe + installer in dist\
+.\packaging\build.ps1                         # Revo1.exe + installer in dist\
 ```
 
 - `install.ps1` sets up a from-source copy with Start Menu and sign-in
   shortcuts, for development.
 - `packaging/build.ps1` bundles the app with PyInstaller
-  (`packaging/RoundScreen.spec`) and wraps it with
+  (`packaging/Revo1.spec`) and wraps it with
   [Inno Setup 6](https://jrsoftware.org/isinfo.php)
-  (`packaging/RoundScreen.iss`). The installer matches the architecture of the
+  (`packaging/Revo1.iss`). The installer matches the architecture of the
   Python that builds it. `packaging/make_icon.py` regenerates the app icon
   from the dial renderer.
 
-- `roundscreen/` is the Windows app (Tk + Pillow). `dial.py` is a Python copy
+- `revo1/` is the Windows app (Tk + Pillow). `dial.py` is a Python copy
   of the firmware's dial renderer, so the window matches the screen pixel for
   pixel; keep it in step with `firmware/main/main.c`.
 - `firmware/` is the ESP-IDF / PlatformIO project; see
@@ -185,7 +189,7 @@ python -m unittest discover -s tests -v      # tests
   renderer, encoder and touch handling work.
 - GitHub Actions runs the tests and builds the installers and the firmware on
   every push. Pushing a `v*` tag publishes a release with
-  `RoundScreen-Setup-<version>.exe`, the ARM64 installer and the merged
+  `Revo1-Setup-<version>.exe`, the ARM64 installer and the merged
   firmware image.
 
 ## Protocol
@@ -194,8 +198,9 @@ USB serial: 115200 baud, ASCII lines terminated by `\n`.
 
 | Direction | Message | Meaning |
 | --- | --- | --- |
-| Device to PC | `HELLO,ROUNDSCREEN,1` | Companion handshake |
+| Device to PC | `HELLO,REVO1,1` | Companion handshake |
 | Device to PC | `VERSION,<x.y.z>` | Firmware version, right after each `HELLO` |
+| Device to PC | `SYNC` | Sent with `HELLO` until the first `STATE` after a restart; the app resends style and state |
 | Device to PC | `ROT,<signed steps>` | Knob movement |
 | Device to PC | `MENU` | Centre or mode-name tap opens the menu |
 | Device to PC | `TAP,<0..5>` | Menu choice confirmed |
@@ -220,7 +225,7 @@ encoder and emits two pulses per detent, which the firmware divides down; see
 
 ## Licence
 
-RoundScreen is released under the [MIT License](LICENSE). Bundled and
+Revo1 is released under the [MIT License](LICENSE). Bundled and
 downloaded third-party components keep their own licences; see
 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md). This project is not
 affiliated with Waveshare or Espressif.
