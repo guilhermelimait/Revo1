@@ -67,28 +67,30 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      # ESP-IDF's own image builds the same CMake project PlatformIO wraps;
+      # PlatformIO's SCons link step fails on hosted Linux runners.
+      - name: Build with ESP-IDF 5.5
+        uses: espressif/esp-idf-ci-action@v1
+        with:
+          esp_idf_version: v5.5.2
+          target: esp32s3
+          path: firmware
+          command: idf.py -D SDKCONFIG=sdkconfig.waveshare-knob build
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
-      - uses: actions/cache@v4
-        with:
-          path: |
-            ~/.platformio
-            firmware/managed_components
-          key: pio-${{ hashFiles('firmware/platformio.ini', 'firmware/dependencies.lock') }}
-      - run: pip install platformio "esptool>=5,<6"
-      # PlatformIO's SCons can fail on a fresh ESP-IDF configure
-      # (SCons.Tool.FortranCommon); the second run builds normally.
-      - run: pio run -d firmware || pio run -d firmware
+      - run: pip install "esptool>=5,<6"
       - name: Merge into a single image flashed at 0x0
         run: |
           version="${GITHUB_REF_NAME#v}"
           [ "$GITHUB_REF_TYPE" = tag ] || version="dev-${GITHUB_SHA::7}"
-          build=firmware/.pio/build/waveshare-knob
+          build=firmware/build
           mkdir -p dist
           esptool --chip esp32s3 merge-bin -o "dist/revo1-firmware-$version.bin" \
             --flash-mode dio --flash-size 16MB \
-            0x0 "$build/bootloader.bin" 0x8000 "$build/partitions.bin" 0x10000 "$build/firmware.bin"
+            0x0 "$build/bootloader/bootloader.bin" \
+            0x8000 "$build/partition_table/partition-table.bin" \
+            0x10000 "$build/revo1_firmware.bin"
       - uses: actions/upload-artifact@v4
         with:
           name: firmware
