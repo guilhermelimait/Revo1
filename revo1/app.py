@@ -30,6 +30,7 @@ NAV_HEIGHT = 44
 CARD_WIDTH = MAIN_WIDTH - 56
 # Settings sit straight on the page, lined up with the tabs, not in boxes.
 PANEL_BG = ui.MAIN_BG
+KOFI_RED = "#FF5E5B"
 DEVICE_ROW_HEIGHT = 36
 DEVICE_SCAN_MS = 2000
 NUMBER_LABELS = {24: "Small", 32: "Medium", 40: "Large", 48: "X-Large"}
@@ -213,12 +214,14 @@ class App:
         row = tk.Frame(body, bg=PANEL_BG)
         row.pack(anchor="w", pady=(k.px(6), 0))
         self.orientation_buttons = []
-        for value in config.ORIENTATIONS:
+        widths = self.fill_widths([0] * len(config.ORIENTATIONS))
+        for value, width in zip(config.ORIENTATIONS, widths):
             button = ui.Button(row, PANEL_BG,
-                               lambda hover, value=value: self.paint_orientation(value, hover),
+                               lambda hover, value=value, width=width:
+                                   self.paint_orientation(value, hover, width),
                                lambda value=value: self.set_orientation(value))
-            button.pack(side="left", padx=(0, k.px(8)))
             self.orientation_buttons.append(button)
+        self.pack_row(self.orientation_buttons)
 
         body = self.section(tab)
         self.caption(body, "KNOB DIRECTION").pack(anchor="w")
@@ -242,32 +245,36 @@ class App:
         self.accent_buttons = []
         row = tk.Frame(body, bg=PANEL_BG)
         row.pack(anchor="w", pady=(k.px(6), 0))
-        for key in ("standard", "custom"):
+        for key, width in zip(("standard", "custom"), self.fill_widths([0, 0])):
             button = ui.Button(row, PANEL_BG,
-                               lambda hover, key=key: self.paint_accent_choice(key, hover),
+                               lambda hover, key=key, width=width:
+                                   self.paint_accent_choice(key, hover, width),
                                lambda key=key: self.pick_accent_choice(key))
-            button.pack(side="left", padx=(0, k.px(8)))
             self.accent_buttons.append(button)
+        self.pack_row(self.accent_buttons)
         row = tk.Frame(body, bg=PANEL_BG)
         row.pack(anchor="w", pady=(k.px(10), 0))
+        swatches = []
         for colour in dial.PRESET_ACCENTS:
-            button = ui.Button(row, PANEL_BG,
-                               lambda hover, colour=colour: self.paint_swatch(colour, hover),
-                               lambda colour=colour: self.set_accent(colour))
-            button.pack(side="left", padx=(0, k.px(6)))
-            self.accent_buttons.append(button)
+            swatches.append(ui.Button(row, PANEL_BG,
+                                      lambda hover, colour=colour: self.paint_swatch(colour, hover),
+                                      lambda colour=colour: self.set_accent(colour)))
+        self.spread_row(swatches)
+        self.accent_buttons += swatches
 
         body = self.section(tab)
         self.caption(body, "NUMBER SIZE").pack(anchor="w")
         row = tk.Frame(body, bg=PANEL_BG)
         row.pack(anchor="w", pady=(k.px(6), 0))
         self.size_buttons = []
-        for size in config.NUMBER_SIZES:
+        widths = self.fill_widths([0] * len(config.NUMBER_SIZES))
+        for size, width in zip(config.NUMBER_SIZES, widths):
             button = ui.Button(row, PANEL_BG,
-                               lambda hover, size=size: self.paint_number_size(size, hover),
+                               lambda hover, size=size, width=width:
+                                   self.paint_number_size(size, hover, width),
                                lambda size=size: self.set_number_size(size))
-            button.pack(side="left", padx=(0, k.px(8)))
             self.size_buttons.append(button)
+        self.pack_row(self.size_buttons)
 
         body = self.section(tab)
         self.caption(body, "WINDOW").pack(anchor="w")
@@ -283,13 +290,19 @@ class App:
         header.pack(anchor="w")
         row = tk.Frame(body, bg=PANEL_BG)
         row.pack(anchor="w", pady=(k.px(12), 0))
-        for label, url in (("GitHub", updater.PROJECT_URL),
-                           ("Releases", updater.RELEASES_URL),
-                           ("Licence", updater.PROJECT_URL + "/blob/main/LICENSE")):
-            ui.Button(row, PANEL_BG,
-                      lambda hover, label=label: self.paint_pill(label, hover),
-                      lambda url=url: webbrowser.open(url)).pack(side="left",
-                                                                 padx=(0, k.px(8)))
+        links = (("GitHub", updater.PROJECT_URL, False),
+                 ("Releases", updater.RELEASES_URL, False),
+                 ("Licence", updater.PROJECT_URL + "/blob/main/LICENSE", False),
+                 ("Ko-fi", updater.KOFI_URL, True))
+        widths = self.fill_widths([self.pill_width(label, kofi) for label, _, kofi in links])
+        buttons = []
+        for (label, url, kofi), width in zip(links, widths):
+            buttons.append(ui.Button(
+                row, PANEL_BG,
+                lambda hover, label=label, width=width, kofi=kofi:
+                    self.paint_pill(label, hover, width=width, heart=kofi),
+                lambda url=url: webbrowser.open(url)))
+        self.pack_row(buttons)
 
         body = self.section(tab)
         self.caption(body, "UPDATES").pack(anchor="w")
@@ -312,6 +325,30 @@ class App:
         body = tk.Frame(tab, bg=PANEL_BG)
         body.pack(padx=k.px(28), pady=(0, k.px(18)), anchor="w")
         return body
+
+    @staticmethod
+    def fill_widths(naturals, gap=8):
+        """Widths (layout units) that stretch buttons to span the full row:
+        the spare room is shared out and the last one takes the remainder."""
+        extra = max(CARD_WIDTH - sum(naturals) - gap * (len(naturals) - 1), 0)
+        share = extra // len(naturals)
+        widths = [int(width) + share for width in naturals]
+        widths[-1] = CARD_WIDTH - gap * (len(naturals) - 1) - sum(widths[:-1])
+        return widths
+
+    def pack_row(self, buttons, gap=8):
+        """Packs buttons side by side, gap between them and none at the end."""
+        for index, button in enumerate(buttons):
+            button.pack(side="left",
+                        padx=(0, 0 if index == len(buttons) - 1 else self.kit.px(gap)))
+
+    def spread_row(self, buttons):
+        """Fixed-size buttons spaced evenly from edge to edge of the row."""
+        room = self.kit.px(CARD_WIDTH) - sum(button.winfo_reqwidth() for button in buttons)
+        gaps = len(buttons) - 1
+        for index, button in enumerate(buttons):
+            gap = room // gaps + (1 if index < room % gaps else 0) if index < gaps else 0
+            button.pack(side="left", padx=(0, gap))
 
     def caption(self, parent, text):
         picture = ui.Picture(parent, PANEL_BG)
@@ -367,9 +404,9 @@ class App:
                    dial.label_ink(self.accent(self.mode)), 0.8)
         return image
 
-    def paint_orientation(self, value, hover):
+    def paint_orientation(self, value, hover, width=64):
         k = self.kit
-        width, height = 64, 32
+        height = 32
         image = k.canvas(width, height, PANEL_BG)
         if value == self.settings["orientation"]:
             k.rounded(image, (0, 0, width, height), 9, ui.INK)
@@ -408,10 +445,10 @@ class App:
         k.text(image, 0, (height - 3) / 2, label, "semibold" if active else "device", 10, ink)
         return image
 
-    def paint_accent_choice(self, key, hover):
+    def paint_accent_choice(self, key, hover, width=140):
         """"Standard" keeps a colour per control; "Custom" opens a colour picker."""
         k = self.kit
-        width, height = 140, 36
+        height = 36
         image = k.canvas(width, height, PANEL_BG)
         accent = self.settings["accent"]
         if key == "standard":
@@ -453,9 +490,9 @@ class App:
         k.dot(image, c, c, 11.5, colour)
         return image
 
-    def paint_number_size(self, size, hover):
+    def paint_number_size(self, size, hover, width=76):
         k = self.kit
-        width, height = 76, 56
+        height = 56
         image = k.canvas(width, height, PANEL_BG)
         if size == self.settings["number_size"]:
             k.rounded(image, (0, 0, width, height), 10, ui.INK)
@@ -486,10 +523,13 @@ class App:
         k.dot(image, x0 + (32 if on else 12), height / 2, 9, "#FFFFFF")
         return image
 
-    def paint_pill(self, label, hover, primary=False, enabled=True):
+    def pill_width(self, label, heart=False):
+        width = self.kit.font("semibold", 9.5).getlength(label) / self.kit.scale + 28
+        return round(width + (16 if heart else 0))
+
+    def paint_pill(self, label, hover, primary=False, enabled=True, width=None, heart=False):
         k = self.kit
-        font = k.font("semibold", 9.5)
-        width, height = round(font.getlength(label) / k.scale) + 28, 30
+        width, height = width or self.pill_width(label, heart), 30
         image = k.canvas(width, height, PANEL_BG)
         if primary and enabled:
             fill = dial.label_ink(self.accent(self.mode)) if hover else ui.INK
@@ -499,8 +539,32 @@ class App:
             k.rounded(image, (0, 0, width, height), 15,
                       "#FFFFFF" if hover and enabled else ui.CARD_BG, ui.CARD_EDGE)
             ink = ui.INK if enabled else ui.MUTED_INK
-        k.text(image, width / 2, height / 2, label, "semibold", 9.5, ink, anchor="mm")
+        if heart:
+            text = k.font("semibold", 9.5).getlength(label) / k.scale
+            left = (width - text - 16) / 2
+            self.paint_heart(image, left + 5, height / 2, KOFI_RED)
+            k.text(image, left + 16, height / 2, label, "semibold", 9.5, ink)
+        else:
+            k.text(image, width / 2, height / 2, label, "semibold", 9.5, ink, anchor="mm")
         return image
+
+    def paint_heart(self, image, x, y, colour):
+        """A small heart from two dots and a triangle (layout units)."""
+        k = self.kit
+        k.dot(image, x - 2.6, y - 1.6, 3, colour)
+        k.dot(image, x + 2.6, y - 1.6, 3, colour)
+        scale = 4
+        size = k.px(12) * scale
+        mask = Image.new("L", (size, size), 0)
+        c = size / 2
+        r = k.px(3) * scale
+        ImageDraw.Draw(mask).polygon(
+            [(c - 2 * r * 0.93, c - k.px(1.6) * scale + r * 0.37),
+             (c + 2 * r * 0.93, c - k.px(1.6) * scale + r * 0.37),
+             (c, c + k.px(4.6) * scale)], fill=255)
+        mask = mask.resize((size // scale, size // scale), Image.LANCZOS)
+        image.paste(Image.new("RGB", mask.size, ui.rgb(colour)),
+                    (round(k.px(x) - mask.width / 2), round(k.px(y) - mask.height / 2)), mask)
 
     def paint_about_header(self):
         k = self.kit
@@ -791,24 +855,31 @@ class App:
         if self.app_update_available():
             actions.insert(0, ("Update app", lambda: webbrowser.open(self.release["url"]),
                                True, True))
-        # Wraps onto a second line when the buttons don't fit side by side.
-        room = self.kit.px(CARD_WIDTH)
-        line, used = None, room
-        for label, command, primary, enabled in actions:
-            width = self.paint_pill(label, False).width + self.kit.px(8)
-            if used + width > room + self.kit.px(8):
-                line = tk.Frame(self.about_actions, bg=PANEL_BG)
-                line.pack(anchor="w", pady=(0 if used == room else self.kit.px(8), 0))
-                used = 0
-            used += width
-            button = ui.Button(
-                line, PANEL_BG,
-                lambda hover, label=label, primary=primary, enabled=enabled:
-                    self.paint_pill(label, hover, primary, enabled),
-                (command if enabled else (lambda: None)))
-            if not enabled:
-                button.config(cursor="arrow")
-            button.pack(side="left", padx=(0, self.kit.px(8)))
+        # Wraps onto a second line when the buttons don't fit side by side;
+        # each line is stretched to span the full width.
+        lines, used = [], CARD_WIDTH + 1
+        for action in actions:
+            width = self.pill_width(action[0])
+            if used + 8 + width > CARD_WIDTH:
+                lines.append([])
+                used = -8
+            lines[-1].append(action)
+            used += 8 + width
+        for number, line_actions in enumerate(lines):
+            line = tk.Frame(self.about_actions, bg=PANEL_BG)
+            line.pack(anchor="w", pady=(self.kit.px(8) if number else 0, 0))
+            widths = self.fill_widths([self.pill_width(action[0]) for action in line_actions])
+            buttons = []
+            for (label, command, primary, enabled), width in zip(line_actions, widths):
+                button = ui.Button(
+                    line, PANEL_BG,
+                    lambda hover, label=label, primary=primary, enabled=enabled, width=width:
+                        self.paint_pill(label, hover, primary, enabled, width),
+                    (command if enabled else (lambda: None)))
+                if not enabled:
+                    button.config(cursor="arrow")
+                buttons.append(button)
+            self.pack_row(buttons)
         if self.page == "settings" and self.settings_tab == "about":
             self.fit_window()
 

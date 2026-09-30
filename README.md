@@ -6,6 +6,7 @@ brightness and media controller for Windows.**
 [![CI](https://github.com/guilhermelimait/Revo1/actions/workflows/ci.yml/badge.svg)](https://github.com/guilhermelimait/Revo1/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 ![Windows](https://img.shields.io/badge/platform-Windows%2010%20%7C%2011-0078D6)
+[![Ko-fi](https://img.shields.io/badge/Ko--fi-support-FF5E5B?logo=ko-fi&logoColor=white)](https://ko-fi.com/guilhermelimait)
 
 Revo1 is custom firmware for the
 [Waveshare ESP32-S3-Knob-Touch-LCD-1.8](https://www.waveshare.com/wiki/ESP32-S3-Knob-Touch-LCD-1.8)
@@ -124,14 +125,16 @@ Pick a control in the left sidebar. **Settings** has four tabs:
   area** to hide Revo1 next to the clock when you minimise it (click the
   icon to bring it back, right-click for **Quit**). When it's on, the
   start-at-sign-in shortcut starts it there too.
-- **About:** the app version, the firmware version on the knob, and the
-  latest release on GitHub. When the release has newer firmware than the
-  knob, **Update firmware** downloads and flashes it (the first time it also
-  downloads Espressif's standalone `esptool`, about 65 MB); keep the cable
-  plugged in until it says it's done. **Install from file...** flashes a
+- **About:** links to GitHub, the releases, the licence and Ko-fi; the app
+  version, the firmware version on the knob, and the latest release on
+  GitHub. When the release has newer firmware than the knob, **Update
+  firmware** downloads and flashes it (the first time it also downloads
+  Espressif's standalone `esptool`, about 65 MB); keep the cable plugged in
+  until it says it's done. **Install from file...** flashes a
   `revo1-firmware-x.y.z.bin` you downloaded or built yourself; it's always
   there while a knob is connected, and it refuses files that aren't a Revo1
-  image. **Update app** opens the release page when there's a newer installer.
+  image. **Update app** opens the release page when there's a newer
+  installer.
 
 Settings are saved in `%LOCALAPPDATA%\Revo1\settings.json` straight
 away. The knob also remembers its last control, orientation, colour and
@@ -225,6 +228,12 @@ Each knob detent sends exactly one step. The encoder is not a quadrature
 encoder and emits two pulses per detent, which the firmware divides down; see
 `firmware\README.md` for the details.
 
+
+## Support
+
+If Revo1 is useful to you, you can buy me a coffee on
+[Ko-fi](https://ko-fi.com/guilhermelimait). The link is also in the app under
+**Settings > About**.
 
 ## Licence
 

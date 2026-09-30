@@ -18,6 +18,7 @@ from revo1 import __version__
 REPOSITORY = "guilhermelimait/Revo1"
 PROJECT_URL = f"https://github.com/{REPOSITORY}"
 RELEASES_URL = f"{PROJECT_URL}/releases"
+KOFI_URL = "https://ko-fi.com/guilhermelimait"
 LATEST_API = f"https://api.github.com/repos/{REPOSITORY}/releases/latest"
 FIRMWARE_ASSET = re.compile(r"^revo1-firmware-.*\.bin$", re.IGNORECASE)
 # Espressif's standalone build: esptool is GPL-2.0, so it runs as a separate
