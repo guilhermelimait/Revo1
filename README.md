@@ -149,7 +149,8 @@ once the knob answers.
 **On the device**
 
 - **Turn** the knob to change the current control.
-- **Swipe** left or right to switch to the next or previous control.
+- **Swipe** left or right to switch to the next or previous control (you can
+  turn this off in **Settings > Controls**).
 - **Tap the back arrow** at the top (or the centre) to open the menu. Turn to
   move the highlight, then tap to confirm, or tap an icon directly.
 - On the **Pomodoro** screen, tap the dial to start or pause the timer.
@@ -188,7 +189,9 @@ in the left sidebar.
   **Automatic**).
 - **Controls:** the screen orientation (0, 90, 180 or 270 degrees) and
   **Knob direction**: **Invert scroll** and **Invert zoom** swap what a
-  clockwise turn does (the comet on the dial still follows your hand).
+  clockwise turn does (the comet on the dial still follows your hand). Under
+  **Touch**, **Swipe between screens** turns the left/right swipe on the knob
+  on or off.
 - **Interface:** **Standard** colours (one per control), a swatch, or
   **Custom...** for any single bar colour; and the number size (Small, Medium,
   Large or X-Large). Under **Window**, turn on **Minimise to the notification
@@ -293,6 +296,7 @@ USB serial: 115200 baud, ASCII lines terminated by `\n`.
 | PC to device | `PLAY,<0\|1\|2>,<position s>,<duration s>` | Playback state (0 stopped, 1 playing, 2 paused) |
 | PC to device | `SCREENS,<mask>` | Screens shown on the knob (bit n = mode n); answered by `SCREENS_OK,<mask>` |
 | PC to device | `BACKLIGHT,<1..100>` | Backlight percent; answered by `BACKLIGHT_OK,<percent>` |
+| PC to device | `SWIPES,0` or `SWIPES,1` | Turn swiping between screens off or on; answered by `SWIPES_OK,<0 or 1>` |
 | PC to device | `POMO,<0 focus\|1 break>,<remaining s>,<total s>,<0\|1 running>` | Pomodoro state |
 | Device to PC | `POMO,TOGGLE` | Pomodoro dial tapped |
 | PC to device | `SAVER,<0\|1>,<idle s>,<seconds per item>` | Screensaver settings; answered by `SAVER_OK` |

@@ -66,7 +66,7 @@ LVGL 8.4 and the panel driver are declared in `main\idf_component.yml`.
 The native USB Serial/JTAG console runs at 115200 baud and implements the
 `HELLO,REVO1,1`, `VERSION`, `SYNC`, `ROT`, `MENU`, `CURSOR`, `TAP`, `SWIPE`, `MEDIA`, `STATE`,
 `SHOWMENU`, `COMETRESET`, `STYLE`, `TRACK`, `ARTIST`, `PLAY`, `SCREENS`,
-`BACKLIGHT`, `POMO`, `SAVER`, `LIBRARY` and media upload lines used by
+`BACKLIGHT`, `SWIPES`, `POMO`, `SAVER`, `LIBRARY` and media upload lines used by
 `revo1\bridge.py`. The menu has one sector per enabled screen (`SCREENS`
 mask), in the host mode order; `CURSOR` and `TAP` report the mode index, not
 the sector.
@@ -189,7 +189,7 @@ this.
 The last mode, orientation, bar colour and number size are kept in NVS
 (namespace `revo1`: `mode`, `orient`, `numsize`, `accent`, with
 `0xFFFFFFFF` meaning standard colours), together with the enabled screens
-(`screens`), backlight (`light`) and screensaver settings (`saver`, `idle`,
+(`screens`), backlight (`light`), swipe switch (`swipe`) and screensaver settings (`saver`, `idle`,
 `every`). `load_settings` reads them before the
 display starts, so a restarted knob comes back in the same view and the same
 orientation even when the PC app isn't running. `save_settings` runs after

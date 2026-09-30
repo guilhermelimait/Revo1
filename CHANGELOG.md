@@ -24,7 +24,8 @@ First public release.
 - Screen backlight slider in **Settings > Device** (`BACKLIGHT`).
 - Settings: device name, automatic device detection, screen orientation,
   bar colour (standard, preset or custom), number size, and separate
-  **Invert scroll** / **Invert zoom** switches for the knob direction.
+  **Invert scroll** / **Invert zoom** switches for the knob direction, and a
+  **Swipe between screens** switch to turn off swiping on the knob (`SWIPES`).
 - Optional minimise to the notification area (tray), also used when started
   at sign-in.
 - About page: app and firmware versions, the latest GitHub release, and a

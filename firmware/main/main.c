@@ -132,6 +132,8 @@ static const uint8_t mode_accents[MODE_COUNT][3] = {
 /* The screens the menu offers, chosen on the app's dashboard: bit n is
    mode n. The menu ring is split evenly between them. */
 static uint8_t screen_mask = ALL_SCREENS;
+/* Left/right swipes step between screens unless the app turns them off. */
+static bool swipe_enabled = true;
 
 static inline bool screen_enabled(int mode)
 {
@@ -313,6 +315,7 @@ typedef struct {
     uint8_t saver;
     uint16_t idle_s;
     uint16_t interval_s;
+    uint8_t swipe;
 } stored_settings_t;
 
 static bool settings_ready;
@@ -332,6 +335,7 @@ static stored_settings_t current_settings(void)
         .saver = saver_enabled,
         .idle_s = (uint16_t)saver_idle_s,
         .interval_s = (uint16_t)saver_interval_s,
+        .swipe = swipe_enabled,
     };
     static const int sizes[] = {24, 32, 40, 48};
     for (size_t index = 0; index < sizeof(sizes) / sizeof(sizes[0]); index++) {
@@ -346,7 +350,7 @@ static bool same_settings(const stored_settings_t *a, const stored_settings_t *b
            a->number_size == b->number_size && a->accent == b->accent &&
            a->screens == b->screens && a->backlight == b->backlight &&
            a->saver == b->saver && a->idle_s == b->idle_s &&
-           a->interval_s == b->interval_s;
+           a->interval_s == b->interval_s && a->swipe == b->swipe;
 }
 
 static void load_settings(void)
@@ -390,6 +394,7 @@ static void load_settings(void)
         if (nvs_get_u8(handle, "saver", &byte) == ESP_OK) saver_enabled = byte != 0;
         if (nvs_get_u16(handle, "idle", &word) == ESP_OK && word >= 10) saver_idle_s = word;
         if (nvs_get_u16(handle, "every", &word) == ESP_OK && word >= 1) saver_interval_s = word;
+        if (nvs_get_u8(handle, "swipe", &byte) == ESP_OK) swipe_enabled = byte != 0;
         nvs_close(handle);
     }
     saved_settings = current_settings();
@@ -412,6 +417,7 @@ static void save_settings(void)
                     nvs_set_u8(handle, "saver", settings.saver) == ESP_OK &&
                     nvs_set_u16(handle, "idle", settings.idle_s) == ESP_OK &&
                     nvs_set_u16(handle, "every", settings.interval_s) == ESP_OK &&
+                    nvs_set_u8(handle, "swipe", settings.swipe) == ESP_OK &&
                     nvs_commit(handle) == ESP_OK;
     nvs_close(handle);
     if (ok) saved_settings = settings;
@@ -1707,6 +1713,15 @@ static void handle_command(char *line)
         return;
     }
 
+    if (strncmp(line, "SWIPES,", 7) == 0) {
+        int enabled;
+        if (!parse_integer(line + 7, 0, 1, &enabled)) return;
+        swipe_enabled = enabled;
+        save_settings();
+        printf("SWIPES_OK,%d\n", enabled);
+        return;
+    }
+
     if (strncmp(line, "BACKLIGHT,", 10) == 0) {
         int percent;
         if (!parse_integer(line + 10, 5, 100, &percent)) return;
@@ -1875,6 +1890,8 @@ static void send_touch_event(void)
     const int delta_x = (int)touch_x - touch_start_x;
     const int delta_y = (int)touch_y - touch_start_y;
     if (abs(delta_x) > 55 && abs(delta_x) > abs(delta_y)) {
+        /* With swipes off a sideways drag does nothing, not even a tap. */
+        if (!swipe_enabled) return;
         const char *direction = delta_x < 0 ? "LEFT" : "RIGHT";
         selected_mode = step_screen(selected_mode, delta_x < 0 ? 1 : -1);
         show_menu = false;

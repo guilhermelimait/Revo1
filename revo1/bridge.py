@@ -92,6 +92,9 @@ class DeviceBridge:
         self.outbound.put(f"POMO,{int(phase)},{int(remaining)},{int(total)},"
                           f"{int(bool(running))}\n".encode("ascii"))
 
+    def send_swipes(self, enabled):
+        self.outbound.put(f"SWIPES,{int(bool(enabled))}\n".encode("ascii"))
+
     def send_backlight(self, percent):
         self.outbound.put(f"BACKLIGHT,{int(percent)}\n".encode("ascii"))
 

@@ -12,11 +12,12 @@ STANDARD_ACCENT = "standard"
 NUMBER_SIZES = (24, 32, 40, 48)
 DEFAULTS = {"mode": "Volume", "orientation": 0, "port": "", "name": DEFAULT_NAME,
             "accent": STANDARD_ACCENT, "number_size": 32, "minimize_to_tray": False,
-            "invert_scroll": False, "invert_zoom": False,
+            "invert_scroll": False, "invert_zoom": False, "swipe_screens": True,
             "screens": list(MODES), "backlight": 100,
             "focus_minutes": 25, "break_minutes": 5,
             "saver_enabled": False, "saver_idle": 5, "saver_interval": 30}
-FLAGS = ("minimize_to_tray", "invert_scroll", "invert_zoom", "saver_enabled")
+FLAGS = ("minimize_to_tray", "invert_scroll", "invert_zoom", "swipe_screens",
+         "saver_enabled")
 # Screensaver: minutes without touching the knob, and seconds per picture.
 SAVER_IDLE_CHOICES = (1, 2, 5, 10, 30)
 SAVER_INTERVAL_CHOICES = (10, 30, 60, 300)
@@ -63,7 +64,7 @@ def load(path=None):
     name = data.get("name", DEFAULT_NAME)
     accent = data.get("accent", STANDARD_ACCENT)
     number_size = data.get("number_size", 32)
-    flags = {key: data.get(key, False) for key in FLAGS}
+    flags = {key: data.get(key, DEFAULTS[key]) for key in FLAGS}
     screens = data.get("screens", list(MODES))
     numbers = {key: data.get(key, DEFAULTS[key])
                for key in ("backlight", "focus_minutes", "break_minutes",

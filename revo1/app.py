@@ -303,6 +303,16 @@ class App(DashboardPage, ScreensaverPage):
             toggle.pack(anchor="w", pady=(k.px(6), 0))
             self.invert_toggles.append(toggle)
 
+        body = self.section(tab)
+        self.caption(body, "TOUCH").pack(anchor="w")
+        toggle = ui.Button(body, PANEL_BG,
+                           lambda hover: self.paint_toggle(
+                               self.settings["swipe_screens"], "Swipe between screens",
+                               "Swipe left or right on the knob to change screen", hover),
+                           lambda: self.toggle_setting("swipe_screens"))
+        toggle.pack(anchor="w", pady=(k.px(6), 0))
+        self.invert_toggles.append(toggle)
+
     def build_interface_tab(self, tab):
         k = self.kit
         body = self.section(tab)
@@ -924,6 +934,8 @@ class App(DashboardPage, ScreensaverPage):
             toggle.refresh()
         if key == "saver_enabled":
             self.push_saver()
+        elif key == "swipe_screens" and self.connected:
+            self.bridge.send_swipes(self.settings["swipe_screens"])
 
     def on_unmap(self, event):
         if (event.widget is self.root and self.tray and self.settings["minimize_to_tray"]
@@ -1456,6 +1468,7 @@ class App(DashboardPage, ScreensaverPage):
         self.bridge.send_style(self.settings["accent"], self.settings["number_size"])
         self.bridge.send_screens(config.screen_mask(self.settings["screens"]))
         self.bridge.send_backlight(self.settings["backlight"])
+        self.bridge.send_swipes(self.settings["swipe_screens"])
         self.push_saver()
         self.push_pomodoro()
         self.bridge.request_library()

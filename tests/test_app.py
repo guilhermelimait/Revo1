@@ -327,6 +327,23 @@ class AppTests(unittest.TestCase):
             self.assertIn("offline", app.upload_state[1])
             app.close()
 
+    def test_swipes_can_be_switched_off_on_the_knob(self):
+        root = tk.Tk()
+        root.withdraw()
+        saved = {"mode": "Volume", "orientation": 0, "port": ""}
+        with patch("revo1.app.config.load", return_value=saved), \
+             patch("revo1.app.config.save"), \
+             patch("revo1.app.DeviceBridge"), \
+             patch("revo1.app.controls.volume_level", return_value=60):
+            app = App(root)
+            app.events.put(("hello", "COM9"))
+            app.poll()
+            app.bridge.send_swipes.assert_called_with(True)
+            app.toggle_setting("swipe_screens")
+            self.assertFalse(saved["swipe_screens"])
+            app.bridge.send_swipes.assert_called_with(False)
+            app.close()
+
     def test_menu_has_one_slot_per_screen(self):
         root = tk.Tk()
         root.withdraw()
