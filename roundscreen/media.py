@@ -5,11 +5,11 @@ import threading
 import unicodedata
 
 try:
-    from winsdk.windows.media.control import (
+    from winrt.windows.media.control import (
         GlobalSystemMediaTransportControlsSessionManager as SessionManager,
         GlobalSystemMediaTransportControlsSessionPlaybackStatus as PlaybackStatus,
     )
-except ImportError:  # pragma: no cover - winsdk is Windows only
+except ImportError:  # pragma: no cover - the WinRT projection is Windows only
     SessionManager = None
     PlaybackStatus = None
 
@@ -41,7 +41,7 @@ def clean(text):
 
 
 class MediaSession:
-    """Serialises winsdk calls onto one private event loop.
+    """Serialises WinRT calls onto one private event loop.
 
     The Windows Runtime projection wants an asyncio loop, and the app polls
     from a worker thread, so the loop lives on a thread of its own.

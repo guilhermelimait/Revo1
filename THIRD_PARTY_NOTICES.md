@@ -13,7 +13,9 @@ builds on the following third-party work, which keeps its own licence.
 | SH8601 panel initialisation table and board pin mapping | `firmware/main/panel_init.inc`, `firmware/main/main.c` | Adapted from Waveshare's [ESP32-S3-Knob-Touch-LCD-1.8 demo](https://www.waveshare.com/wiki/ESP32-S3-Knob-Touch-LCD-1.8) |
 | [pyserial](https://github.com/pyserial/pyserial) | Python dependency | BSD-3-Clause |
 | [pycaw](https://github.com/AndreMiras/pycaw) | Python dependency | MIT |
-| [winsdk](https://github.com/pywinrt/python-winsdk) | Python dependency | MIT |
+| [PyWinRT](https://github.com/pywinrt/pywinrt) (`winrt-*`) | Python dependency | MIT |
+| [PyInstaller](https://pyinstaller.org) bootloader | `RoundScreen.exe` | GPL-2.0 with an exception that allows distributing the bundled app under any licence |
+| [Python](https://www.python.org) runtime and Tcl/Tk | bundled in `RoundScreen.exe` | PSF License, Tcl/Tk License |
 | [NumPy](https://numpy.org) | Python dependency | BSD-3-Clause |
 | [Pillow](https://python-pillow.org) | Python dependency | MIT-CMU |
 

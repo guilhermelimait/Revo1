@@ -13,6 +13,7 @@ firmware/sdkconfig.old
 
 # Release artefacts and flash dumps (a dump contains the vendor's firmware)
 dist/
+build/
 backups/
 *.bin
 *.elf

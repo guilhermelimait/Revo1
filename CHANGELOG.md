@@ -14,5 +14,10 @@ First public release.
 - Settings: device name, automatic device detection, screen orientation,
   bar colour (standard, preset or custom) and number size.
 - Accented letters in song titles are shown without accents instead of "?".
-- `install.ps1` for the app and `scripts/flash-firmware.ps1` for flashing,
-  with an automatic backup of the stock firmware.
+- `RoundScreen-Setup.exe`: a per-user Windows installer with Python bundled,
+  its own icon, a Start Menu entry, an optional start at sign-in, and an
+  uninstaller in Apps & features. Built by GitHub Actions for every release.
+- `scripts/flash-firmware.ps1` for flashing, with an automatic backup of the
+  stock firmware.
+- Media control uses the maintained PyWinRT packages (`winrt-*`) instead of
+  `winsdk`, so running from source works on Python 3.10 and newer.

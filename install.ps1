@@ -1,7 +1,8 @@
 $ErrorActionPreference = "Stop"
 $project = $PSScriptRoot
-# winsdk (Windows media controls) ships wheels for Python 3.10 to 3.12 only.
-$supported = "3.12", "3.11", "3.10"
+# Runs RoundScreen from source. Most people should use RoundScreen-Setup.exe
+# from the GitHub releases instead, which needs no Python.
+$supported = "3.14", "3.13", "3.12", "3.11", "3.10"
 $python = $null
 if (Get-Command py.exe -ErrorAction SilentlyContinue) {
     foreach ($version in $supported) {
@@ -17,7 +18,7 @@ if (-not $python) {
     }
 }
 if (-not $python) {
-    throw "RoundScreen needs Python 3.10, 3.11 or 3.12 (64-bit) from python.org. Install one and run this script again."
+    throw "Running from source needs Python 3.10 or newer from python.org. Install it and run this script again."
 }
 Write-Host "Using $python"
 $pythonw = Join-Path (Split-Path $python) "pythonw.exe"

@@ -51,6 +51,10 @@ class App:
         self.media_pending = False
 
         root.title("RoundScreen")
+        try:
+            root.iconbitmap(default=str(ui.ICON_FILE))
+        except tk.TclError:
+            pass
         self.scale = root.winfo_fpixels("1i") / 96.0
         self.kit = ui.Kit(self.scale)
         size = f"{self.kit.px(SIDEBAR_WIDTH + MAIN_WIDTH)}x{self.kit.px(WINDOW_HEIGHT)}"
@@ -906,6 +910,10 @@ def main():
         # Without this Windows bitmap-stretches the window on scaled displays
         # and the dial turns soft.
         ctypes.windll.shcore.SetProcessDpiAwareness(1)
+    except (AttributeError, OSError):
+        pass
+    try:
+        ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID(ui.APP_ID)
     except (AttributeError, OSError):
         pass
     ui.register_fonts()

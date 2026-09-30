@@ -15,6 +15,10 @@ from roundscreen import icons
 # LVGL converted (lvgl/scripts/built_in_font/Montserrat-Medium.ttf), used for
 # everything drawn on the dial. SIL Open Font License 1.1, see fonts/OFL.txt.
 FONT_DIR = Path(__file__).with_name("fonts")
+ICON_FILE = Path(__file__).with_name("assets") / "roundscreen.ico"
+# Groups the window with its Start Menu shortcut on the taskbar (the installer
+# gives the shortcut the same ID).
+APP_ID = "guilhermelimait.RoundScreen"
 FONT_FILES = {
     "regular": FONT_DIR / "Montserrat-Regular.ttf",
     "device": FONT_DIR / "Montserrat-Medium.ttf",

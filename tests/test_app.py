@@ -176,7 +176,7 @@ class AppTests(unittest.TestCase):
     def test_dial_text_uses_the_devices_own_font_file(self):
         lvgl = (Path(__file__).parents[1] / "firmware" / "managed_components" / "lvgl__lvgl"
                 / "scripts" / "built_in_font" / "Montserrat-Medium.ttf")
-        for path in ui.FONT_FILES.values():
+        for path in list(ui.FONT_FILES.values()) + [ui.ICON_FILE]:
             self.assertTrue(path.is_file(), path)
         if lvgl.is_file():
             self.assertEqual(ui.FONT_FILES["device"].read_bytes(), lvgl.read_bytes())

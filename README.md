@@ -34,25 +34,38 @@ sync as you turn the knob.
 - **Personalise it:** one colour per control or a single colour of your
   choice, four sizes for the big number, and screen orientation in 90 degree
   steps.
-- **Remembers everything** between runs and starts with Windows.
+- **A real Windows app:** a one-click installer, Start Menu entry, optional
+  start at sign-in, and a clean uninstall. It remembers all settings between
+  runs.
 
 ## What you need
 
 - A **Waveshare ESP32-S3-Knob-Touch-LCD-1.8** and a USB-C data cable.
-- **Windows 10 or 11.**
-- **Python 3.10, 3.11 or 3.12** (64-bit, from [python.org](https://www.python.org/downloads/)).
-  Python 3.13 and newer are not supported yet, because the Windows media
-  library RoundScreen uses (`winsdk`) has no packages for them.
+- **Windows 10 or 11** (x64 or ARM64). Nothing else: Python is bundled.
 
 ## Get started
 
-### 1. Download
+### 1. Install the app
 
-Download this repository (**Code > Download ZIP**, or `git clone`), and
-download `roundscreen-firmware-<version>.bin` from the
-[latest release](https://github.com/guilhermelimait/RoundScreen/releases/latest).
+Download **`RoundScreen-Setup-<version>.exe`** from the
+[latest release](https://github.com/guilhermelimait/RoundScreen/releases/latest)
+and run it. (On a Windows on ARM PC, `RoundScreen-Setup-<version>-arm64.exe`
+is the native build; the regular one works too.)
 
-### 2. Flash the firmware
+- It installs for your user only, so no administrator prompt, into
+  `%LOCALAPPDATA%\Programs\RoundScreen`.
+- It adds **RoundScreen** to the Start Menu and, if you keep the box ticked,
+  starts it when you sign in.
+- Installing a newer version over it closes the running app and keeps your
+  settings. Remove it any time from **Settings > Apps > Installed apps**.
+
+The installer is not code-signed yet, so Windows SmartScreen may say
+"Windows protected your PC". Click **More info > Run anyway**.
+
+### 2. Flash the firmware (once)
+
+Download `roundscreen-firmware-<version>.bin` from the same release, and this
+repository (**Code > Download ZIP**) for the flashing script.
 
 The knob's single USB-C socket reaches a **different chip depending on which
 way round the plug is inserted**. RoundScreen needs the ESP32-S3, which
@@ -65,8 +78,9 @@ In PowerShell, in the downloaded folder:
 powershell -ExecutionPolicy Bypass -File .\scripts\flash-firmware.ps1 -Firmware <path to roundscreen-firmware-*.bin>
 ```
 
-The script installs `esptool`, finds the device, **saves a full backup of
-the current flash** to `backups\` the first time, and then writes RoundScreen.
+The script finds the device, downloads Espressif's standalone `esptool` the
+first time (no Python needed), **saves a full backup of the current flash** to
+`backups\` before the first RoundScreen flash, and then writes RoundScreen.
 To go back to the original Waveshare firmware later:
 
 ```powershell
@@ -76,16 +90,8 @@ powershell -ExecutionPolicy Bypass -File .\scripts\flash-firmware.ps1 -Restore .
 (Use your own backup file name. Keep it: it is the only copy of the stock
 firmware.)
 
-### 3. Install the app
-
-```powershell
-powershell -ExecutionPolicy Bypass -File .\install.ps1
-```
-
-This installs the Python packages, adds **RoundScreen** to the Start Menu, and
-starts it when you sign in to Windows. The shortcuts point to this folder, so
-keep it where it is. Launch RoundScreen from the Start Menu: the sidebar shows
-**Connected** once the knob answers.
+Then start RoundScreen from the Start Menu: the sidebar shows **Connected**
+once the knob answers.
 
 ## Using it
 
@@ -142,11 +148,23 @@ never overwritten with old saved values.
 
 ## Development
 
+Needs Python 3.10 or newer.
+
 ```powershell
 python -m pip install -r requirements.txt
-python -m roundscreen.app                    # run from source
+python -m roundscreen                        # run from source
 python -m unittest discover -s tests -v      # tests
+.\packaging\build.ps1                         # RoundScreen.exe + installer in dist\
 ```
+
+- `install.ps1` sets up a from-source copy with Start Menu and sign-in
+  shortcuts, for development.
+- `packaging/build.ps1` bundles the app with PyInstaller
+  (`packaging/RoundScreen.spec`) and wraps it with
+  [Inno Setup 6](https://jrsoftware.org/isinfo.php)
+  (`packaging/RoundScreen.iss`). The installer matches the architecture of the
+  Python that builds it. `packaging/make_icon.py` regenerates the app icon
+  from the dial renderer.
 
 - `roundscreen/` is the Windows app (Tk + Pillow). `dial.py` is a Python copy
   of the firmware's dial renderer, so the window matches the screen pixel for
@@ -154,8 +172,10 @@ python -m unittest discover -s tests -v      # tests
 - `firmware/` is the ESP-IDF / PlatformIO project; see
   [firmware/README.md](firmware/README.md) for how to build it and how the
   renderer, encoder and touch handling work.
-- GitHub Actions runs the tests and builds the firmware on every push. Pushing
-  a `v*` tag publishes a release with the merged firmware image.
+- GitHub Actions runs the tests and builds the installers and the firmware on
+  every push. Pushing a `v*` tag publishes a release with
+  `RoundScreen-Setup-<version>.exe`, the ARM64 installer and the merged
+  firmware image.
 
 ## Protocol
 
