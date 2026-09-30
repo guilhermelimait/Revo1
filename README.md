@@ -110,11 +110,12 @@ The knob has no push button.
 **In the app**
 
 The dial in the window mirrors the device and accepts clicks the same way.
-Pick a control in the left sidebar. **Settings** has three tabs:
+Pick a control in the left sidebar. **Settings** has four tabs:
 
-- **Device:** the name shown in the sidebar, the list of connected knobs
+- **Device:** the name shown in the sidebar and the list of connected knobs
   (refreshed automatically every two seconds; pick one or leave it on
-  **Automatic**), the screen orientation (0, 90, 180 or 270 degrees), and
+  **Automatic**).
+- **Controls:** the screen orientation (0, 90, 180 or 270 degrees) and
   **Knob direction**: **Invert scroll** and **Invert zoom** swap what a
   clockwise turn does (the comet on the dial still follows your hand).
 - **Interface:** **Standard** colours (one per control), a swatch, or

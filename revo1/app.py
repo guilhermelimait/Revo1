@@ -31,7 +31,8 @@ CARD_WIDTH = MAIN_WIDTH - 56
 DEVICE_ROW_HEIGHT = 36
 DEVICE_SCAN_MS = 2000
 NUMBER_LABELS = {24: "Small", 32: "Medium", 40: "Large", 48: "X-Large"}
-SETTINGS_TABS = (("device", "Device"), ("interface", "Interface"), ("about", "About"))
+SETTINGS_TABS = (("device", "Device"), ("controls", "Controls"), ("interface", "Interface"),
+                 ("about", "About"))
 # How long a release check stays fresh before the About tab asks GitHub again.
 RELEASE_CHECK_S = 30 * 60
 
@@ -178,6 +179,7 @@ class App:
 
         self.tabs = {key: tk.Frame(page, bg=ui.MAIN_BG) for key, _ in SETTINGS_TABS}
         self.build_device_tab(self.tabs["device"])
+        self.build_controls_tab(self.tabs["controls"])
         self.build_interface_tab(self.tabs["interface"])
         self.build_about_tab(self.tabs["about"])
         self.settings_page = page
@@ -204,8 +206,10 @@ class App:
         self.device_list = tk.Frame(body, bg=ui.CARD_BG)
         self.device_list.pack(fill="x")
 
+    def build_controls_tab(self, tab):
+        k = self.kit
         card = ui.Card(tab, k, CARD_WIDTH, ui.MAIN_BG)
-        card.pack(padx=k.px(28), pady=(k.px(12), k.px(20)), anchor="w")
+        card.pack(padx=k.px(28), anchor="w")
         body = card.body
         self.caption(body, "SCREEN ORIENTATION").pack(anchor="w")
         row = tk.Frame(body, bg=ui.CARD_BG)
@@ -219,7 +223,7 @@ class App:
             self.orientation_buttons.append(button)
 
         card = ui.Card(tab, k, CARD_WIDTH, ui.MAIN_BG)
-        card.pack(padx=k.px(28), pady=(0, k.px(20)), anchor="w")
+        card.pack(padx=k.px(28), pady=(k.px(12), k.px(20)), anchor="w")
         body = card.body
         self.caption(body, "KNOB DIRECTION").pack(anchor="w")
         self.invert_toggles = []
@@ -379,7 +383,8 @@ class App:
 
     def paint_tab(self, key, label, hover):
         k = self.kit
-        width, height = 100, 32
+        # The row of tabs spans the card width, however many tabs there are.
+        width, height = CARD_WIDTH // len(SETTINGS_TABS) - 6, 32
         image = k.canvas(width, height, ui.MAIN_BG)
         if key == self.settings_tab:
             k.rounded(image, (0, 0, width, height), 9, ui.INK)
