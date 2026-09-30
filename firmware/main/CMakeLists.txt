@@ -2,7 +2,8 @@ idf_component_register(
     SRCS "main.c"
     INCLUDE_DIRS "."
     REQUIRES esp_lcd_sh8601 lvgl esp_driver_gpio esp_driver_spi esp_driver_i2c
-             esp_driver_ledc esp_timer nvs_flash
+             esp_driver_ledc esp_driver_usb_serial_jtag esp_timer nvs_flash
+             esp_partition esp_rom
 )
 
 # The per-pixel renderer is the frame budget; unrolling hides the load-to-use

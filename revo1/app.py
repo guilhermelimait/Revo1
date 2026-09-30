@@ -14,22 +14,18 @@ from comtypes import COMError, CoInitialize, CoUninitialize
 import numpy as np
 from PIL import Image, ImageDraw, ImageTk
 
-from revo1 import __version__, config, dial, icons, tray, ui, updater
+from revo1 import __version__, config, dial, icons, pomodoro, tray, ui, updater
 from revo1 import windows_controls as controls
 from revo1.bridge import DeviceBridge, find_devices
+from revo1.dashboard_page import DashboardPage
 from revo1.dial import DialRenderer
+from revo1.layout import (CARD_WIDTH, MAIN_WIDTH, NAV_HEIGHT, NAV_WIDTH, PANEL_BG,
+                          SIDEBAR_WIDTH, WINDOW_HEIGHT)
 from revo1.media import MediaSession
+from revo1.screensaver import Library
+from revo1.screensaver_page import ScreensaverPage
 
 LEVEL_MODES = ("Volume", "Mic", "Brightness")
-# Window layout, in 96-dpi pixels.
-SIDEBAR_WIDTH = 212
-MAIN_WIDTH = 440
-WINDOW_HEIGHT = 560
-NAV_WIDTH = 188
-NAV_HEIGHT = 44
-CARD_WIDTH = MAIN_WIDTH - 56
-# Settings sit straight on the page, lined up with the tabs, not in boxes.
-PANEL_BG = ui.MAIN_BG
 KOFI_RED = "#FF5E5B"
 DEVICE_ROW_HEIGHT = 36
 DEVICE_SCAN_MS = 2000
@@ -40,13 +36,14 @@ SETTINGS_TABS = (("device", "Device"), ("controls", "Controls"), ("interface", "
 RELEASE_CHECK_S = 30 * 60
 
 
-class App:
+class App(DashboardPage, ScreensaverPage):
     def __init__(self, root, tray=None, start_minimized=False):
         self.root = root
         self.tray = tray
         self.settings = config.load()
         for key, value in config.DEFAULTS.items():
             self.settings.setdefault(key, value)
+        self.settings["screens"] = list(self.settings["screens"])
         self.mode = self.settings["mode"]
         self.value = 50
         self.events = queue.Queue()
@@ -59,6 +56,18 @@ class App:
         self.menu = False
         # The option the knob points at while the menu is open.
         self.menu_cursor = config.MODES.index(self.mode)
+        self.pomodoro = pomodoro.PomodoroTimer(self.settings["focus_minutes"],
+                                               self.settings["break_minutes"])
+        self.pomodoro_sent = 0.0
+        self.pomodoro_shown = None
+        self.chime_folder = config.config_path().parent
+        self.library = Library()
+        # What the knob reports holding: None until it answers LIBRARY, which
+        # firmware without screensaver support never does.
+        self.device_library = None
+        self.upload_state = None
+        self.levels = {}
+        self.backlight_sent = 0.0
         self.media = MediaSession()
         self.media_state = None
         self.media_track = None
@@ -93,7 +102,7 @@ class App:
         self.dial_item = None
         self.comet_animating = False
         self.reset_comet()
-        self.page = "control"
+        self.page = "dashboard"
         self.settings_tab = "device"
         self.devices = None
         self.device_rows = []
@@ -101,10 +110,12 @@ class App:
 
         self.status = tk.StringVar(value="Looking for the device...")
         self.build_sidebar()
+        self.build_dashboard_page()
         self.build_control_page()
+        self.build_screensaver_page()
         self.build_settings_page()
         self.status.trace_add("write", lambda *args: self.refresh_status())
-        self.show_page("control")
+        self.show_page("dashboard")
 
         self.bridge.start()
         self.worker.start()
@@ -116,6 +127,8 @@ class App:
         root.after(80, self.poll)
         root.after(1000, self.refresh_external_volume)
         root.after(300, self.refresh_media)
+        root.after(250, self.tick_pomodoro)
+        root.after(500, self.refresh_levels)
         if start_minimized:
             root.after(0, self.minimize)
 
@@ -139,16 +152,30 @@ class App:
         self.identity = ui.Picture(bar, ui.SIDEBAR_BG)
         self.identity.pack(padx=k.px(12), pady=(k.px(22), k.px(18)), anchor="w")
         self.nav = {}
-        for key in config.MODES + ("Settings",):
-            button = ui.Button(bar, ui.SIDEBAR_BG,
+        settings = ui.Button(bar, ui.SIDEBAR_BG,
+                             lambda hover: self.paint_nav("Settings", hover),
+                             lambda: self.navigate("Settings"))
+        settings.pack(side="bottom", padx=k.px(12), pady=(0, k.px(18)), anchor="w")
+        self.nav["Settings"] = settings
+        self.nav_list = tk.Frame(bar, bg=ui.SIDEBAR_BG)
+        self.nav_list.pack(fill="x")
+        self.build_nav()
+        self.refresh_identity()
+
+    def build_nav(self):
+        """The sidebar lists the screens that are on the knob, between the
+        dashboard and the screensaver."""
+        k = self.kit
+        for child in self.nav_list.winfo_children():
+            child.destroy()
+        self.nav = {"Settings": self.nav["Settings"]}
+        for key in ("Dashboard",) + tuple(self.settings["screens"]) + ("Screensaver",):
+            button = ui.Button(self.nav_list, ui.SIDEBAR_BG,
                                lambda hover, key=key: self.paint_nav(key, hover),
                                lambda key=key: self.navigate(key))
-            if key == "Settings":
-                button.pack(side="bottom", padx=k.px(12), pady=(0, k.px(18)), anchor="w")
-            else:
-                button.pack(padx=k.px(12), pady=k.px(2), anchor="w")
+            gap = k.px(10) if key == "Screensaver" else k.px(1)
+            button.pack(padx=k.px(12), pady=(gap, k.px(1)), anchor="w")
             self.nav[key] = button
-        self.refresh_identity()
 
     def build_control_page(self):
         k = self.kit
@@ -156,9 +183,37 @@ class App:
         self.canvas = tk.Canvas(page, width=self.dial.size, height=self.dial.size,
                                 bg=ui.MAIN_BG, highlightthickness=0)
         self.canvas.bind("<Button-1>", self.canvas_click)
-        self.canvas.pack(pady=(k.px(36), k.px(16)))
+        self.canvas.pack(pady=(k.px(30), k.px(12)))
         self.label = ui.Picture(page, ui.MAIN_BG)
         self.label.pack()
+        # Timer lengths and buttons, shown only on the Pomodoro screen.
+        self.pomodoro_bar = tk.Frame(page, bg=ui.MAIN_BG)
+        self.pomodoro_buttons = []
+        widths = self.fill_widths([0, 0])
+        for keys in (("focus", "break"), ("start", "reset")):
+            row = tk.Frame(self.pomodoro_bar, bg=ui.MAIN_BG)
+            row.pack(pady=(0, k.px(8)))
+            buttons = []
+            for key, width in zip(keys, widths):
+                if key in ("focus", "break"):
+                    button = ui.Button(row, ui.MAIN_BG,
+                                       lambda hover, key=key, width=width:
+                                           self.paint_stepper(key, hover, width),
+                                       lambda: None)
+                    button.bind("<Button-1>",
+                                lambda event, key=key: self.step_pomodoro(key, event))
+                else:
+                    button = ui.Button(row, ui.MAIN_BG,
+                                       lambda hover, key=key, width=width:
+                                           self.paint_pill(self.pomodoro_label(key), hover,
+                                                           primary=key == "start",
+                                                           width=width),
+                                       lambda key=key: self.pomodoro_action(key))
+                buttons.append(button)
+            self.pack_row(buttons)
+            self.pomodoro_buttons += buttons
+        if self.mode == "Pomodoro":
+            self.pomodoro_bar.pack(pady=(k.px(12), 0))
         self.control_page = page
 
     def build_settings_page(self):
@@ -191,6 +246,14 @@ class App:
 
     def build_device_tab(self, tab):
         k = self.kit
+        body = self.section(tab)
+        self.caption(body, "SCREEN BACKLIGHT").pack(anchor="w")
+        self.backlight_slider = ui.Button(body, PANEL_BG, self.paint_backlight, lambda: None)
+        for sequence in ("<Button-1>", "<B1-Motion>"):
+            self.backlight_slider.bind(sequence, self.drag_backlight)
+        self.backlight_slider.bind("<ButtonRelease-1>", self.release_backlight)
+        self.backlight_slider.pack(anchor="w", pady=(k.px(6), 0))
+
         body = self.section(tab)
         self.caption(body, "DEVICE NAME").pack(anchor="w")
         self.name_entry = tk.Entry(body, font=(ui.TK_FAMILY, 11), bg="#FFFFFF", fg=ui.INK,
@@ -367,6 +430,10 @@ class App:
         image = k.canvas(NAV_WIDTH, NAV_HEIGHT, ui.SIDEBAR_BG)
         if key == "Settings":
             selected = self.page == "settings"
+        elif key == "Dashboard":
+            selected = self.page == "dashboard"
+        elif key == "Screensaver":
+            selected = self.page == "screensaver"
         else:
             selected = self.page == "control" and key == self.mode
         accent = self.accent(key) if key in config.MODES else None
@@ -464,7 +531,7 @@ class App:
             ink = ui.SUBTLE_INK
         if key == "standard":
             for index, mode in enumerate(config.MODES):
-                angle = math.radians(90 - index * 60)
+                angle = math.radians(90 - index * 360 / len(config.MODES))
                 k.dot(image, 20 + 6 * math.cos(angle), height / 2 - 6 * math.sin(angle), 2.6,
                       dial.ACCENTS[mode])
             label = "Standard"
@@ -658,16 +725,27 @@ class App:
 
     def show_page(self, page):
         self.page = page
-        self.control_page.pack_forget()
-        self.settings_page.pack_forget()
-        (self.settings_page if page == "settings" else self.control_page).pack(
-            side="left", fill="both", expand=True)
+        pages = {"dashboard": self.dashboard_page, "control": self.control_page,
+                 "screensaver": self.screensaver_page, "settings": self.settings_page}
+        for frame in pages.values():
+            frame.pack_forget()
+        pages[page].pack(side="left", fill="both", expand=True)
         self.refresh_nav()
+        if page == "dashboard":
+            self.refresh_dashboard()
+        elif page == "screensaver":
+            self.refresh_screensaver()
 
     def navigate(self, key):
         if key == "Settings":
             self.show_page("settings")
             self.scan_devices()
+            return
+        if key == "Dashboard":
+            self.show_page("dashboard")
+            return
+        if key == "Screensaver":
+            self.show_page("screensaver")
             return
         self.show_page("control")
         if key != self.mode or self.menu:
@@ -717,9 +795,11 @@ class App:
 
     def apply_style(self):
         for button in (self.accent_buttons + self.size_buttons + self.device_rows
-                       + self.tab_buttons):
+                       + self.tab_buttons + self.pomodoro_buttons + [self.backlight_slider]):
             button.refresh()
         self.refresh_nav()
+        self.refresh_dashboard()
+        self.refresh_screensaver()
         self.render()
         if self.connected:
             self.bridge.send_style(self.settings["accent"], self.settings["number_size"])
@@ -772,11 +852,12 @@ class App:
             note.pack(anchor="w", pady=(k.px(6), 0))
         self.fit_window()
 
-    def fit_window(self):
-        """Grows the window when the settings no longer fit, so every device
+    def fit_window(self, page=None):
+        """Grows the window when a page no longer fits, so every device
         and orientation button stays visible."""
         self.root.update_idletasks()
-        needed = min(self.settings_page.winfo_reqheight(),
+        page = page or self.settings_page
+        needed = min(page.winfo_reqheight(),
                      self.root.winfo_screenheight() - self.kit.px(80))
         if needed > self.root.winfo_height():
             self.root.geometry(f"{self.root.winfo_width()}x{needed}")
@@ -800,6 +881,8 @@ class App:
         config.save(self.settings)
         for toggle in [self.tray_toggle] + self.invert_toggles:
             toggle.refresh()
+        if key == "saver_enabled":
+            self.push_saver()
 
     def on_unmap(self, event):
         if (event.widget is self.root and self.tray and self.settings["minimize_to_tray"]
@@ -967,7 +1050,7 @@ class App:
                 self.bridge.resume()
 
     def refresh_media(self):
-        if self.mode == "Media" and not self.media_pending:
+        if (self.mode == "Media" or self.page == "dashboard") and not self.media_pending:
             self.media_pending = True
             self.actions.put(("__mediapoll__", 0))
         self.root.after(1000, self.refresh_media)
@@ -1036,17 +1119,19 @@ class App:
         c = dial.CENTER
 
         if self.menu:
-            selected = self.menu_cursor
-            accent = self.accent(config.MODES[selected])
-            pixels = np.array(self.dial.menu(accent, selected).convert("RGB"))
-            for index, mode in enumerate(config.MODES):
-                radians = math.radians(90 - index * 60)
-                ink = dial.label_ink(accent) if index == selected else dial.MENU_INK
+            screens = self.settings["screens"]
+            chosen = config.MODES[self.menu_cursor]
+            slot = screens.index(chosen) if chosen in screens else 0
+            accent = self.accent(chosen)
+            pixels = np.array(self.dial.menu(accent, slot, len(screens)).convert("RGB"))
+            for index, mode in enumerate(screens):
+                radians = math.radians(90 - index * 360 / len(screens))
+                ink = dial.label_ink(accent) if index == slot else dial.MENU_INK
                 self.draw_icon(pixels, mode, c + dial.MENU_LABEL_R * math.cos(radians),
                                c - dial.MENU_LABEL_R * math.sin(radians), ink)
             self.set_heading("Turn to choose, tap to confirm", ui.MUTED_INK)
             image = Image.fromarray(pixels)
-            self.put_text(ImageDraw.Draw(image), c, c, config.MODES[selected].upper(),
+            self.put_text(ImageDraw.Draw(image), c, c, chosen.upper(),
                           16, dial.label_ink(accent))
             self.show_dial(image)
             return
@@ -1069,6 +1154,20 @@ class App:
                 clock = (f"{position // 60}:{position % 60:02d} / "
                          f"{duration // 60}:{duration % 60:02d}")
                 self.put_text(draw, c, c + dial.MEDIA_TIME_Y, clock, 12, dial.TIME_INK)
+        elif self.mode == "Pomodoro":
+            timer = self.pomodoro
+            remaining = timer.remaining()
+            self.pomodoro_shown = remaining
+            pixels = np.array(self.dial.level(accent, timer.fraction()))
+            image = Image.fromarray(pixels)
+            draw = ImageDraw.Draw(image)
+            self.put_text(draw, c, c, f"{remaining // 60}:{remaining % 60:02d}",
+                          self.settings["number_size"], dial.VALUE_INK)
+            self.put_text(draw, c, c + dial.MEDIA_TIME_Y,
+                          pomodoro.PHASE_NAMES[timer.phase].upper(), 12, dial.TIME_INK)
+            self.put_text(draw, c, c + dial.MEDIA_TITLE_Y,
+                          "Tap to pause" if timer.running else "Tap to start",
+                          16, dial.VALUE_INK)
         elif self.mode in LEVEL_MODES:
             pixels = np.array(self.dial.level(accent, self.value / 100))
             for side, name in ((-1, "ChevronLeft"), (1, "ChevronRight")):
@@ -1086,6 +1185,9 @@ class App:
         self.put_text(draw, c, c + dial.FOOTER_Y, self.mode.upper(), 12, dial.FOOTER_INK,
                       tracking=3)
         self.show_dial(image)
+        if self.mode == "Pomodoro":
+            for button in self.pomodoro_buttons:
+                button.refresh()
 
     def show_dial(self, image):
         # Tk only keeps a weak reference, so the PhotoImage must be held here.
@@ -1122,22 +1224,28 @@ class App:
             if abs(offset - dial.MEDIA_BUTTON_SPACING) <= dial.MEDIA_HIT:
                 self.actions.put(("__mediacmd__", "NEXT"))
                 return
+        on_footer = (abs(x - c) <= dial.FOOTER_HIT_W
+                     and abs(y - c - dial.FOOTER_Y) <= dial.FOOTER_HIT_H)
         if self.menu:
             # An icon picks itself; anywhere else confirms the knob's choice.
+            screens = self.settings["screens"]
             if 50 <= distance <= 170:
-                angle = (90 - math.degrees(math.atan2(dy, dx)) + 30) % 360
-                self.choose(config.MODES[int(angle // 60)])
+                step = 360 / len(screens)
+                angle = (90 - math.degrees(math.atan2(dy, dx)) + step / 2) % 360
+                self.choose(screens[min(int(angle // step), len(screens) - 1)])
             else:
                 self.choose(config.MODES[self.menu_cursor])
-        elif distance < dial.CAP_R or (abs(x - c) <= dial.FOOTER_HIT_W and
-                                       abs(y - c - dial.FOOTER_Y) <= dial.FOOTER_HIT_H):
+        elif self.mode == "Pomodoro" and distance < dial.CAP_R and not on_footer:
+            self.pomodoro_action("start")
+        elif distance < dial.CAP_R or on_footer:
             self.open_menu()
             if self.connected:
                 self.bridge.send_menu()
 
     def open_menu(self):
         self.menu = True
-        self.menu_cursor = config.MODES.index(self.mode)
+        screens = self.settings["screens"]
+        self.menu_cursor = config.MODES.index(self.mode if self.mode in screens else screens[0])
         self.render()
 
     def choose(self, mode):
@@ -1152,6 +1260,8 @@ class App:
 
     def apply_media(self, snapshot):
         self.media_state = snapshot
+        if self.page == "dashboard":
+            self.refresh_dashboard_tile("Media")
         self.push_media()
         if self.mode == "Media" and not self.menu:
             self.render()
@@ -1173,6 +1283,10 @@ class App:
         self.settings["mode"] = self.mode
         config.save(self.settings)
         self.refresh_nav()
+        if mode == "Pomodoro":
+            self.pomodoro_bar.pack(pady=(self.kit.px(12), 0))
+        else:
+            self.pomodoro_bar.pack_forget()
         self.reset_comet()
         try:
             self.refresh_value()
@@ -1195,6 +1309,12 @@ class App:
         self.comet_direction = 1
 
     def rotate(self, steps):
+        if self.mode == "Pomodoro":
+            # The knob sets the length of the phase shown while it is stopped.
+            if not self.pomodoro.running:
+                self.set_pomodoro_minutes(self.pomodoro.phase,
+                                          self.pomodoro.minutes[self.pomodoro.phase] + steps)
+            return
         if self.mode in ("Scroll", "Zoom") and steps:
             # Segment indices run anticlockwise, so a clockwise turn decreases them.
             self.comet_target_q8 -= steps * dial.COMET_STEP_Q8
@@ -1235,6 +1355,18 @@ class App:
                     return
                 if mode == "__mediapoll__":
                     self.events.put(("media", self.media.snapshot()))
+                    continue
+                if mode == "__levels__":
+                    levels = {}
+                    for name, read in (("Volume", controls.volume_level),
+                                       ("Mic", controls.microphone_level),
+                                       ("Brightness", controls.brightness_level)):
+                        try:
+                            levels[name] = read()
+                        except (COMError, OSError, RuntimeError, ValueError,
+                                subprocess.SubprocessError):
+                            levels[name] = None
+                    self.events.put(("levels", levels))
                     continue
                 if mode == "__mediacmd__":
                     if steps == "PLAYPAUSE":
@@ -1277,6 +1409,11 @@ class App:
         self.reset_comet()
         self.bridge.send_comet_reset()
         self.bridge.send_style(self.settings["accent"], self.settings["number_size"])
+        self.bridge.send_screens(config.screen_mask(self.settings["screens"]))
+        self.bridge.send_backlight(self.settings["backlight"])
+        self.push_saver()
+        self.push_pomodoro()
+        self.bridge.request_library()
         try:
             self.refresh_value()
         except (COMError, OSError, RuntimeError, ValueError,
@@ -1295,7 +1432,11 @@ class App:
                 elif kind == "disconnected":
                     self.connected = False
                     self.device_version = None
+                    self.device_library = None
+                    if self.upload_state and self.upload_state[0] == "busy":
+                        self.upload_state = ("error", "The knob was disconnected")
                     self.refresh_about()
+                    self.refresh_screensaver()
                 elif kind == "version":
                     if payload != self.device_version:
                         self.device_version = payload
@@ -1339,13 +1480,26 @@ class App:
                         self.rotate(payload)
                 elif kind == "swipe":
                     direction = -1 if payload == "RIGHT" else 1
-                    index = (config.MODES.index(self.mode) + direction) % len(config.MODES)
-                    self.select_mode(config.MODES[index])
+                    screens = self.settings["screens"]
+                    index = screens.index(self.mode) if self.mode in screens else -direction
+                    self.select_mode(screens[(index + direction) % len(screens)])
                 elif kind == "menu":
                     self.open_menu()
                 elif kind == "cursor" and self.menu and 0 <= payload < len(config.MODES):
                     self.menu_cursor = payload
                     self.render()
+                elif kind == "pomodoro_toggle":
+                    self.pomodoro_action("start")
+                elif kind == "levels":
+                    self.levels_pending = False
+                    self.levels = payload
+                    self.refresh_dashboard()
+                elif kind == "library":
+                    self.device_library = payload
+                    self.refresh_screensaver()
+                elif kind in ("upload", "upload_done", "upload_error", "saver_added",
+                              "saver_progress", "saver_failed"):
+                    self.on_screensaver_event(kind, payload)
                 elif kind == "media":
                     self.media_pending = False
                     self.apply_media(payload)
@@ -1355,11 +1509,130 @@ class App:
                     self.choose(config.MODES[payload])
                 elif kind == "value" and payload[0] == self.mode:
                     self.value = payload[1]
+                    self.levels[self.mode] = payload[1]
                     self.render()
                     self.sync()
         except queue.Empty:
             pass
         self.root.after(80, self.poll)
+
+    # ----- pomodoro -------------------------------------------------------
+
+    def pomodoro_label(self, key):
+        if key == "start":
+            return "Pause" if self.pomodoro.running else "Start"
+        return "Reset"
+
+    def paint_stepper(self, key, hover, width):
+        """\u2212 25 min +, for the focus or break length."""
+        k = self.kit
+        height = 30
+        image = k.canvas(width, height, ui.MAIN_BG)
+        phase = pomodoro.FOCUS if key == "focus" else pomodoro.BREAK
+        current = self.pomodoro.phase == phase
+        k.rounded(image, (0, 0, width, height), 15, "#FFFFFF" if hover else ui.CARD_BG,
+                  dial.label_ink(self.accent("Pomodoro")) if current else ui.CARD_EDGE)
+        k.text(image, 18, height / 2, "\u2212", "semibold", 12, ui.SUBTLE_INK, anchor="mm")
+        k.text(image, width - 18, height / 2, "+", "semibold", 12, ui.SUBTLE_INK, anchor="mm")
+        label = f"{pomodoro.PHASE_NAMES[phase]} \u00b7 {self.pomodoro.minutes[phase]} min"
+        k.text(image, width / 2, height / 2, label, "semibold", 9.5, ui.INK, anchor="mm")
+        return image
+
+    def step_pomodoro(self, key, event):
+        phase = pomodoro.FOCUS if key == "focus" else pomodoro.BREAK
+        width = event.widget.winfo_width()
+        if event.x < width / 3:
+            change = -1
+        elif event.x > width * 2 / 3:
+            change = 1
+        else:
+            return
+        self.set_pomodoro_minutes(phase, self.pomodoro.minutes[phase] + change)
+
+    def set_pomodoro_minutes(self, phase, minutes):
+        minutes = max(1, min(180, minutes))
+        self.pomodoro.set_minutes(phase, minutes)
+        key = "focus_minutes" if phase == pomodoro.FOCUS else "break_minutes"
+        if self.settings[key] != minutes:
+            self.settings[key] = minutes
+            config.save(self.settings)
+        self.after_pomodoro_change()
+
+    def pomodoro_action(self, key):
+        if key == "start":
+            self.pomodoro.toggle()
+        else:
+            self.pomodoro.reset()
+        self.after_pomodoro_change()
+
+    def after_pomodoro_change(self):
+        self.push_pomodoro()
+        if self.mode == "Pomodoro" and not self.menu:
+            self.render()
+        self.refresh_dashboard()
+
+    def push_pomodoro(self):
+        if self.connected:
+            timer = self.pomodoro
+            self.bridge.send_pomodoro(timer.phase, timer.remaining(), timer.total,
+                                      timer.running)
+            self.pomodoro_sent = time.monotonic()
+
+    def tick_pomodoro(self):
+        """Runs the timer: chimes at each change of phase and keeps the dial,
+        the dashboard and the knob in step."""
+        timer = self.pomodoro
+        if timer.tick():
+            pomodoro.play_chime(timer.phase, self.chime_folder)
+            self.after_pomodoro_change()
+        elif timer.running:
+            if self.mode == "Pomodoro" and not self.menu and \
+                    timer.remaining() != self.pomodoro_shown:
+                self.render()
+            if self.page == "dashboard":
+                self.refresh_dashboard_tile("Pomodoro")
+            # The knob counts down on its own; a periodic resync stops drift.
+            if time.monotonic() - self.pomodoro_sent > 60:
+                self.push_pomodoro()
+        self.root.after(250, self.tick_pomodoro)
+
+    # ----- backlight ------------------------------------------------------
+
+    def paint_backlight(self, hover):
+        k = self.kit
+        width, height = CARD_WIDTH, 34
+        image = k.canvas(width, height, PANEL_BG)
+        value = self.settings["backlight"]
+        track = width - 56
+        k.icon(image, "Brightness", 10, height / 2, ui.SUBTLE_INK, 0.6)
+        left, right = 30, 30 + track - 30
+        filled = left + (right - left) * (value - 5) / 95
+        k.rounded(image, (left, height / 2 - 3, right, height / 2 + 3), 3, ui.CARD_EDGE)
+        k.rounded(image, (left, height / 2 - 3, max(filled, left + 6), height / 2 + 3), 3,
+                  dial.label_ink(self.accent(self.mode)))
+        k.dot(image, filled, height / 2, 10 if hover else 9, ui.CARD_EDGE)
+        k.dot(image, filled, height / 2, 9 if hover else 8, "#FFFFFF")
+        k.dot(image, filled, height / 2, 3, dial.label_ink(self.accent(self.mode)))
+        k.text(image, width, height / 2, f"{value}%", "semibold", 10, ui.INK, anchor="rm")
+        return image
+
+    def drag_backlight(self, event):
+        left = self.kit.px(30)
+        right = self.kit.px(30 + CARD_WIDTH - 56 - 30)
+        fraction = min(1.0, max(0.0, (event.x - left) / max(right - left, 1)))
+        value = round(5 + fraction * 95)
+        if value != self.settings["backlight"]:
+            self.settings["backlight"] = value
+            self.backlight_slider.refresh()
+            # Live while dragging, but not faster than the knob can take it.
+            if self.connected and time.monotonic() - self.backlight_sent > 0.08:
+                self.bridge.send_backlight(value)
+                self.backlight_sent = time.monotonic()
+
+    def release_backlight(self, event):
+        config.save(self.settings)
+        if self.connected:
+            self.bridge.send_backlight(self.settings["backlight"])
 
     def close(self):
         self.actions.put((None, 0))

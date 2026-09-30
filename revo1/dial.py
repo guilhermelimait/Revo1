@@ -59,6 +59,7 @@ ACCENTS = {
     "Mic": (255, 64, 116),
     "Zoom": (0, 226, 158),
     "Media": (255, 116, 56),
+    "Pomodoro": (232, 58, 58),
 }
 
 # Swatches offered for a single custom bar colour.
@@ -144,12 +145,15 @@ def _band():
     return ys, xs, segment[mask], quarters[mask]
 
 
-def menu_sector_of(segment):
+def menu_sector_of(segment, count=6):
+    """The menu slot each ring segment belongs to (-1 in the gaps), for a menu
+    of `count` equal slots starting at 12 o'clock and running clockwise."""
+    whole = count * 1024
     clockwise = (256 - segment) & MASK
-    sector = ((clockwise * 6 + 512) // 1024) % 6
-    offset = clockwise * 6 - sector * 1024
-    offset = np.where(offset > 3072, offset - 6144, offset)
-    offset = np.where(offset < -3072, offset + 6144, offset)
+    sector = ((clockwise * count + 512) // 1024) % count
+    offset = clockwise * count - sector * 1024
+    offset = np.where(offset > whole // 2, offset - whole, offset)
+    offset = np.where(offset < -(whole // 2), offset + whole, offset)
     return np.where(np.abs(offset) <= MENU_SEGMENT_HALF, sector, -1)
 
 
@@ -166,13 +170,19 @@ class DialRenderer:
         self.scale = scale
         self.size = round(SIZE * scale)
         self._band_y, self._band_x, self._segment, self._quarters = _band()
-        self._menu_sector = menu_sector_of(self._segment)
         distance = np.arange(BAND * 4 + 1, dtype=np.float32) * 0.25
         self._core = np.clip((GROOVE - distance) / 3.0, 0, 1)
         self._glow = (1.0 - distance / BAND) ** 2
-        base = _chrome(background)
-        self._chrome = {"gauge": self._with_track(base, _in_gauge(self._segment)),
-                        "menu": self._with_track(base, self._menu_sector >= 0)}
+        self._base = _chrome(background)
+        self._chrome = {"gauge": self._with_track(self._base, _in_gauge(self._segment))}
+        self._menus = {}
+
+    def _menu(self, count):
+        """Slot map and chrome for a menu of `count` slots, built once each."""
+        if count not in self._menus:
+            sectors = menu_sector_of(self._segment, count)
+            self._menus[count] = (sectors, self._with_track(self._base, sectors >= 0))
+        return self._menus[count]
 
     def _with_track(self, base, on_track):
         """A faint etched line along the track, so its unlit part still reads."""
@@ -232,9 +242,11 @@ class DialRenderer:
         return self._composite(self._chrome["gauge"], accent, level, shade,
                                position & MASK)
 
-    def menu(self, accent, selected):
-        """Six segments, the last-used one lit in its own accent."""
-        on = self._menu_sector == selected
+    def menu(self, accent, selected, count=6):
+        """One segment per screen on the knob, `selected` (a slot) lit in its
+        own accent."""
+        sectors, chrome = self._menu(count)
+        on = sectors == selected
         level = np.where(on, 255, 0)
         shade = np.full(self._segment.shape, 255)
-        return self._composite(self._chrome["menu"], accent, level, shade)
+        return self._composite(chrome, accent, level, shade)

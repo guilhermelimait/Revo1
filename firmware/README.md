@@ -65,8 +65,57 @@ LVGL 8.4 and the panel driver are declared in `main\idf_component.yml`.
 
 The native USB Serial/JTAG console runs at 115200 baud and implements the
 `HELLO,REVO1,1`, `VERSION`, `SYNC`, `ROT`, `MENU`, `CURSOR`, `TAP`, `SWIPE`, `MEDIA`, `STATE`,
-`SHOWMENU`, `COMETRESET`, `STYLE`, `TRACK`, `ARTIST`, and `PLAY` lines used by
-`revo1\bridge.py`. The six sectors follow the host mode order.
+`SHOWMENU`, `COMETRESET`, `STYLE`, `TRACK`, `ARTIST`, `PLAY`, `SCREENS`,
+`BACKLIGHT`, `POMO`, `SAVER`, `LIBRARY` and media upload lines used by
+`revo1\bridge.py`. The menu has one sector per enabled screen (`SCREENS`
+mask), in the host mode order; `CURSOR` and `TAP` report the mode index, not
+the sector.
+
+The USB Serial/JTAG driver is installed with an 8 KB receive buffer, and
+`serial_reader_task` reads lines of up to 4200 bytes. Media upload lines are
+handled right there in the reader task (they write flash); every other line
+goes through a queue to the UI loop, which applies `SERIAL_LINE_MAX` (96).
+
+## Pomodoro
+
+The host owns the timer. `POMO,<phase>,<remaining s>,<total s>,<running>`
+arrives on every change and once a minute; the firmware counts the seconds
+down locally in between so the ring and the `M:SS` number move smoothly, and
+a tap on the dial sends `POMO,TOGGLE` back. The chime plays on the PC.
+
+## Backlight
+
+`BACKLIGHT,<1..100>` sets the LEDC duty on GPIO 47 with a squared curve
+(`255 * p^2 / 10000`, at least 3) so the low end of the slider stays usable.
+
+## Screensaver storage and upload
+
+`partitions.csv` has a `media` data partition of 0xCF0000 bytes (about
+12.9 MB) at 0x310000. Its layout:
+
+- A 4096-byte header: magic `RVM1` (`0x314D5652`), version 1, item count,
+  data bytes, CRC-32 of the data (zlib polynomial; `esp_rom_crc32_le`), then
+  one 16-byte entry per item (up to 250): data offset, byte length, frame
+  count, milliseconds per frame.
+- The data: each frame is `<u32 length>` + a baseline 360 x 360 JPEG, padded
+  to 4 bytes.
+
+Upload: `MEDIA_BEGIN,<total bytes>` erases what is needed and answers
+`MEDIA_READY` (or `MEDIA_ERR,SIZE|ERASE|NOSTORAGE`). The host then sends
+`MD,<offset>,<base64>` lines of up to 3072 bytes, each answered by `MD_OK` or
+`MD_ERR` with the offset; the app keeps four in flight and writes the header
+last, so an interrupted upload never looks valid. `MEDIA_END` checks the
+header and CRC and answers `MEDIA_OK,<items>` or `MEDIA_ERR,CHECK`.
+`MEDIA_CLEAR` erases the header. After each change, and on `LIBRARY`, the
+knob reports `LIBRARY,<capacity>,<items>,<bytes>,<CRC hex>`, which the app
+compares with its own collection.
+
+Playback uses the ROM TJpgDec decoder straight from flash into the
+framebuffer. The screensaver starts after `SAVER,<enabled>,<idle s>,<s per
+item>` idle seconds without a touch or a turn, prints `SAVER,ON`, and hides
+the dial labels; the waking touch or turn is swallowed and prints
+`SAVER,OFF`. A frame that fails to decode prints `SAVER,BAD,<item>` and the
+item is skipped.
 
 ## Media transport screen
 
@@ -138,7 +187,9 @@ this.
 
 The last mode, orientation, bar colour and number size are kept in NVS
 (namespace `revo1`: `mode`, `orient`, `numsize`, `accent`, with
-`0xFFFFFFFF` meaning standard colours). `load_settings` reads them before the
+`0xFFFFFFFF` meaning standard colours), together with the enabled screens
+(`screens`), backlight (`light`) and screensaver settings (`saver`, `idle`,
+`every`). `load_settings` reads them before the
 display starts, so a restarted knob comes back in the same view and the same
 orientation even when the PC app isn't running. `save_settings` runs after
 `STATE`, `STYLE`, a menu tap or a swipe, and only writes flash when a value
@@ -147,7 +198,9 @@ actually changed. The level itself isn't stored; it comes from Windows.
 Until the first `STATE` after boot, the firmware sends `SYNC` with every
 `HELLO`, and a connected app answers with its style and state. The merged
 release image covers the NVS partition, so a firmware update clears the saved
-settings; the app sends them again straight after the update.
+settings; the app sends them again straight after the update. The media
+partition lies outside the merged image, so the screensaver collection
+survives firmware updates.
 
 Performance is the main design constraint:
 

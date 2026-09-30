@@ -11,6 +11,17 @@ First public release.
   (title, artist, progress, play/pause, previous, next, seek).
 - Radial icon menu opened from the centre or the mode name; knob to choose,
   tap to confirm.
+- Pomodoro screen: focus and break lengths, start/pause from the app or by
+  tapping the knob, a countdown ring on the device and a chime on the PC at
+  each change of phase.
+- Dashboard as the app's first page: live values for every screen and a
+  switch per screen to hide it from the knob's menu and swipes (`SCREENS`).
+- Screensaver: pictures, animated GIFs and videos are cropped to the round
+  screen, stored in a 12.9 MB `media` flash partition and shown
+  in rotation after a chosen idle time; a touch or a turn wakes the dial.
+  Videos are read by FFmpeg (LGPL build), which the app downloads once, with
+  your permission, the first time you add one; it isn't bundled.
+- Screen backlight slider in **Settings > Device** (`BACKLIGHT`).
 - Settings: device name, automatic device detection, screen orientation,
   bar colour (standard, preset or custom), number size, and separate
   **Invert scroll** / **Invert zoom** switches for the knob direction.

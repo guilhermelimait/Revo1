@@ -18,6 +18,8 @@ builds on the following third-party work, which keeps its own licence.
 | [Python](https://www.python.org) runtime and Tcl/Tk | bundled in `Revo1.exe` | PSF License, Tcl/Tk License |
 | [NumPy](https://numpy.org) | Python dependency | BSD-3-Clause |
 | [Pillow](https://python-pillow.org) | Python dependency | MIT-CMU |
+| [FFmpeg](https://ffmpeg.org) LGPL build from [BtbN/FFmpeg-Builds](https://github.com/BtbN/FFmpeg-Builds) | downloaded on demand the first time a video is added to the screensaver, run as a separate program; not bundled | LGPL-2.1-or-later |
+| TJpgDec (in the ESP32-S3 ROM) | JPEG decoding for the screensaver | ChaN's TJpgDec licence (BSD-style) |
 | [esptool](https://github.com/espressif/esptool) standalone build | downloaded on demand by the About page and `scripts/flash-firmware.ps1`, run as a separate program; not bundled | GPL-2.0-or-later |
 
 Waveshare and ESP32 are trademarks of their respective owners. This project

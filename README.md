@@ -1,7 +1,7 @@
 # Revo1
 
 **Turn a Waveshare round knob display into a beautiful volume, scroll,
-brightness and media controller for Windows.**
+brightness and media controller, Pomodoro timer and photo frame for Windows.**
 
 [![CI](https://github.com/guilhermelimait/Revo1/actions/workflows/ci.yml/badge.svg)](https://github.com/guilhermelimait/Revo1/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
@@ -10,13 +10,21 @@ brightness and media controller for Windows.**
 
 Revo1 is custom firmware for the
 [Waveshare ESP32-S3-Knob-Touch-LCD-1.8](https://www.waveshare.com/wiki/ESP32-S3-Knob-Touch-LCD-1.8)
-([Amazon](https://link.amazon/B061NfG3G); a 360 x 360 round AMOLED with a
-rotary knob and touch) plus a Windows
+([Amazon](https://link.amazon/B061NfG3G); a 360 x 360 round touch screen
+with a rotary knob) plus a Windows
 companion app. The screen and the app draw the same Nest-style dial: a light,
 sculpted face with a glowing arc in the control's colour, and they stay in
 sync as you turn the knob.
 
 <table>
+  <tr>
+    <th>Dashboard</th>
+    <th>Pomodoro</th>
+  </tr>
+  <tr>
+    <td><img src="./docs/images/app-dashboard.png" alt="Dashboard" width="400"></td>
+    <td><img src="./docs/images/app-pomodoro.png" alt="Pomodoro timer" width="400"></td>
+  </tr>
   <tr>
     <th>Volume</th>
     <th>Media</th>
@@ -33,14 +41,34 @@ sync as you turn the knob.
     <td><img src="./docs/images/app-menu.png" alt="Radial menu" width="400"></td>
     <td><img src="./docs/images/app-settings.png" alt="Settings" width="400"></td>
   </tr>
+  <tr>
+    <th>Screensaver</th>
+    <th></th>
+  </tr>
+  <tr>
+    <td><img src="./docs/images/app-screensaver.png" alt="Screensaver" width="400"></td>
+    <td></td>
+  </tr>
 </table>
 
 *Screenshots of the Windows app; the device shows the same dial.*
 
 ## Features
 
-- **Six controls:** system volume, mouse-wheel scrolling, display brightness,
-  microphone level, zoom (Ctrl + wheel) and media playback.
+- **Seven screens:** system volume, mouse-wheel scrolling, display brightness,
+  microphone level, zoom (Ctrl + wheel), media playback and a Pomodoro timer.
+- **Dashboard:** every screen at a glance with its live value, and a switch
+  to hide the ones you don't use from the knob's menu and swipes.
+- **Pomodoro:** pick the focus and break lengths, then tap the dial (on the
+  knob or in the app) to start or pause. The ring counts down on the knob,
+  and the PC plays a chime when it's time for a break and when the break
+  ends.
+- **Screensaver:** add pictures (JPEG, PNG, BMP, WebP, ...), animated GIFs
+  or short videos (MP4, MOV, AVI, MKV, WebM). Revo1 crops them to the round
+  screen and stores them on the knob (up to about 12.9 MB), which shows them
+  in rotation after the minutes of idle time you choose. A touch or a turn
+  brings the dial back.
+- **Screen backlight** adjustable from the app.
 - **Media screen** for whatever is playing (Spotify, a browser tab, ...):
   title, artist, progress ring, and big play/pause, previous and next buttons.
   Turning the knob seeks 5 seconds per click.
@@ -124,6 +152,9 @@ once the knob answers.
 - **Swipe** left or right to switch to the next or previous control.
 - **Tap the centre or the mode name** at the top to open the menu. Turn to
   move the highlight, then tap to confirm, or tap an icon directly.
+- On the **Pomodoro** screen, tap the dial to start or pause the timer.
+- While the **screensaver** runs, a touch or a turn wakes the dial (that
+  first touch or turn does nothing else).
 - On the **media** screen, tap play/pause, previous or next.
 
 The knob has no push button.
@@ -131,9 +162,28 @@ The knob has no push button.
 **In the app**
 
 The dial in the window mirrors the device and accepts clicks the same way.
-Pick a control in the left sidebar. **Settings** has four tabs:
+The app opens on the **Dashboard**: click a tile to open that screen, or its
+switch to show or hide it on the knob (at least one stays on). Pick a control
+in the left sidebar.
 
-- **Device:** the name shown in the sidebar and the list of connected knobs
+- **Pomodoro:** set the focus and break minutes with **-** / **+** (or turn
+  the knob while the timer is stopped), then **Start**, **Pause** or
+  **Reset**. The timer runs in the app, so keep Revo1 running (it can sit
+  in the notification area).
+- **Screensaver:** switch it on, choose **Start after** (idle minutes) and
+  **Show each for**, then **Add pictures or videos...**. Hover a thumbnail
+  and click the cross to remove it. **Send to knob** copies the collection
+  to the device (about 110 KB/s, so a full collection takes about two
+  minutes); the line under the buttons says whether the knob is up to date.
+  Videos keep their first 20 seconds at 10 frames per second. The first time
+  you add a video, Revo1 asks to download FFmpeg (an LGPL build, about
+  80 MB, into `%LOCALAPPDATA%\Revo1\tools`) to read it; if `ffmpeg` is
+  already on your `PATH`, that one is used.
+
+**Settings** has four tabs:
+
+- **Device:** the screen backlight, the name shown in the sidebar and the
+  list of connected knobs
   (refreshed automatically every two seconds; pick one or leave it on
   **Automatic**).
 - **Controls:** the screen orientation (0, 90, 180 or 270 degrees) and
@@ -184,8 +234,9 @@ never overwritten with old saved values.
 - Windows only (it uses Windows audio, brightness and media APIs).
 - Brightness works on screens Windows can dim through WMI (usually laptops).
 - No album artwork yet: the serial link is line-based text.
-- The device stores nothing: the app sends the view and style on every
-  connection.
+- The Pomodoro timer and its chime run in the app: the knob shows the time
+  but doesn't count on its own.
+- Video playback on the knob is 10 frames per second, without sound.
 
 ## Development
 
@@ -229,8 +280,8 @@ USB serial: 115200 baud, ASCII lines terminated by `\n`.
 | Device to PC | `SYNC` | Sent with `HELLO` until the first `STATE` after a restart; the app resends style and state |
 | Device to PC | `ROT,<signed steps>` | Knob movement |
 | Device to PC | `MENU` | Centre or mode-name tap opens the menu |
-| Device to PC | `TAP,<0..5>` | Menu choice confirmed |
-| Device to PC | `CURSOR,<0..5>` | Knob moved the menu highlight |
+| Device to PC | `TAP,<0..6>` | Menu choice confirmed (mode index) |
+| Device to PC | `CURSOR,<0..6>` | Knob moved the menu highlight (mode index) |
 | Device to PC | `SWIPE,LEFT` or `SWIPE,RIGHT` | Change control |
 | PC to device | `STATE,<MODE>,<0..100>,<0\|90\|180\|270>` | Set screen state |
 | PC to device | `SHOWMENU` | Show radial menu |
@@ -240,9 +291,17 @@ USB serial: 115200 baud, ASCII lines terminated by `\n`.
 | PC to device | `TRACK,<title>` | Now-playing title |
 | PC to device | `ARTIST,<artist>` | Now-playing artist |
 | PC to device | `PLAY,<0\|1\|2>,<position s>,<duration s>` | Playback state (0 stopped, 1 playing, 2 paused) |
+| PC to device | `SCREENS,<mask>` | Screens shown on the knob (bit n = mode n); answered by `SCREENS_OK,<mask>` |
+| PC to device | `BACKLIGHT,<1..100>` | Backlight percent; answered by `BACKLIGHT_OK,<percent>` |
+| PC to device | `POMO,<0 focus\|1 break>,<remaining s>,<total s>,<0\|1 running>` | Pomodoro state |
+| Device to PC | `POMO,TOGGLE` | Pomodoro dial tapped |
+| PC to device | `SAVER,<0\|1>,<idle s>,<seconds per item>` | Screensaver settings; answered by `SAVER_OK` |
+| Device to PC | `SAVER,ON` or `SAVER,OFF` | Screensaver started or stopped |
+| PC to device | `LIBRARY` | Ask for `LIBRARY,<capacity>,<items>,<bytes>,<CRC-32 hex>` (also sent after each change) |
+| PC to device | `MEDIA_BEGIN,<bytes>`, `MD,<offset>,<base64>`, `MEDIA_END`, `MEDIA_CLEAR` | Screensaver upload; see [firmware/README.md](firmware/README.md) |
 
 Mode names, in sector order: `VOLUME`, `SCROLL`, `BRIGHTNESS`, `MIC`, `ZOOM`,
-`MEDIA`. The preview uses a neutral midpoint for non-percentage controls.
+`MEDIA`, `POMODORO`. The preview uses a neutral midpoint for non-percentage controls.
 
 Each knob detent sends exactly one step. The encoder is not a quadrature
 encoder and emits two pulses per detent, which the firmware divides down; see

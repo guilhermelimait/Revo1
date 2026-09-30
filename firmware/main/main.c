@@ -7,10 +7,14 @@
 #include "driver/i2c_master.h"
 #include "driver/ledc.h"
 #include "driver/spi_master.h"
+#include "driver/usb_serial_jtag.h"
+#include "driver/usb_serial_jtag_vfs.h"
 #include "esp_err.h"
 #include "esp_heap_caps.h"
 #include "esp_lcd_panel_io.h"
 #include "esp_lcd_panel_ops.h"
+#include "esp_partition.h"
+#include "esp_rom_crc.h"
 #include "esp_timer.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/queue.h"
@@ -18,6 +22,7 @@
 #include "lvgl.h"
 #include "nvs.h"
 #include "nvs_flash.h"
+#include "rom/tjpgd.h"
 #include "esp_lcd_sh8601.h"
 
 #define LCD_WIDTH 360
@@ -103,16 +108,129 @@
 #define ENCODER_BOUNCE_REJECT_US 2000
 #define ENCODER_DIRECTION_LOCKOUT_US 120000
 
-static const char *mode_names[6] = {
-    "VOLUME", "SCROLL", "BRIGHTNESS", "MIC", "ZOOM", "MEDIA"
+#define MODE_COUNT 7
+#define POMODORO_MODE 6
+#define ALL_SCREENS ((1u << MODE_COUNT) - 1)
+/* Lines the app sends, apart from screensaver uploads, fit in this; the
+   upload's data lines carry up to 3 KB of base64 and are handled apart. */
+#define SERIAL_QUEUE_DEPTH 16
+#define RX_LINE_MAX 4200
+#define UPLOAD_CHUNK_MAX 3072
+
+static const char *mode_names[MODE_COUNT] = {
+    "VOLUME", "SCROLL", "BRIGHTNESS", "MIC", "ZOOM", "MEDIA", "POMODORO"
 };
 
 /* Saturated accents; on an AMOLED the unlit pixels stay truly black, so
    additive glow over them reads as emitted light rather than grey haze. */
-static const uint8_t mode_accents[6][3] = {
+static const uint8_t mode_accents[MODE_COUNT][3] = {
     {0, 176, 255}, {124, 104, 255}, {255, 168, 40},
-    {255, 64, 116}, {0, 226, 158}, {255, 116, 56},
+    {255, 64, 116}, {0, 226, 158}, {255, 116, 56}, {232, 58, 58},
 };
+
+/* The screens the menu offers, chosen on the app's dashboard: bit n is
+   mode n. The menu ring is split evenly between them. */
+static uint8_t screen_mask = ALL_SCREENS;
+
+static inline bool screen_enabled(int mode)
+{
+    return (screen_mask >> mode) & 1u;
+}
+
+static int screen_count(void)
+{
+    return __builtin_popcount(screen_mask);
+}
+
+/* The mode in menu slot `slot`, slots running clockwise from the top. */
+static int screen_at(int slot)
+{
+    for (int mode = 0; mode < MODE_COUNT; ++mode) {
+        if (screen_enabled(mode) && slot-- == 0) return mode;
+    }
+    return 0;
+}
+
+static int slot_of(int mode)
+{
+    if (!screen_enabled(mode)) return -1;
+    int slot = 0;
+    for (int other = 0; other < mode; ++other) {
+        if (screen_enabled(other)) ++slot;
+    }
+    return slot;
+}
+
+/* The enabled screen `steps` slots on from `mode`, wrapping round. */
+static int step_screen(int mode, int steps)
+{
+    const int count = screen_count();
+    int slot = slot_of(mode);
+    if (slot < 0) slot = 0;
+    slot = ((slot + steps) % count + count) % count;
+    return screen_at(slot);
+}
+
+/* Pomodoro: the app keeps the timer (and plays the chime); the knob shows it
+   and counts the seconds down between updates, as it does for media. */
+static int pomo_phase;
+static int pomo_remaining = 25 * 60;
+static int pomo_total = 25 * 60;
+static bool pomo_running;
+static int64_t pomo_stamp;
+static int pomo_shown = -1;
+
+/* Screen brightness in percent, from the app's settings. */
+static int backlight_percent = 100;
+
+/* Screensaver: pictures and clips the app converts to 360x360 JPEG frames
+   and stores in the "media" partition. A 4 KB header lists the items; the
+   data follows it. The header is written last, so an interrupted upload
+   leaves no library rather than a broken one. */
+#define MEDIA_MAGIC 0x314D5652u /* "RVM1" */
+#define MEDIA_HEADER_BYTES 4096
+#define MEDIA_MAX_ITEMS 250
+#define MEDIA_FRAME_MAX (256 * 1024)
+
+typedef struct {
+    uint32_t magic;
+    uint32_t version;
+    uint32_t count;
+    uint32_t data_bytes;
+    uint32_t data_crc;
+    uint32_t reserved[3];
+} media_header_t;
+
+typedef struct {
+    uint32_t offset; /* from the start of the data, after the header */
+    uint32_t bytes;
+    uint16_t frames;
+    uint16_t frame_ms;
+    uint32_t reserved;
+} media_entry_t;
+
+static const esp_partition_t *media_partition;
+static media_header_t media_header;
+static media_entry_t *media_entries;
+static volatile bool media_valid;
+/* Set while the app is writing a new library; playback stays off meanwhile. */
+static volatile bool media_busy;
+static uint32_t upload_size;
+static bool saver_enabled;
+static int saver_idle_s = 300;
+static int saver_interval_s = 30;
+static bool saver_active;
+static bool touch_swallowed;
+static int64_t last_input_us;
+static int saver_item = -1;
+static int saver_frame;
+static uint32_t saver_offset;
+static int64_t saver_item_start;
+static int64_t saver_next_frame;
+static uint8_t *frame_jpeg;
+static uint16_t *frame_pixels;
+static void stop_saver(void);
+static void apply_backlight(void);
 
 /* Interface style chosen in the PC app: one colour for every bar instead of
    the per-mode accents, and the size of the big number. */
@@ -190,6 +308,11 @@ typedef struct {
     uint8_t orientation;
     uint8_t number_size;
     uint32_t accent;
+    uint8_t screens;
+    uint8_t backlight;
+    uint8_t saver;
+    uint16_t idle_s;
+    uint16_t interval_s;
 } stored_settings_t;
 
 static bool settings_ready;
@@ -204,12 +327,26 @@ static stored_settings_t current_settings(void)
         .accent = custom_accent ? ((uint32_t)custom_rgb[0] << 16 |
                                    (uint32_t)custom_rgb[1] << 8 | custom_rgb[2])
                                 : STANDARD_ACCENT,
+        .screens = screen_mask,
+        .backlight = (uint8_t)backlight_percent,
+        .saver = saver_enabled,
+        .idle_s = (uint16_t)saver_idle_s,
+        .interval_s = (uint16_t)saver_interval_s,
     };
     static const int sizes[] = {24, 32, 40, 48};
     for (size_t index = 0; index < sizeof(sizes) / sizeof(sizes[0]); index++) {
         if (font_for_size(sizes[index]) == number_font) settings.number_size = (uint8_t)sizes[index];
     }
     return settings;
+}
+
+static bool same_settings(const stored_settings_t *a, const stored_settings_t *b)
+{
+    return a->mode == b->mode && a->orientation == b->orientation &&
+           a->number_size == b->number_size && a->accent == b->accent &&
+           a->screens == b->screens && a->backlight == b->backlight &&
+           a->saver == b->saver && a->idle_s == b->idle_s &&
+           a->interval_s == b->interval_s;
 }
 
 static void load_settings(void)
@@ -224,11 +361,19 @@ static void load_settings(void)
     nvs_handle_t handle;
     if (nvs_open(SETTINGS_NAMESPACE, NVS_READONLY, &handle) == ESP_OK) {
         uint8_t byte;
+        uint16_t word;
         uint32_t accent;
-        if (nvs_get_u8(handle, "mode", &byte) == ESP_OK && byte < 6) {
+        if (nvs_get_u8(handle, "screens", &byte) == ESP_OK && byte && byte <= ALL_SCREENS) {
+            screen_mask = byte;
+        }
+        if (nvs_get_u8(handle, "mode", &byte) == ESP_OK && byte < MODE_COUNT &&
+            screen_enabled(byte)) {
             selected_mode = byte;
             show_menu = false;
+        } else {
+            selected_mode = screen_at(0);
         }
+        menu_cursor = selected_mode;
         if (nvs_get_u8(handle, "orient", &byte) == ESP_OK && byte < 4) orientation = byte * 90;
         if (nvs_get_u8(handle, "numsize", &byte) == ESP_OK && font_for_size(byte)) {
             number_font = font_for_size(byte);
@@ -239,6 +384,12 @@ static void load_settings(void)
             custom_rgb[1] = (uint8_t)(accent >> 8);
             custom_rgb[2] = (uint8_t)accent;
         }
+        if (nvs_get_u8(handle, "light", &byte) == ESP_OK && byte >= 5 && byte <= 100) {
+            backlight_percent = byte;
+        }
+        if (nvs_get_u8(handle, "saver", &byte) == ESP_OK) saver_enabled = byte != 0;
+        if (nvs_get_u16(handle, "idle", &word) == ESP_OK && word >= 10) saver_idle_s = word;
+        if (nvs_get_u16(handle, "every", &word) == ESP_OK && word >= 1) saver_interval_s = word;
         nvs_close(handle);
     }
     saved_settings = current_settings();
@@ -249,18 +400,18 @@ static void save_settings(void)
 {
     if (!settings_ready) return;
     const stored_settings_t settings = current_settings();
-    if (settings.mode == saved_settings.mode &&
-        settings.orientation == saved_settings.orientation &&
-        settings.number_size == saved_settings.number_size &&
-        settings.accent == saved_settings.accent) {
-        return;
-    }
+    if (same_settings(&settings, &saved_settings)) return;
     nvs_handle_t handle;
     if (nvs_open(SETTINGS_NAMESPACE, NVS_READWRITE, &handle) != ESP_OK) return;
     const bool ok = nvs_set_u8(handle, "mode", settings.mode) == ESP_OK &&
                     nvs_set_u8(handle, "orient", settings.orientation) == ESP_OK &&
                     nvs_set_u8(handle, "numsize", settings.number_size) == ESP_OK &&
                     nvs_set_u32(handle, "accent", settings.accent) == ESP_OK &&
+                    nvs_set_u8(handle, "screens", settings.screens) == ESP_OK &&
+                    nvs_set_u8(handle, "light", settings.backlight) == ESP_OK &&
+                    nvs_set_u8(handle, "saver", settings.saver) == ESP_OK &&
+                    nvs_set_u16(handle, "idle", settings.idle_s) == ESP_OK &&
+                    nvs_set_u16(handle, "every", settings.interval_s) == ESP_OK &&
                     nvs_commit(handle) == ESP_OK;
     nvs_close(handle);
     if (ok) saved_settings = settings;
@@ -475,17 +626,19 @@ static inline bool segment_in_gauge(int segment)
     return ((GAUGE_START - segment) & ARC_MASK) <= GAUGE_SPAN;
 }
 
-/* The menu ring is six segments, one per mode, centred on the same 60-degree
+/* The menu ring is one segment per enabled screen, centred on the same
    sectors the touch handler uses, with a short gap between neighbours.
-   Returns the sector a segment belongs to, or -1 when it falls in a gap. */
+   Returns the slot a segment belongs to, or -1 when it falls in a gap. */
 #define MENU_SEGMENT_HALF 456
 static int menu_sector_of(int segment)
 {
+    const int count = screen_count();
+    const int whole = count * 1024;
     const int clockwise = (256 - segment) & ARC_MASK;
-    const int sector = ((clockwise * 6 + 512) / 1024) % 6;
-    int offset = clockwise * 6 - sector * 1024;
-    if (offset > 3072) offset -= 6144;
-    if (offset < -3072) offset += 6144;
+    const int sector = ((clockwise * count + 512) / 1024) % count;
+    int offset = clockwise * count - sector * 1024;
+    if (offset > whole / 2) offset -= whole;
+    if (offset < -whole / 2) offset += whole;
     return (offset >= -MENU_SEGMENT_HALF && offset <= MENU_SEGMENT_HALF) ? sector : -1;
 }
 
@@ -773,8 +926,9 @@ static void build_comet_arc(void)
    already pointing at where you came from. */
 static void build_menu_arc(void)
 {
+    const int lit_slot = slot_of(menu_cursor);
     for (int i = 0; i < ARC_SEGMENTS; ++i) {
-        const bool lit = menu_sector_of(i) == menu_cursor;
+        const bool lit = menu_sector_of(i) == lit_slot;
         arc_level[i] = lit ? 255 : 0;
         arc_ramp[i] = 255;
     }
@@ -848,6 +1002,13 @@ static const icon_part_t icon_media[] = {
     {PART_SEG, {5.5f, -8, 5.5f, 8, 3.4f}},
     {PART_SEG, {11, -8, 11, 8, 3.4f}},
 };
+static const icon_part_t icon_pomodoro[] = {
+    {PART_ARC, {0, 2, 9.5f, 2.4f, -180, 180}},
+    {PART_SEG, {0, 2, 0, -3.5f, 2.4f}},
+    {PART_SEG, {0, 2, 3.5f, 4.5f, 2.4f}},
+    {PART_SEG, {0, -11, 0, -7.5f, 2.4f}},
+    {PART_SEG, {-3.5f, -11.5f, 3.5f, -11.5f, 2.8f}},
+};
 
 static const icon_part_t icon_prev[] = {
     {PART_POLY, {15, -13, 15, 13, -7, 0, -7, 0}},
@@ -866,13 +1027,14 @@ static const icon_part_t icon_pause[] = {
 };
 
 #define ICON_COUNT(parts) ((int)(sizeof(parts) / sizeof(parts[0])))
-static const menu_icon_t menu_icons[6] = {
+static const menu_icon_t menu_icons[MODE_COUNT] = {
     {icon_volume, ICON_COUNT(icon_volume)},
     {icon_scroll, ICON_COUNT(icon_scroll)},
     {icon_brightness, ICON_COUNT(icon_brightness)},
     {icon_mic, ICON_COUNT(icon_mic)},
     {icon_zoom, ICON_COUNT(icon_zoom)},
     {icon_media, ICON_COUNT(icon_media)},
+    {icon_pomodoro, ICON_COUNT(icon_pomodoro)},
 };
 static const menu_icon_t media_prev = {icon_prev, ICON_COUNT(icon_prev)};
 static const menu_icon_t media_next = {icon_next, ICON_COUNT(icon_next)};
@@ -990,16 +1152,18 @@ static void draw_menu_icon(const menu_icon_t *icon, float cx, float cy,
    legible on the pale face; the rest are a quiet grey. */
 static void draw_menu_icons(void)
 {
-    for (int index = 0; index < 6; ++index) {
-        const float angle = (90.0f - index * 60.0f) * 0.0174532925f;
+    const int count = screen_count();
+    for (int slot = 0; slot < count; ++slot) {
+        const int mode = screen_at(slot);
+        const float angle = (90.0f - slot * 360.0f / count) * 0.0174532925f;
         int r = 0x8A, g = 0x8A, b = 0x9A;
-        if (index == menu_cursor) {
-            const uint8_t *accent = accent_of(index);
+        if (mode == menu_cursor) {
+            const uint8_t *accent = accent_of(mode);
             r = accent[0] * 3 / 4;
             g = accent[1] * 3 / 4;
             b = accent[2] * 3 / 4;
         }
-        draw_menu_icon(&menu_icons[index],
+        draw_menu_icon(&menu_icons[mode],
                        SCREEN_CENTER + MENU_ICON_R * cosf(angle),
                        SCREEN_CENTER - MENU_ICON_R * sinf(angle), MENU_ICON_SIZE, r, g, b);
     }
@@ -1044,10 +1208,27 @@ static int media_elapsed(void)
     return elapsed;
 }
 
+static int pomo_remaining_now(void)
+{
+    int remaining = pomo_remaining;
+    if (pomo_running) {
+        remaining -= (int)((esp_timer_get_time() - pomo_stamp) / 1000000);
+    }
+    return remaining < 0 ? 0 : remaining;
+}
+
+/* The pomodoro ring drains as the time runs out. */
+static int pomo_fill_q8(void)
+{
+    return pomo_total > 0 ? (int)(((int64_t)pomo_remaining_now() * 256) / pomo_total) : 0;
+}
+
 /* Composes a frame: the static chrome only when the view changed, then the
    arc, which is the only thing that moves. */
 static void render_canvas(void)
 {
+    /* The screensaver owns the canvas; the dial is composed afresh when it ends. */
+    if (saver_active) return;
     dirty_count = 0;
 
     if (force_full_redraw) {
@@ -1082,6 +1263,8 @@ static void render_canvas(void)
                 fill = (int)(((int64_t)media_elapsed() * 256) / media_duration);
             }
             build_level_arc(fill);
+        } else if (selected_mode == POMODORO_MODE) {
+            build_level_arc(pomo_fill_q8());
         } else {
             build_comet_arc();
         }
@@ -1096,6 +1279,7 @@ static void render_canvas(void)
     }
 }
 
+/* The menu slot under a touch, or -1 off the ring. */
 static int sector_at(int x, int y)
 {
     const int dx = x - LCD_WIDTH / 2;
@@ -1104,9 +1288,11 @@ static int sector_at(int x, int y)
     if (radius_squared < 50 * 50 || radius_squared > 170 * 170) {
         return -1;
     }
+    const int count = screen_count();
+    const float step = 360.0f / count;
     float degrees = atan2f((float)dy, (float)dx) * 57.2957795f;
-    int sector = (int)floorf((90.0f - degrees + 30.0f + 360.0f) / 60.0f);
-    return sector % 6;
+    int sector = (int)floorf((90.0f - degrees + step / 2 + 360.0f) / step);
+    return sector % count;
 }
 
 /* The animation only changes the canvas. Re-setting the label text every frame
@@ -1124,6 +1310,7 @@ static void draw_frame(void)
    whole screen did. */
 static void apply_labels(void)
 {
+    if (saver_active) return;
     if (show_menu) {
         /* The cap names the option the knob points at; a tap confirms it. */
         const uint8_t *accent = accent_of(menu_cursor);
@@ -1162,6 +1349,22 @@ static void apply_labels(void)
         return;
     }
 
+    if (selected_mode == POMODORO_MODE) {
+        const int remaining = pomo_remaining_now();
+        char clock[12];
+        snprintf(clock, sizeof(clock), "%d:%02d", remaining / 60, remaining % 60);
+        pomo_shown = remaining;
+        lv_obj_set_style_text_font(value_label, number_font, 0);
+        lv_label_set_text(value_label, clock);
+        lv_label_set_text(time_label, pomo_phase ? "BREAK" : "FOCUS");
+        lv_label_set_text(title_label, pomo_running ? "Tap to pause" : "Tap to start");
+        lv_obj_clear_flag(value_label, LV_OBJ_FLAG_HIDDEN);
+        lv_obj_clear_flag(time_label, LV_OBJ_FLAG_HIDDEN);
+        lv_obj_clear_flag(title_label, LV_OBJ_FLAG_HIDDEN);
+        lv_obj_add_flag(artist_label, LV_OBJ_FLAG_HIDDEN);
+        return;
+    }
+
     char value[12];
     if (mode_is_level(selected_mode)) {
         snprintf(value, sizeof(value), "%d", selected_value);
@@ -1195,28 +1398,227 @@ static void refresh_screen(void)
     if (lvgl_mutex) xSemaphoreGive(lvgl_mutex);
 }
 
+/* ----- screensaver library ------------------------------------------- */
+
+/* Reads the header and item table, and only trusts them when every item
+   lies inside the data the header claims. */
+static bool load_media(void)
+{
+    media_valid = false;
+    if (!media_partition || !media_entries) return false;
+    media_header_t header;
+    if (esp_partition_read(media_partition, 0, &header, sizeof(header)) != ESP_OK) return false;
+    const uint32_t capacity = media_partition->size - MEDIA_HEADER_BYTES;
+    if (header.magic != MEDIA_MAGIC || header.version != 1 || header.count == 0 ||
+        header.count > MEDIA_MAX_ITEMS || header.data_bytes > capacity) {
+        return false;
+    }
+    if (esp_partition_read(media_partition, sizeof(header), media_entries,
+                           header.count * sizeof(media_entry_t)) != ESP_OK) {
+        return false;
+    }
+    for (uint32_t index = 0; index < header.count; ++index) {
+        const media_entry_t *entry = &media_entries[index];
+        if (entry->frames == 0 || entry->bytes < 8 || entry->offset % 4 != 0 ||
+            entry->offset > header.data_bytes ||
+            entry->bytes > header.data_bytes - entry->offset) {
+            return false;
+        }
+    }
+    media_header = header;
+    media_valid = true;
+    return true;
+}
+
+static void report_library(void)
+{
+    const uint32_t capacity = media_partition ? media_partition->size - MEDIA_HEADER_BYTES : 0;
+    printf("LIBRARY,%lu,%lu,%lu,%08lX\n", (unsigned long)capacity,
+           (unsigned long)(media_valid ? media_header.count : 0),
+           (unsigned long)(media_valid ? media_header.data_bytes : 0),
+           (unsigned long)(media_valid ? media_header.data_crc : 0));
+}
+
+static int base64_value(char character)
+{
+    if (character >= 'A' && character <= 'Z') return character - 'A';
+    if (character >= 'a' && character <= 'z') return character - 'a' + 26;
+    if (character >= '0' && character <= '9') return character - '0' + 52;
+    if (character == '+') return 62;
+    if (character == '/') return 63;
+    return -1;
+}
+
+/* Returns the decoded length, or -1 on malformed input or overflow. */
+static int base64_decode(const char *text, uint8_t *output, int capacity)
+{
+    int length = 0;
+    uint32_t bits = 0;
+    int count = 0;
+    for (; *text && *text != '='; ++text) {
+        const int value = base64_value(*text);
+        if (value < 0) return -1;
+        bits = (bits << 6) | (uint32_t)value;
+        count += 6;
+        if (count >= 8) {
+            count -= 8;
+            if (length >= capacity) return -1;
+            output[length++] = (uint8_t)(bits >> count);
+        }
+    }
+    return length;
+}
+
+/* CRC-32 (the zlib one) of the data after the header, read back from flash. */
+static uint32_t media_data_crc(uint32_t bytes)
+{
+    uint32_t crc = 0;
+    uint32_t offset = 0;
+    while (offset < bytes) {
+        uint32_t chunk = bytes - offset;
+        if (chunk > MEDIA_FRAME_MAX) chunk = MEDIA_FRAME_MAX;
+        if (esp_partition_read(media_partition, MEDIA_HEADER_BYTES + offset,
+                               frame_jpeg, chunk) != ESP_OK) {
+            return ~crc;
+        }
+        crc = esp_rom_crc32_le(crc, frame_jpeg, chunk);
+        offset += chunk;
+    }
+    return crc;
+}
+
+/* Upload, driven by the app one line at a time:
+     MEDIA_BEGIN,<bytes>   erase room for the new library   -> MEDIA_READY
+     MD,<offset>,<base64>  write a chunk                    -> MD_OK,<offset>
+     MEDIA_END             check the header and the CRC     -> MEDIA_OK,<count>
+     MEDIA_CLEAR           remove the library               -> MEDIA_OK,0
+     LIBRARY               report what is stored            -> LIBRARY,...
+   The app sends the header chunk (offset 0) last. Runs on the reader task, so
+   the dial keeps working; playback is held off while `media_busy`. */
+static void handle_media_line(char *line)
+{
+    static uint8_t chunk[UPLOAD_CHUNK_MAX];
+
+    if (strcmp(line, "LIBRARY") == 0) {
+        report_library();
+        return;
+    }
+    if (!media_partition || !frame_jpeg) {
+        printf("MEDIA_ERR,NOSTORAGE\n");
+        return;
+    }
+    if (strncmp(line, "MD,", 3) == 0) {
+        char *data = strchr(line + 3, ',');
+        if (!data || !media_busy) {
+            printf("MD_ERR,0\n");
+            return;
+        }
+        *data++ = '\0';
+        char *end = NULL;
+        const unsigned long offset = strtoul(line + 3, &end, 10);
+        const int length = base64_decode(data, chunk, sizeof(chunk));
+        if (*end != '\0' || length <= 0 || offset > upload_size ||
+            (unsigned long)length > upload_size - offset ||
+            esp_partition_write(media_partition, offset, chunk, length) != ESP_OK) {
+            printf("MD_ERR,%lu\n", offset);
+            return;
+        }
+        printf("MD_OK,%lu\n", offset);
+        return;
+    }
+    if (strncmp(line, "MEDIA_BEGIN,", 12) == 0) {
+        char *end = NULL;
+        const unsigned long bytes = strtoul(line + 12, &end, 10);
+        if (*end != '\0' || bytes <= MEDIA_HEADER_BYTES || bytes > media_partition->size) {
+            printf("MEDIA_ERR,SIZE\n");
+            return;
+        }
+        media_busy = true;
+        media_valid = false;
+        /* Let the main loop leave the screensaver before the flash changes. */
+        vTaskDelay(pdMS_TO_TICKS(200));
+        upload_size = bytes;
+        const uint32_t erase = (bytes + 4095) & ~4095u;
+        if (esp_partition_erase_range(media_partition, 0, erase) != ESP_OK) {
+            media_busy = false;
+            printf("MEDIA_ERR,ERASE\n");
+            return;
+        }
+        printf("MEDIA_READY\n");
+        return;
+    }
+    if (strcmp(line, "MEDIA_END") == 0) {
+        const bool loaded = media_busy && load_media() &&
+                            MEDIA_HEADER_BYTES + media_header.data_bytes <= upload_size &&
+                            media_data_crc(media_header.data_bytes) == media_header.data_crc;
+        if (!loaded) {
+            media_valid = false;
+            esp_partition_erase_range(media_partition, 0, MEDIA_HEADER_BYTES);
+        }
+        media_busy = false;
+        if (loaded) {
+            printf("MEDIA_OK,%lu\n", (unsigned long)media_header.count);
+        } else {
+            printf("MEDIA_ERR,CHECK\n");
+        }
+        report_library();
+        return;
+    }
+    if (strcmp(line, "MEDIA_CLEAR") == 0) {
+        media_busy = true;
+        media_valid = false;
+        vTaskDelay(pdMS_TO_TICKS(200));
+        esp_partition_erase_range(media_partition, 0, MEDIA_HEADER_BYTES);
+        media_busy = false;
+        printf("MEDIA_OK,0\n");
+        report_library();
+    }
+}
+
+static void dispatch_line(char *line, size_t length)
+{
+    if (strncmp(line, "MD,", 3) == 0 || strncmp(line, "MEDIA_", 6) == 0 ||
+        strcmp(line, "LIBRARY") == 0) {
+        handle_media_line(line);
+        return;
+    }
+    /* Anything else is a short command; an over-long track title is cut. */
+    if (length >= SERIAL_LINE_MAX) line[SERIAL_LINE_MAX - 1] = '\0';
+    xQueueSend(serial_queue, line, pdMS_TO_TICKS(100));
+}
+
+/* Reads the USB serial port through its driver, so long upload lines arrive
+   whole: the host is held off (USB NAKs) while the buffer is full, and nothing
+   is lost or split the way non-blocking stdin could. */
 static void serial_reader_task(void *argument)
 {
-    char line[SERIAL_LINE_MAX];
+    static char line[RX_LINE_MAX];
+    uint8_t buffer[256];
+    size_t length = 0;
+    bool overflow = false;
     for (;;) {
-        if (fgets(line, sizeof(line), stdin) == NULL) {
-            clearerr(stdin);
-            vTaskDelay(1);
-            continue;
-        }
-        size_t length = strlen(line);
-        while (length && (line[length - 1] == '\r' || line[length - 1] == '\n')) {
-            line[--length] = '\0';
-        }
-        if (length && length < sizeof(line)) {
-            xQueueSend(serial_queue, line, 0);
+        const int count = usb_serial_jtag_read_bytes(buffer, sizeof(buffer), portMAX_DELAY);
+        for (int index = 0; index < count; ++index) {
+            const char character = (char)buffer[index];
+            if (character == '\n' || character == '\r') {
+                if (length && !overflow) {
+                    line[length] = '\0';
+                    dispatch_line(line, length);
+                }
+                length = 0;
+                overflow = false;
+            } else if (length < sizeof(line) - 1) {
+                line[length++] = character;
+            } else {
+                overflow = true;
+            }
         }
     }
 }
 
 static int mode_from_name(const char *name)
 {
-    for (int index = 0; index < 6; ++index) {
+    for (int index = 0; index < MODE_COUNT; ++index) {
         if (strcmp(name, mode_names[index]) == 0) return index;
     }
     return -1;
@@ -1258,7 +1660,7 @@ static void reset_comet(void)
 static void open_menu(void)
 {
     show_menu = true;
-    menu_cursor = selected_mode;
+    menu_cursor = screen_enabled(selected_mode) ? selected_mode : screen_at(0);
 }
 
 static void confirm_menu(int mode)
@@ -1284,6 +1686,74 @@ static void handle_command(char *line)
     if (strcmp(line, "COMETRESET") == 0) {
         reset_comet();
         draw_frame();
+        return;
+    }
+
+    if (strncmp(line, "SCREENS,", 8) == 0) {
+        int mask;
+        if (!parse_integer(line + 8, 1, ALL_SCREENS, &mask)) return;
+        screen_mask = (uint8_t)mask;
+        if (!screen_enabled(selected_mode)) selected_mode = screen_at(0);
+        if (!screen_enabled(menu_cursor)) menu_cursor = selected_mode;
+        save_settings();
+        refresh_screen();
+        printf("SCREENS_OK,%d\n", mask);
+        return;
+    }
+
+    if (strncmp(line, "BACKLIGHT,", 10) == 0) {
+        int percent;
+        if (!parse_integer(line + 10, 5, 100, &percent)) return;
+        backlight_percent = percent;
+        apply_backlight();
+        save_settings();
+        printf("BACKLIGHT_OK,%d\n", percent);
+        return;
+    }
+
+    if (strncmp(line, "SAVER,", 6) == 0) {
+        char *save = NULL;
+        const char *enabled_text = strtok_r(line + 6, ",", &save);
+        const char *idle_text = strtok_r(NULL, ",", &save);
+        const char *interval_text = strtok_r(NULL, ",", &save);
+        int enabled, idle, interval;
+        if (!enabled_text || !idle_text || !interval_text ||
+            !parse_integer(enabled_text, 0, 1, &enabled) ||
+            !parse_integer(idle_text, 10, 7200, &idle) ||
+            !parse_integer(interval_text, 1, 3600, &interval)) {
+            return;
+        }
+        saver_enabled = enabled;
+        saver_idle_s = idle;
+        saver_interval_s = interval;
+        save_settings();
+        printf("SAVER_OK\n");
+        return;
+    }
+
+    if (strncmp(line, "POMO,", 5) == 0) {
+        char *save = NULL;
+        const char *phase_text = strtok_r(line + 5, ",", &save);
+        const char *remaining_text = strtok_r(NULL, ",", &save);
+        const char *total_text = strtok_r(NULL, ",", &save);
+        const char *running_text = strtok_r(NULL, ",", &save);
+        int phase, remaining, total, running;
+        if (!phase_text || !remaining_text || !total_text || !running_text ||
+            !parse_integer(phase_text, 0, 1, &phase) ||
+            !parse_integer(remaining_text, 0, 86400, &remaining) ||
+            !parse_integer(total_text, 1, 86400, &total) ||
+            !parse_integer(running_text, 0, 1, &running)) {
+            return;
+        }
+        pomo_phase = phase;
+        pomo_remaining = remaining;
+        pomo_total = total;
+        pomo_running = running;
+        pomo_stamp = esp_timer_get_time();
+        if (!show_menu && selected_mode == POMODORO_MODE) {
+            refresh_text();
+            draw_frame();
+        }
         return;
     }
 
@@ -1400,7 +1870,7 @@ static void send_touch_event(void)
     const int delta_y = (int)touch_y - touch_start_y;
     if (abs(delta_x) > 55 && abs(delta_x) > abs(delta_y)) {
         const char *direction = delta_x < 0 ? "LEFT" : "RIGHT";
-        selected_mode = (selected_mode + (delta_x < 0 ? 1 : 5)) % 6;
+        selected_mode = step_screen(selected_mode, delta_x < 0 ? 1 : -1);
         show_menu = false;
         save_settings();
         dial_value_q8 = 0;
@@ -1429,6 +1899,11 @@ static void send_touch_event(void)
     }
     const int dx = (int)touch_start_x - SCREEN_CENTER;
     const int dy = (int)touch_start_y - SCREEN_CENTER;
+    if (!show_menu && selected_mode == POMODORO_MODE &&
+        dx * dx + dy * dy < DIAL_CAP_R * DIAL_CAP_R) {
+        printf("POMO,TOGGLE\n");
+        return;
+    }
     const int centre_r = show_menu ? 50 : DIAL_CAP_R;
     const bool on_name = !show_menu && abs(dx) <= FOOTER_HIT_W &&
                          abs(dy - FOOTER_Y) <= FOOTER_HIT_H;
@@ -1446,7 +1921,7 @@ static void send_touch_event(void)
         /* Tapping an icon picks it directly; tapping anywhere else confirms
            whatever the knob is pointing at. */
         const int sector = sector_at(touch_start_x, touch_start_y);
-        confirm_menu(sector >= 0 ? sector : menu_cursor);
+        confirm_menu(sector >= 0 ? screen_at(sector) : menu_cursor);
     }
 }
 
@@ -1496,15 +1971,27 @@ static void poll_touch(void)
         rotate_touch_coordinates(&x, &y);
         touch_x = x;
         touch_y = y;
+        last_input_us = esp_timer_get_time();
         if (!touch_active) {
             touch_active = true;
             touch_start_x = x;
             touch_start_y = y;
+            touch_swallowed = saver_active;
+            if (saver_active) stop_saver();
         }
     } else if (touch_active) {
         touch_active = false;
-        send_touch_event();
+        if (!touch_swallowed) send_touch_event();
     }
+}
+
+/* Percent to PWM on a square law, so equal steps look like equal steps. */
+static void apply_backlight(void)
+{
+    int duty = (255 * backlight_percent * backlight_percent) / 10000;
+    if (duty < 3) duty = 3;
+    ledc_set_duty(LEDC_LOW_SPEED_MODE, LEDC_CHANNEL_1, duty);
+    ledc_update_duty(LEDC_LOW_SPEED_MODE, LEDC_CHANNEL_1);
 }
 
 static void initialize_display(void)
@@ -1554,6 +2041,7 @@ static void initialize_display(void)
     };
     ESP_ERROR_CHECK(ledc_timer_config(&timer));
     ESP_ERROR_CHECK(ledc_channel_config(&backlight));
+    apply_backlight();
 }
 
 static void initialize_touch(void)
@@ -1714,11 +2202,159 @@ static void initialize_lvgl(void)
     xTaskCreate(lvgl_task, "lvgl", 4096, NULL, 2, NULL);
 }
 
+/* ----- screensaver playback ------------------------------------------ */
+
+typedef struct {
+    const uint8_t *data;
+    uint32_t size;
+    uint32_t position;
+} jpeg_source_t;
+
+static UINT jpeg_input(JDEC *decoder, BYTE *buffer, UINT count)
+{
+    jpeg_source_t *source = (jpeg_source_t *)decoder->device;
+    const uint32_t left = source->size - source->position;
+    if (count > left) count = left;
+    if (buffer) memcpy(buffer, source->data + source->position, count);
+    source->position += count;
+    return count;
+}
+
+static UINT jpeg_output(JDEC *decoder, void *bitmap, JRECT *rect)
+{
+    const uint8_t *rgb = (const uint8_t *)bitmap;
+    for (int y = rect->top; y <= rect->bottom; ++y) {
+        uint16_t *row = frame_pixels + (size_t)y * LCD_WIDTH;
+        for (int x = rect->left; x <= rect->right; ++x) {
+            row[x] = pack_pixel(rgb[0], rgb[1], rgb[2]);
+            rgb += 3;
+        }
+    }
+    return 1;
+}
+
+/* Decodes one stored JPEG frame straight onto the screen. */
+static bool show_saver_frame(uint32_t offset, uint32_t length)
+{
+    static uint8_t pool[4096];
+    if (length == 0 || length > MEDIA_FRAME_MAX ||
+        esp_partition_read(media_partition, MEDIA_HEADER_BYTES + offset,
+                           frame_jpeg, length) != ESP_OK) {
+        return false;
+    }
+    jpeg_source_t source = {frame_jpeg, length, 0};
+    JDEC decoder;
+    if (jd_prepare(&decoder, jpeg_input, pool, sizeof(pool), &source) != JDR_OK ||
+        decoder.width != LCD_WIDTH || decoder.height != LCD_HEIGHT ||
+        jd_decomp(&decoder, jpeg_output, 0) != JDR_OK) {
+        return false;
+    }
+    if (lvgl_mutex) xSemaphoreTake(lvgl_mutex, portMAX_DELAY);
+    memcpy(canvas_pixels, frame_pixels, (size_t)LCD_WIDTH * LCD_HEIGHT * sizeof(uint16_t));
+    lv_obj_invalidate(canvas);
+    if (lvgl_mutex) xSemaphoreGive(lvgl_mutex);
+    return true;
+}
+
+static void begin_saver_item(int item, int64_t now)
+{
+    saver_item = item % (int)media_header.count;
+    saver_frame = 0;
+    saver_offset = media_entries[saver_item].offset;
+    saver_item_start = now;
+    saver_next_frame = now;
+}
+
+static void start_saver(int64_t now)
+{
+    saver_active = true;
+    if (lvgl_mutex) xSemaphoreTake(lvgl_mutex, portMAX_DELAY);
+    lv_obj_add_flag(title_label, LV_OBJ_FLAG_HIDDEN);
+    lv_obj_add_flag(value_label, LV_OBJ_FLAG_HIDDEN);
+    lv_obj_add_flag(artist_label, LV_OBJ_FLAG_HIDDEN);
+    lv_obj_add_flag(time_label, LV_OBJ_FLAG_HIDDEN);
+    lv_obj_add_flag(footer_label, LV_OBJ_FLAG_HIDDEN);
+    if (lvgl_mutex) xSemaphoreGive(lvgl_mutex);
+    /* Each time the screensaver starts it picks up with the next item. */
+    begin_saver_item(saver_item + 1, now);
+    printf("SAVER,ON\n");
+}
+
+static void stop_saver(void)
+{
+    if (!saver_active) return;
+    saver_active = false;
+    if (lvgl_mutex) xSemaphoreTake(lvgl_mutex, portMAX_DELAY);
+    lv_obj_clear_flag(footer_label, LV_OBJ_FLAG_HIDDEN);
+    if (lvgl_mutex) xSemaphoreGive(lvgl_mutex);
+    refresh_screen();
+    printf("SAVER,OFF\n");
+}
+
+/* Starts, advances and ends the screensaver; called from the main loop. */
+static void saver_tick(int64_t now)
+{
+    if (saver_active && (!saver_enabled || media_busy || !media_valid)) {
+        stop_saver();
+        return;
+    }
+    if (!saver_active) {
+        if (saver_enabled && media_valid && !media_busy && !touch_active &&
+            now - last_input_us >= (int64_t)saver_idle_s * 1000000) {
+            start_saver(now);
+        } else {
+            return;
+        }
+    }
+    if (now < saver_next_frame) return;
+
+    const int64_t interval = (int64_t)saver_interval_s * 1000000;
+    if (media_header.count > 1 && now - saver_item_start >= interval) {
+        begin_saver_item(saver_item + 1, now);
+    }
+    const media_entry_t *entry = &media_entries[saver_item];
+    uint32_t length = 0;
+    const uint32_t end = entry->offset + entry->bytes;
+    bool shown = false;
+    if (saver_offset + 4 <= end &&
+        esp_partition_read(media_partition, MEDIA_HEADER_BYTES + saver_offset,
+                           &length, sizeof(length)) == ESP_OK &&
+        length <= end - saver_offset - 4) {
+        shown = show_saver_frame(saver_offset + 4, length);
+    }
+    if (!shown) {
+        /* A damaged item is skipped rather than retried every frame. */
+        printf("SAVER,BAD,%d\n", saver_item);
+        if (media_header.count > 1) {
+            begin_saver_item(saver_item + 1, now);
+            saver_next_frame = now + 100000;
+        } else {
+            saver_next_frame = now + interval;
+        }
+        return;
+    }
+    if (entry->frames > 1) {
+        saver_offset += 4 + ((length + 3) & ~3u);
+        if (++saver_frame >= entry->frames) {
+            saver_frame = 0;
+            saver_offset = entry->offset;
+        }
+        const int frame_ms = entry->frame_ms ? entry->frame_ms : 100;
+        /* Keep to the clip's own pace, time spent decoding included. */
+        saver_next_frame += (int64_t)frame_ms * 1000;
+        if (saver_next_frame < now) saver_next_frame = now;
+    } else {
+        /* A still stays until it is time for the next item. */
+        saver_next_frame = media_header.count > 1 ? saver_item_start + interval
+                                                  : INT64_MAX;
+    }
+}
+
 /* Advances whatever is animating and reports whether the arc moved, so a still
    dial costs nothing at all. */
 static bool dial_advance(void)
 {
-    if (show_menu) return false;
+    if (show_menu || saver_active) return false;
 
     if (mode_is_level(selected_mode)) {
         const int32_t target = (int32_t)selected_value << 8;
@@ -1733,6 +2369,13 @@ static bool dial_advance(void)
         if (media_duration > 0) {
             head = (int)(((int64_t)media_elapsed() * GAUGE_SPAN) / media_duration);
         }
+        if (head == media_head_shown) return false;
+        media_head_shown = head;
+        return true;
+    }
+
+    if (selected_mode == POMODORO_MODE) {
+        const int head = (GAUGE_SPAN * pomo_fill_q8()) >> 8;
         if (head == media_head_shown) return false;
         media_head_shown = head;
         return true;
@@ -1755,7 +2398,25 @@ void app_main(void)
     initialize_encoder();
     initialize_lvgl();
 
-    serial_queue = xQueueCreate(4, SERIAL_LINE_MAX);
+    /* The driver gives the reader whole, flow-controlled lines, and lets
+       printf give up instead of stalling when no one is listening. */
+    usb_serial_jtag_driver_config_t usb_config = {
+        .rx_buffer_size = 8192,
+        .tx_buffer_size = 4096,
+    };
+    ESP_ERROR_CHECK(usb_serial_jtag_driver_install(&usb_config));
+    usb_serial_jtag_vfs_use_driver();
+
+    media_partition = esp_partition_find_first(ESP_PARTITION_TYPE_DATA, 0x40, "media");
+    media_entries = heap_caps_malloc(MEDIA_MAX_ITEMS * sizeof(media_entry_t), MALLOC_CAP_SPIRAM);
+    frame_jpeg = heap_caps_malloc(MEDIA_FRAME_MAX, MALLOC_CAP_SPIRAM);
+    frame_pixels = heap_caps_malloc((size_t)LCD_WIDTH * LCD_HEIGHT * sizeof(uint16_t),
+                                    MALLOC_CAP_SPIRAM);
+    if (!frame_jpeg || !frame_pixels) media_partition = NULL;
+    load_media();
+    last_input_us = esp_timer_get_time();
+
+    serial_queue = xQueueCreate(SERIAL_QUEUE_DEPTH, SERIAL_LINE_MAX);
     assert(serial_queue);
     xTaskCreate(serial_reader_task, "serial_reader", 4096, NULL, 3, NULL);
 
@@ -1780,12 +2441,18 @@ void app_main(void)
         if (pulses != 0 && (pulses > 0) != (encoder_accumulator > 0)) {
             encoder_accumulator = pulses;
         }
-        const int detents = encoder_accumulator / ENCODER_PULSES_PER_DETENT;
+        int detents = encoder_accumulator / ENCODER_PULSES_PER_DETENT;
         encoder_accumulator -= detents * ENCODER_PULSES_PER_DETENT;
+        if (pulses != 0) last_input_us = esp_timer_get_time();
+        if (detents != 0 && saver_active) {
+            /* The turn that wakes the dial does nothing else. */
+            stop_saver();
+            detents = 0;
+        }
         if (detents != 0 && show_menu) {
             /* In the menu the knob walks the highlight around the ring,
                clockwise with a clockwise turn. */
-            menu_cursor = ((menu_cursor + detents) % 6 + 6) % 6;
+            menu_cursor = step_screen(menu_cursor, detents);
             printf("CURSOR,%d\n", menu_cursor);
             refresh_screen();
         } else if (detents != 0) {
@@ -1793,7 +2460,8 @@ void app_main(void)
             /* Scroll and zoom have no value to show, so the turn itself is the
                feedback: the comet follows the knob. Segments run anticlockwise
                and a positive detent is a clockwise turn, hence the minus. */
-            if (!mode_is_level(selected_mode) && selected_mode != MEDIA_MODE) {
+            if (!mode_is_level(selected_mode) && selected_mode != MEDIA_MODE &&
+                selected_mode != POMODORO_MODE) {
                 arc_target -= detents * COMET_STEP_Q8;
                 arc_direction = detents > 0 ? -1 : 1;
             }
@@ -1802,8 +2470,13 @@ void app_main(void)
         const int64_t now = esp_timer_get_time();
         if (now - last_frame >= 40000) {
             if (dial_advance()) draw_frame();
+            if (selected_mode == POMODORO_MODE && pomo_running && !show_menu &&
+                !saver_active && pomo_remaining_now() != pomo_shown) {
+                refresh_text();
+            }
             last_frame = now;
         }
+        saver_tick(now);
         if (now - last_hello >= 1000000) {
             printf("HELLO,REVO1,1\n");
             printf("VERSION,%s\n", REVO1_VERSION);
