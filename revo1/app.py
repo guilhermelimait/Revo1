@@ -1182,9 +1182,10 @@ class App(DashboardPage, ScreensaverPage):
                                     self.comet_direction)
             draw = ImageDraw.Draw(image)
             self.put_text(draw, c, c, self.mode.upper(), 16, dial.VALUE_INK)
-        self.put_text(draw, c, c + dial.FOOTER_Y, self.mode.upper(), 12, dial.FOOTER_INK,
-                      tracking=3)
-        self.show_dial(image)
+        pixels = np.array(image.convert("RGB"))
+        self.draw_icon(pixels, "Back", c, c + dial.FOOTER_Y, dial.FOOTER_INK,
+                       size=dial.BACK_ICON_SIZE)
+        self.show_dial(Image.fromarray(pixels))
         if self.mode == "Pomodoro":
             for button in self.pomodoro_buttons:
                 button.refresh()

@@ -17,14 +17,15 @@ BAND = 15
 SEGMENTS = 1024
 MASK = SEGMENTS - 1
 # The gauge is the whole ring: it starts at 6 o'clock and runs clockwise all
-# the way round, so at 100% the colour meets itself. The mode name sits on the
+# the way round, so at 100% the colour meets itself. A back button sits on the
 # upper face instead of in a gap.
 GAUGE_START = 768
 GAUGE_SPAN = SEGMENTS
 FOOTER_Y = -118
-# Tapping the mode name on the upper face also goes back to the menu.
-FOOTER_HIT_W = 90
-FOOTER_HIT_H = 20
+# Tapping the back button on the upper face goes back to the menu.
+FOOTER_HIT_W = 30
+FOOTER_HIT_H = 30
+BACK_ICON_SIZE = 1.0
 MENU_SEGMENT_HALF = 456
 # Scroll/zoom comet, identical to the firmware so both rest on the same
 # segment: positions in q8 segments, a fixed move per detent, eased a quarter

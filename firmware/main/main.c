@@ -71,14 +71,15 @@
 #define ARC_SHADE_STEPS (DIAL_ARC_BAND * 4 + 1)
 #define BAND_CAPACITY 40000
 /* The gauge is the whole ring: it starts at 6 o'clock and runs clockwise all
-   the way round, so at 100% the colour meets itself. The mode label sits on
+   the way round, so at 100% the colour meets itself. A back button sits on
    the upper face, between the cap and the ring. */
 #define GAUGE_START 768
 #define GAUGE_SPAN ARC_SEGMENTS
 #define FOOTER_Y (-118)
-/* Tapping the mode name also goes back to the menu. */
-#define FOOTER_HIT_W 90
-#define FOOTER_HIT_H 20
+/* Tapping the back button goes back to the menu. */
+#define FOOTER_HIT_W 30
+#define FOOTER_HIT_H 30
+#define BACK_ICON_SIZE 1.0f
 #define ARC_TAIL 300
 /* Scroll and zoom: each detent moves the comet a fixed number of segments
    (q8), and the head eases a quarter of the way there per frame. The PC app
@@ -264,7 +265,6 @@ static lv_obj_t *title_label;
 static lv_obj_t *value_label;
 static lv_obj_t *artist_label;
 static lv_obj_t *time_label;
-static lv_obj_t *footer_label;
 static lv_color_t *canvas_pixels;
 static lv_color_t *draw_buffer_a;
 static lv_color_t *draw_buffer_b;
@@ -1040,6 +1040,14 @@ static const menu_icon_t media_prev = {icon_prev, ICON_COUNT(icon_prev)};
 static const menu_icon_t media_next = {icon_next, ICON_COUNT(icon_next)};
 static const menu_icon_t media_play = {icon_play, ICON_COUNT(icon_play)};
 static const menu_icon_t media_pause = {icon_pause, ICON_COUNT(icon_pause)};
+/* A left arrow in a thin ring: the way back to the menu. */
+static const icon_part_t icon_back[] = {
+    {PART_ARC, {0, 0, 13, 1.6f, -180, 180}},
+    {PART_SEG, {-6, 0, 6, 0, 2.2f}},
+    {PART_SEG, {-6, 0, -1.5f, -4.5f, 2.2f}},
+    {PART_SEG, {-6, 0, -1.5f, 4.5f, 2.2f}},
+};
+static const menu_icon_t back_button = {icon_back, ICON_COUNT(icon_back)};
 
 #define MENU_ICON_R 120
 #define MENU_ICON_SIZE 1.25f
@@ -1237,6 +1245,8 @@ static void render_canvas(void)
         if (show_menu) {
             draw_menu_icons();
         } else {
+            draw_menu_icon(&back_button, SCREEN_CENTER, SCREEN_CENTER + FOOTER_Y,
+                           BACK_ICON_SIZE, 0x8A, 0x8A, 0x98);
             if (selected_mode == MEDIA_MODE) {
                 draw_media_icons(accent_of(MEDIA_MODE));
             } else if (mode_is_level(selected_mode)) {
@@ -1323,14 +1333,10 @@ static void apply_labels(void)
         lv_obj_add_flag(title_label, LV_OBJ_FLAG_HIDDEN);
         lv_obj_add_flag(artist_label, LV_OBJ_FLAG_HIDDEN);
         lv_obj_add_flag(time_label, LV_OBJ_FLAG_HIDDEN);
-        lv_obj_add_flag(footer_label, LV_OBJ_FLAG_HIDDEN);
         return;
     }
 
     lv_obj_set_style_text_color(value_label, lv_color_hex(0x2A2A34), 0);
-
-    lv_label_set_text(footer_label, mode_names[selected_mode]);
-    lv_obj_clear_flag(footer_label, LV_OBJ_FLAG_HIDDEN);
 
     if (selected_mode == MEDIA_MODE) {
         lv_label_set_text(title_label,
@@ -2184,12 +2190,6 @@ static void initialize_lvgl(void)
     lv_obj_align(time_label, LV_ALIGN_CENTER, 0, MEDIA_TIME_Y);
     lv_label_set_text(time_label, "");
     /* Sits on the upper face, between the cap and the ring. */
-    footer_label = lv_label_create(lv_scr_act());
-    lv_obj_set_style_text_color(footer_label, lv_color_hex(0x8A8A98), 0);
-    lv_obj_set_style_text_font(footer_label, &lv_font_montserrat_12, 0);
-    lv_obj_set_style_text_letter_space(footer_label, 3, 0);
-    lv_obj_align(footer_label, LV_ALIGN_CENTER, 0, FOOTER_Y);
-    lv_label_set_text(footer_label, "");
     refresh_screen();
 
     const esp_timer_create_args_t tick = {
@@ -2273,7 +2273,6 @@ static void start_saver(int64_t now)
     lv_obj_add_flag(value_label, LV_OBJ_FLAG_HIDDEN);
     lv_obj_add_flag(artist_label, LV_OBJ_FLAG_HIDDEN);
     lv_obj_add_flag(time_label, LV_OBJ_FLAG_HIDDEN);
-    lv_obj_add_flag(footer_label, LV_OBJ_FLAG_HIDDEN);
     if (lvgl_mutex) xSemaphoreGive(lvgl_mutex);
     /* Each time the screensaver starts it picks up with the next item. */
     begin_saver_item(saver_item + 1, now);
@@ -2285,7 +2284,6 @@ static void stop_saver(void)
     if (!saver_active) return;
     saver_active = false;
     if (lvgl_mutex) xSemaphoreTake(lvgl_mutex, portMAX_DELAY);
-    lv_obj_clear_flag(footer_label, LV_OBJ_FLAG_HIDDEN);
     if (lvgl_mutex) xSemaphoreGive(lvgl_mutex);
     refresh_screen();
     printf("SAVER,OFF\n");

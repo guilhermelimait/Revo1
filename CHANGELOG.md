@@ -9,7 +9,7 @@ First public release.
 - Windows companion app with the same dial, kept in sync with the knob.
 - Controls: volume, scrolling, brightness, microphone, zoom and media
   (title, artist, progress, play/pause, previous, next, seek).
-- Radial icon menu opened from the centre or the mode name; knob to choose,
+- Radial icon menu opened from the back arrow at the top or the centre; knob to choose,
   tap to confirm.
 - Pomodoro screen: focus and break lengths, start/pause from the app or by
   tapping the knob, a countdown ring on the device and a chime on the PC at

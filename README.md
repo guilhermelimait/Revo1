@@ -72,7 +72,7 @@ sync as you turn the knob.
 - **Media screen** for whatever is playing (Spotify, a browser tab, ...):
   title, artist, progress ring, and big play/pause, previous and next buttons.
   Turning the knob seeks 5 seconds per click.
-- **Radial menu:** tap the centre or the mode name, turn to choose, tap to
+- **Radial menu:** tap the centre or the back arrow, turn to choose, tap to
   confirm. It opens on the control you used last.
 - **Always in sync:** the knob, the screen and the app window show the same
   value, and volume changes made elsewhere in Windows show up on the knob.
@@ -150,7 +150,7 @@ once the knob answers.
 
 - **Turn** the knob to change the current control.
 - **Swipe** left or right to switch to the next or previous control.
-- **Tap the centre or the mode name** at the top to open the menu. Turn to
+- **Tap the back arrow** at the top (or the centre) to open the menu. Turn to
   move the highlight, then tap to confirm, or tap an icon directly.
 - On the **Pomodoro** screen, tap the dial to start or pause the timer.
 - While the **screensaver** runs, a touch or a turn wakes the dial (that

@@ -98,6 +98,13 @@ SHAPES = {
         ("poly", 0, 6, 4.5, 1, 4.5, 1, 9, 6),
         ("disc", 5, -4, 2),
     ],
+    # The back button on every screen; firmware/main/main.c has it as icon_back.
+    "Back": [
+        ("arc", 0, 0, 13, 1.6, -180, 180),
+        ("seg", -6, 0, 6, 0, 2.2),
+        ("seg", -6, 0, -1.5, -4.5, 2.2),
+        ("seg", -6, 0, -1.5, 4.5, 2.2),
+    ],
     "Plus": [("seg", -7, 0, 7, 0, 2.4), ("seg", 0, -7, 0, 7, 2.4)],
     "Close": [("seg", -5, -5, 5, 5, 2.2), ("seg", 5, -5, -5, 5, 2.2)],
 }
