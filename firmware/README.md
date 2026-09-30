@@ -159,8 +159,8 @@ bezel: the full screen is a light face lit from the upper left, with a brighter
 centre cap (radius 76). A recessed channel at radius 164 hugs the edge and
 carries the arc, and the outer rim rolls off over the last 4 px. On the light
 face the arc's halo is a tint blend rather than additive light, and the unlit
-track is a darker etched line. Text is dark on the face. A back arrow in a thin
-ring (`icon_back`, drawn with the chrome) sits on the upper face, between the
+track is a darker etched line. Text is dark on the face. A plain back chevron
+(`icon_back`, drawn with the chrome) sits on the upper face, between the
 cap and the ring; a tap within 30 px of it opens the menu.
 
 - **Level modes** fill the gauge clockwise from 6 o'clock all the way round, so

@@ -1078,10 +1078,8 @@ static const menu_icon_t media_play = {icon_play, ICON_COUNT(icon_play)};
 static const menu_icon_t media_pause = {icon_pause, ICON_COUNT(icon_pause)};
 /* A left arrow in a thin ring: the way back to the menu. */
 static const icon_part_t icon_back[] = {
-    {PART_ARC, {0, 0, 13, 1.6f, -180, 180}},
-    {PART_SEG, {-6, 0, 6, 0, 2.2f}},
-    {PART_SEG, {-6, 0, -1.5f, -4.5f, 2.2f}},
-    {PART_SEG, {-6, 0, -1.5f, 4.5f, 2.2f}},
+    {PART_SEG, {-3.5f, 0, 2.5f, -7, 2.6f}},
+    {PART_SEG, {-3.5f, 0, 2.5f, 7, 2.6f}},
 };
 static const menu_icon_t back_button = {icon_back, ICON_COUNT(icon_back)};
 

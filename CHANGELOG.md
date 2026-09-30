@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.0.1 - 2026-09-30
+
+- Simpler back icon on the dial: a plain chevron instead of an arrow in a ring.
+- Firmware text buffers sized for ESP-IDF's stricter warnings; release
+  firmware is now built with ESP-IDF 5.5.2 in CI.
+
 ## 1.0.0 - 2026-09-30
 
 First public release.
@@ -9,7 +15,7 @@ First public release.
 - Windows companion app with the same dial, kept in sync with the knob.
 - Controls: volume, scrolling, brightness, microphone, zoom and media
   (title, artist, progress, play/pause, previous, next, seek).
-- Radial icon menu opened from the back arrow at the top or the centre; knob to choose,
+- Radial icon menu opened from the back icon at the top or the centre; knob to choose,
   tap to confirm.
 - Pomodoro screen: focus and break lengths, start/pause from the app or by
   tapping the knob, a countdown ring on the device and a chime on the PC at

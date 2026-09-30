@@ -76,7 +76,7 @@ sync as you turn the knob.
 - **Media screen** for whatever is playing (Spotify, a browser tab, ...):
   title, artist, progress ring, and big play/pause, previous and next buttons.
   Turning the knob seeks 5 seconds per click.
-- **Radial menu:** tap the centre or the back arrow, turn to choose, tap to
+- **Radial menu:** tap the centre or the back icon, turn to choose, tap to
   confirm. It opens on the control you used last.
 - **Always in sync:** the knob, the screen and the app window show the same
   value, and volume changes made elsewhere in Windows show up on the knob.
@@ -155,7 +155,7 @@ once the knob answers.
 - **Turn** the knob to change the current control.
 - **Swipe** left or right to switch to the next or previous control (you can
   turn this off in **Settings > Controls**).
-- **Tap the back arrow** at the top (or the centre) to open the menu. Turn to
+- **Tap the back icon** at the top (or the centre) to open the menu. Turn to
   move the highlight, then tap to confirm, or tap an icon directly.
 - On the **Pomodoro** screen, tap the dial to start or pause the timer.
 - While the **screensaver** runs, or when idle dimming has turned the
@@ -290,7 +290,7 @@ USB serial: 115200 baud, ASCII lines terminated by `\n`.
 | Device to PC | `VERSION,<x.y.z>` | Firmware version, right after each `HELLO` |
 | Device to PC | `SYNC` | Sent with `HELLO` until the first `STATE` after a restart; the app resends style and state |
 | Device to PC | `ROT,<signed steps>` | Knob movement |
-| Device to PC | `MENU` | Centre or back-arrow tap opens the menu |
+| Device to PC | `MENU` | Centre or back-icon tap opens the menu |
 | Device to PC | `TAP,<0..6>` | Menu choice confirmed (mode index) |
 | Device to PC | `CURSOR,<0..6>` | Knob moved the menu highlight (mode index) |
 | Device to PC | `SWIPE,LEFT` or `SWIPE,RIGHT` | Change control |
