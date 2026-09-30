@@ -1028,7 +1028,7 @@ class App(DashboardPage, ScreensaverPage):
             self.fit_window()
 
     def update_firmware(self):
-        if self.update_busy or not self.firmware_update_available():
+        if self.update_busy or not self.firmware_update_available() or self.uploading():
             return
         port = self.connected_port
         release = self.release
@@ -1044,7 +1044,7 @@ class App(DashboardPage, ScreensaverPage):
     def install_firmware_file(self):
         """Flashes a revo1-firmware-x.y.z.bin the user picked, e.g. a release
         downloaded by hand or a local build."""
-        if self.update_busy or not self.connected:
+        if self.update_busy or not self.connected or self.uploading():
             return
         port = self.connected_port
         path = filedialog.askopenfilename(
@@ -1068,6 +1068,15 @@ class App(DashboardPage, ScreensaverPage):
                 "The screen restarts at the end.", parent=self.root):
             return
         self.start_firmware_update(port, image=Path(path), version=version)
+
+    def uploading(self):
+        """The serial link can't be handed to the flasher mid-upload."""
+        if self.upload_state and self.upload_state[0] == "busy":
+            messagebox.showinfo("Update firmware",
+                                "Wait until the screensaver pictures have been sent to the knob.",
+                                parent=self.root)
+            return True
+        return False
 
     def start_firmware_update(self, port, release=None, image=None, version=None):
         self.update_busy = True

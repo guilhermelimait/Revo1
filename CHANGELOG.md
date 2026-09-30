@@ -19,11 +19,11 @@ First public release.
 - Screensaver: pictures, animated GIFs and videos are cropped to the round
   screen, stored in a 12.9 MB `media` flash partition and shown
   in rotation after a chosen idle time; a touch or a turn wakes the dial.
+  Videos are read by FFmpeg (LGPL build), which the app downloads once, with
+  your permission, the first time you add one; it isn't bundled.
   The screensaver can show the date and time instead (`TIME`, `SAVER`).
 - Idle dimming: after 10 minutes without input the backlight drops 10 points
   every 5 minutes until it is off; any touch or turn restores it (`DIM`).
-  Videos are read by FFmpeg (LGPL build), which the app downloads once, with
-  your permission, the first time you add one; it isn't bundled.
 - Screen backlight slider in **Settings > Device** (`BACKLIGHT`).
 - Settings: device name, automatic device detection, screen orientation,
   bar colour (standard, preset or custom), number size, and separate
@@ -36,7 +36,8 @@ First public release.
   `VERSION,<x.y.z>`; it's taken from `revo1/__init__.py` at build time.
   **Install from file...** flashes a downloaded or locally built image, after
   checking that it really is Revo1 firmware.
-- The knob keeps its last control, orientation, colour and number size in
+- The knob keeps its last control, orientation, colour, number size,
+  backlight, visible screens and swipe, dimming and screensaver settings in
   flash, so a restart doesn't undo them; after a restart it asks the app
   (`SYNC`) for the current state.
 - Accented letters in song titles are shown without accents instead of "?".

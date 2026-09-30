@@ -1780,7 +1780,8 @@ static void handle_command(char *line)
         char *end = NULL;
         const long long seconds = seconds_text ? strtoll(seconds_text, &end, 10) : 0;
         int h24 = 1;
-        if (!seconds_text || !end || *end || seconds < 946684800LL ||
+        /* 2000-01-01 to 2100-01-01, which also keeps the arithmetic small. */
+        if (!seconds_text || !end || *end || seconds < 946684800LL || seconds > 4102444800LL ||
             (format_text && !parse_integer(format_text, 0, 1, &h24))) {
             return;
         }
@@ -2418,7 +2419,7 @@ static void clock_tick(int64_t now)
     clock_second_shown = local;
     const time_t seconds = (time_t)local;
     struct tm fields;
-    gmtime_r(&seconds, &fields);
+    if (!gmtime_r(&seconds, &fields)) return;
     if (lvgl_mutex) xSemaphoreTake(lvgl_mutex, portMAX_DELAY);
     if (whole) {
         static const char *days[] = {"Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"};

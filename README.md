@@ -219,9 +219,9 @@ in the left sidebar.
   installer.
 
 Settings are saved in `%LOCALAPPDATA%\Revo1\settings.json` straight
-away. The knob also remembers its last control, orientation, colour and
-number size, so it comes back the same way after a restart, even before the
-app is running. Volume, microphone and brightness levels are always read from Windows,
+away. The knob also remembers its last control, orientation, colour, number
+size, backlight, visible screens, swipe, dimming and screensaver settings, so
+it comes back the same way after a restart, even before the app is running. Volume, microphone and brightness levels are always read from Windows,
 never overwritten with old saved values.
 
 ## Troubleshooting
@@ -248,6 +248,8 @@ never overwritten with old saved values.
 - No album artwork yet: the serial link is line-based text.
 - The Pomodoro timer and its chime run in the app: the knob shows the time
   but doesn't count on its own.
+- The knob has no clock battery: the date and time screensaver starts once
+  the app has connected after the knob was powered on.
 - Video playback on the knob is 10 frames per second, without sound.
 
 ## Development
@@ -291,7 +293,7 @@ USB serial: 115200 baud, ASCII lines terminated by `\n`.
 | Device to PC | `VERSION,<x.y.z>` | Firmware version, right after each `HELLO` |
 | Device to PC | `SYNC` | Sent with `HELLO` until the first `STATE` after a restart; the app resends style and state |
 | Device to PC | `ROT,<signed steps>` | Knob movement |
-| Device to PC | `MENU` | Centre or mode-name tap opens the menu |
+| Device to PC | `MENU` | Centre or back-arrow tap opens the menu |
 | Device to PC | `TAP,<0..6>` | Menu choice confirmed (mode index) |
 | Device to PC | `CURSOR,<0..6>` | Knob moved the menu highlight (mode index) |
 | Device to PC | `SWIPE,LEFT` or `SWIPE,RIGHT` | Change control |
@@ -304,7 +306,7 @@ USB serial: 115200 baud, ASCII lines terminated by `\n`.
 | PC to device | `ARTIST,<artist>` | Now-playing artist |
 | PC to device | `PLAY,<0\|1\|2>,<position s>,<duration s>` | Playback state (0 stopped, 1 playing, 2 paused) |
 | PC to device | `SCREENS,<mask>` | Screens shown on the knob (bit n = mode n); answered by `SCREENS_OK,<mask>` |
-| PC to device | `BACKLIGHT,<1..100>` | Backlight percent; answered by `BACKLIGHT_OK,<percent>` |
+| PC to device | `BACKLIGHT,<5..100>` | Backlight percent; answered by `BACKLIGHT_OK,<percent>` |
 | PC to device | `SWIPES,0` or `SWIPES,1` | Turn swiping between screens off or on; answered by `SWIPES_OK,<0 or 1>` |
 | PC to device | `POMO,<0 focus\|1 break>,<remaining s>,<total s>,<0\|1 running>` | Pomodoro state |
 | Device to PC | `POMO,TOGGLE` | Pomodoro dial tapped |

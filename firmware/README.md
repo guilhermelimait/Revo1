@@ -34,6 +34,7 @@ To produce the single image used by the release, which is flashed at `0x0`:
 
 ```powershell
 python -m esptool --chip esp32s3 merge-bin -o revo1-firmware.bin `
+  --flash-mode dio --flash-size 16MB `
   0x0 .pio\build\waveshare-knob\bootloader.bin `
   0x8000 .pio\build\waveshare-knob\partitions.bin `
   0x10000 .pio\build\waveshare-knob\firmware.bin
@@ -85,7 +86,7 @@ a tap on the dial sends `POMO,TOGGLE` back. The chime plays on the PC.
 
 ## Backlight
 
-`BACKLIGHT,<1..100>` sets the LEDC duty on GPIO 47 with a squared curve
+`BACKLIGHT,<5..100>` sets the LEDC duty on GPIO 47 with a squared curve
 (`255 * p^2 / 10000`, at least 3) so the low end of the slider stays usable.
 
 With `DIM,1` (the default) the backlight fades when the knob is left alone:
@@ -174,11 +175,11 @@ cap and the ring; a tap within 30 px of it opens the menu.
   the comet to `GAUGE_START` on every view change, and the app sends
   `COMETRESET` on connect in case the device kept running while it was closed.
 - **Media** uses the gauge as song progress.
-- **The menu** keeps the same chrome, but the ring is split into six segments,
-  one per control, aligned with the touch sectors. The segment for the
+- **The menu** keeps the same chrome, but the ring is split into one segment
+  per enabled screen (up to seven), aligned with the touch sectors. The segment for the
   last-used mode is lit in that mode's accent colour. Each control is shown
-  as an icon (speaker, mouse, sun, microphone, magnifier, play/pause) rather
-  than a word. The icons are small vector shapes drawn with signed distances
+  as an icon (speaker, mouse, sun, microphone, magnifier, play/pause,
+  timer) rather than a word. The icons are small vector shapes drawn with signed distances
   (`draw_menu_icons`), so their edges are anti-aliased; they are drawn with
   the chrome and cost nothing per frame. The last-used icon uses a deepened
   accent. There is no HOME strip: a centre tap opens the menu from any mode.
@@ -205,8 +206,8 @@ The last mode, orientation, bar colour and number size are kept in NVS
 and screensaver settings (`saver`, `idle`, `every`, `show`). `load_settings` reads them before the
 display starts, so a restarted knob comes back in the same view and the same
 orientation even when the PC app isn't running. `save_settings` runs after
-`STATE`, `STYLE`, a menu tap or a swipe, and only writes flash when a value
-actually changed. The level itself isn't stored; it comes from Windows.
+every command or touch that changes one of them, and only writes flash when a
+value actually changed. The level itself isn't stored; it comes from Windows.
 
 Until the first `STATE` after boot, the firmware sends `SYNC` with every
 `HELLO`, and a connected app answers with its style and state. The merged

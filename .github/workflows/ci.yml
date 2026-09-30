@@ -86,6 +86,7 @@ jobs:
           build=firmware/.pio/build/waveshare-knob
           mkdir -p dist
           esptool --chip esp32s3 merge-bin -o "dist/revo1-firmware-$version.bin" \
+            --flash-mode dio --flash-size 16MB \
             0x0 "$build/bootloader.bin" 0x8000 "$build/partitions.bin" 0x10000 "$build/firmware.bin"
       - uses: actions/upload-artifact@v4
         with:

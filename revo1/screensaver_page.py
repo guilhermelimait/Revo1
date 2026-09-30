@@ -276,7 +276,7 @@ class ScreensaverPage:
 
     def can_upload(self):
         return (self.connected and self.device_library is not None and not self.saver_busy()
-                and not self.library_in_sync())
+                and not self.update_busy and not self.library_in_sync())
 
     def refresh_screensaver(self):
         if not hasattr(self, "screensaver_page"):
