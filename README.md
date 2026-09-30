@@ -36,7 +36,9 @@ sync as you turn the knob.
   steps.
 - **A real Windows app:** a one-click installer, Start Menu entry, optional
   start at sign-in, and a clean uninstall. It remembers all settings between
-  runs.
+  runs, and can minimise to the notification area.
+- **Updates from the app:** the About page shows the newest release on GitHub
+  and installs its firmware on the knob with one click.
 
 ## What you need
 
@@ -108,14 +110,23 @@ The knob has no push button.
 **In the app**
 
 The dial in the window mirrors the device and accepts clicks the same way.
-Pick a control in the left sidebar. **Settings** has two tabs:
+Pick a control in the left sidebar. **Settings** has three tabs:
 
 - **Device:** the name shown in the sidebar, the list of connected knobs
   (refreshed automatically every two seconds; pick one or leave it on
   **Automatic**), and the screen orientation (0, 90, 180 or 270 degrees).
 - **Interface:** **Standard** colours (one per control), a swatch, or
   **Custom...** for any single bar colour; and the number size (Small, Medium,
-  Large or X-Large).
+  Large or X-Large). Under **Window**, turn on **Minimise to the notification
+  area** to hide RoundScreen next to the clock when you minimise it (click the
+  icon to bring it back, right-click for **Quit**). When it's on, the
+  start-at-sign-in shortcut starts it there too.
+- **About:** the app version, the firmware version on the knob, and the
+  latest release on GitHub. When the release has newer firmware than the
+  knob, **Update firmware** downloads and flashes it (the first time it also
+  downloads Espressif's standalone `esptool`, about 65 MB); keep the cable
+  plugged in until it says it's done. **Update app** opens the release page
+  when there's a newer installer.
 
 Settings are saved in `%LOCALAPPDATA%\RoundScreen\settings.json` straight
 away. Volume, microphone and brightness levels are always read from Windows,
@@ -184,6 +195,7 @@ USB serial: 115200 baud, ASCII lines terminated by `\n`.
 | Direction | Message | Meaning |
 | --- | --- | --- |
 | Device to PC | `HELLO,ROUNDSCREEN,1` | Companion handshake |
+| Device to PC | `VERSION,<x.y.z>` | Firmware version, right after each `HELLO` |
 | Device to PC | `ROT,<signed steps>` | Knob movement |
 | Device to PC | `MENU` | Centre or mode-name tap opens the menu |
 | Device to PC | `TAP,<0..5>` | Menu choice confirmed |

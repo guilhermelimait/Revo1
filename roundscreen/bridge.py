@@ -22,6 +22,8 @@ class DeviceBridge:
         self.outbound = queue.Queue()
         self.stop_event = threading.Event()
         self.reconnect_event = threading.Event()
+        self.pause_event = threading.Event()
+        self.idle_event = threading.Event()
         self.thread = threading.Thread(target=self._run, daemon=True)
 
     def start(self):
@@ -29,11 +31,24 @@ class DeviceBridge:
 
     def stop(self):
         self.stop_event.set()
+        self.reconnect_event.set()
         self.thread.join(timeout=3)
 
     def use_port(self, port):
         """Switches to `port` ("" for automatic), dropping the current link."""
         self.preferred_port = port
+        self.reconnect_event.set()
+
+    def pause(self, timeout=5):
+        """Closes the serial port and keeps it closed until `resume`, so a
+        firmware flasher can use it. Returns True once the port is free."""
+        self.idle_event.clear()
+        self.pause_event.set()
+        self.reconnect_event.set()
+        return self.idle_event.wait(timeout)
+
+    def resume(self):
+        self.pause_event.clear()
         self.reconnect_event.set()
 
     def send_state(self, mode, value, orientation):
@@ -69,6 +84,10 @@ class DeviceBridge:
     def _run(self):
         last_error = None
         while not self.stop_event.is_set():
+            if self.pause_event.is_set():
+                self.idle_event.set()
+                self.stop_event.wait(0.1)
+                continue
             self.reconnect_event.clear()
             port = self._port()
             if not port:
@@ -76,7 +95,7 @@ class DeviceBridge:
                 if status != last_error:
                     self.events.put(("status", status))
                     last_error = status
-                self.stop_event.wait(2)
+                self.reconnect_event.wait(2)
                 continue
             try:
                 with serial.Serial(port, 115200, timeout=0.2, write_timeout=1) as connection:
@@ -90,6 +109,10 @@ class DeviceBridge:
                         if line == "HELLO,ROUNDSCREEN,1":
                             self.events.put(("hello", port))
                             last_error = None
+                        elif line.startswith("VERSION,"):
+                            version = line[8:]
+                            if version and len(version) <= 32:
+                                self.events.put(("version", version))
                         elif line.startswith("ROT,"):
                             try:
                                 steps = int(line[4:])
@@ -130,4 +153,4 @@ class DeviceBridge:
                 if status != last_error:
                     self.events.put(("status", status))
                     last_error = status
-                self.stop_event.wait(2)
+                self.reconnect_event.wait(2)

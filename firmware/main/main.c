@@ -1704,6 +1704,7 @@ void app_main(void)
         }
         if (now - last_hello >= 1000000) {
             printf("HELLO,ROUNDSCREEN,1\n");
+            printf("VERSION,%s\n", ROUNDSCREEN_VERSION);
             last_hello = now;
         }
         vTaskDelay(1);

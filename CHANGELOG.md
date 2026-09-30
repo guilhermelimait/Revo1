@@ -13,6 +13,11 @@ First public release.
   tap to confirm.
 - Settings: device name, automatic device detection, screen orientation,
   bar colour (standard, preset or custom) and number size.
+- Optional minimise to the notification area (tray), also used when started
+  at sign-in.
+- About page: app and firmware versions, the latest GitHub release, and a
+  one-click firmware update over USB. The firmware reports its version with
+  `VERSION,<x.y.z>`; it's taken from `roundscreen/__init__.py` at build time.
 - Accented letters in song titles are shown without accents instead of "?".
 - `RoundScreen-Setup.exe`: a per-user Windows installer with Python bundled,
   its own icon, a Start Menu entry, an optional start at sign-in, and an

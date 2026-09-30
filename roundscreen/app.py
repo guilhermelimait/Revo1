@@ -2,15 +2,19 @@ import ctypes
 import math
 import queue
 import subprocess
+import sys
 import threading
+import time
 import tkinter as tk
+import webbrowser
 from tkinter import colorchooser, messagebox
 
 from comtypes import COMError, CoInitialize, CoUninitialize
 import numpy as np
 from PIL import Image, ImageDraw, ImageTk
 
-from roundscreen import config, dial, icons, ui, windows_controls as controls
+from roundscreen import __version__, config, dial, icons, tray, ui, updater
+from roundscreen import windows_controls as controls
 from roundscreen.bridge import DeviceBridge, find_devices
 from roundscreen.dial import DialRenderer
 from roundscreen.media import MediaSession
@@ -26,11 +30,15 @@ CARD_WIDTH = MAIN_WIDTH - 56
 DEVICE_ROW_HEIGHT = 36
 DEVICE_SCAN_MS = 2000
 NUMBER_LABELS = {24: "Small", 32: "Medium", 40: "Large", 48: "X-Large"}
+SETTINGS_TABS = (("device", "Device"), ("interface", "Interface"), ("about", "About"))
+# How long a release check stays fresh before the About tab asks GitHub again.
+RELEASE_CHECK_S = 30 * 60
 
 
 class App:
-    def __init__(self, root):
+    def __init__(self, root, tray=None, start_minimized=False):
         self.root = root
+        self.tray = tray
         self.settings = config.load()
         for key, value in config.DEFAULTS.items():
             self.settings.setdefault(key, value)
@@ -49,6 +57,16 @@ class App:
         self.media_state = None
         self.media_track = None
         self.media_pending = False
+        # Reported by the firmware after HELLO; None until then, and for
+        # firmware older than 1.0.0 that doesn't report one.
+        self.device_version = None
+        self.release = None
+        self.release_state = "idle"
+        self.release_error = ""
+        self.release_checked = 0.0
+        self.update_busy = False
+        self.update_text = ""
+        self.update_progress = None
 
         root.title("RoundScreen")
         try:
@@ -62,6 +80,7 @@ class App:
         root.minsize(self.kit.px(SIDEBAR_WIDTH + MAIN_WIDTH), self.kit.px(WINDOW_HEIGHT))
         root.configure(bg=ui.MAIN_BG)
         root.protocol("WM_DELETE_WINDOW", self.close)
+        root.bind("<Unmap>", self.on_unmap)
 
         self.dial = DialRenderer(background=ui.rgb(ui.MAIN_BG), scale=self.scale)
         self.dial_image = None
@@ -91,6 +110,8 @@ class App:
         root.after(80, self.poll)
         root.after(1000, self.refresh_external_volume)
         root.after(300, self.refresh_media)
+        if start_minimized:
+            root.after(0, self.minimize)
 
     @property
     def connected(self):
@@ -146,17 +167,17 @@ class App:
         tabs = tk.Frame(page, bg=ui.MAIN_BG)
         tabs.pack(padx=k.px(28), pady=(0, k.px(12)), anchor="w")
         self.tab_buttons = []
-        for key, label in (("device", "Device"), ("interface", "Interface")):
+        for key, label in SETTINGS_TABS:
             button = ui.Button(tabs, ui.MAIN_BG,
                                lambda hover, key=key, label=label: self.paint_tab(key, label, hover),
                                lambda key=key: self.show_tab(key))
             button.pack(side="left", padx=(0, k.px(6)))
             self.tab_buttons.append(button)
 
-        self.tabs = {"device": tk.Frame(page, bg=ui.MAIN_BG),
-                     "interface": tk.Frame(page, bg=ui.MAIN_BG)}
+        self.tabs = {key: tk.Frame(page, bg=ui.MAIN_BG) for key, _ in SETTINGS_TABS}
         self.build_device_tab(self.tabs["device"])
         self.build_interface_tab(self.tabs["interface"])
+        self.build_about_tab(self.tabs["about"])
         self.settings_page = page
         self.show_tab(self.settings_tab)
         self.refresh_status()
@@ -232,6 +253,42 @@ class App:
                                lambda size=size: self.set_number_size(size))
             button.pack(side="left", padx=(0, k.px(8)))
             self.size_buttons.append(button)
+
+        card = ui.Card(tab, k, CARD_WIDTH, ui.MAIN_BG)
+        card.pack(padx=k.px(28), pady=(0, k.px(20)), anchor="w")
+        body = card.body
+        self.caption(body, "WINDOW").pack(anchor="w")
+        self.tray_toggle = ui.Button(body, ui.CARD_BG, self.paint_tray_toggle,
+                                     self.toggle_tray)
+        self.tray_toggle.pack(anchor="w", pady=(k.px(6), 0))
+
+    def build_about_tab(self, tab):
+        k = self.kit
+        card = ui.Card(tab, k, CARD_WIDTH, ui.MAIN_BG)
+        card.pack(padx=k.px(28), anchor="w")
+        body = card.body
+        header = ui.Picture(body, ui.CARD_BG)
+        header.show(self.paint_about_header())
+        header.pack(anchor="w")
+        row = tk.Frame(body, bg=ui.CARD_BG)
+        row.pack(anchor="w", pady=(k.px(12), 0))
+        for label, url in (("GitHub", updater.PROJECT_URL),
+                           ("Releases", updater.RELEASES_URL),
+                           ("Licence", updater.PROJECT_URL + "/blob/main/LICENSE")):
+            ui.Button(row, ui.CARD_BG,
+                      lambda hover, label=label: self.paint_pill(label, hover),
+                      lambda url=url: webbrowser.open(url)).pack(side="left",
+                                                                 padx=(0, k.px(8)))
+
+        card = ui.Card(tab, k, CARD_WIDTH, ui.MAIN_BG)
+        card.pack(padx=k.px(28), pady=(k.px(12), k.px(20)), anchor="w")
+        body = card.body
+        self.caption(body, "UPDATES").pack(anchor="w")
+        self.about_info = ui.Picture(body, ui.CARD_BG)
+        self.about_info.pack(anchor="w", pady=(k.px(4), 0))
+        self.about_actions = tk.Frame(body, bg=ui.CARD_BG)
+        self.about_actions.pack(anchor="w", pady=(k.px(10), 0))
+        self.refresh_about()
 
     def caption(self, parent, text):
         picture = ui.Picture(parent, ui.CARD_BG)
@@ -376,6 +433,103 @@ class App:
                anchor="mm")
         return image
 
+    def paint_tray_toggle(self, hover):
+        k = self.kit
+        width, height = CARD_WIDTH - 36, 40
+        image = k.canvas(width, height, ui.CARD_BG)
+        on = self.settings["minimize_to_tray"]
+        k.text(image, 0, 12, "Minimise to the notification area", "semibold", 10, ui.INK)
+        k.text(image, 0, 30, "Keeps RoundScreen running next to the clock", "regular", 8.5,
+               ui.MUTED_INK, width=width - 60)
+        x0, y0 = width - 44, height / 2 - 12
+        track = ui.INK if on else (ui.SUBTLE_INK if hover else ui.IDLE_GREY)
+        k.rounded(image, (x0, y0, x0 + 44, y0 + 24), 12, track)
+        k.dot(image, x0 + (32 if on else 12), height / 2, 9, "#FFFFFF")
+        return image
+
+    def paint_pill(self, label, hover, primary=False, enabled=True):
+        k = self.kit
+        font = k.font("semibold", 9.5)
+        width, height = round(font.getlength(label) / k.scale) + 28, 30
+        image = k.canvas(width, height, ui.CARD_BG)
+        if primary and enabled:
+            fill = dial.label_ink(self.accent(self.mode)) if hover else ui.INK
+            k.rounded(image, (0, 0, width, height), 15, fill)
+            ink = "#FFFFFF"
+        else:
+            k.rounded(image, (0, 0, width, height), 15,
+                      "#FFFFFF" if hover and enabled else ui.CARD_BG, ui.CARD_EDGE)
+            ink = ui.INK if enabled else ui.MUTED_INK
+        k.text(image, width / 2, height / 2, label, "semibold", 9.5, ink, anchor="mm")
+        return image
+
+    def paint_about_header(self):
+        k = self.kit
+        width, height = CARD_WIDTH - 36, 64
+        image = k.canvas(width, height, ui.CARD_BG)
+        try:
+            with Image.open(ui.ICON_FILE.with_suffix(".png")) as logo:
+                logo = logo.convert("RGBA").resize((k.px(56), k.px(56)), Image.LANCZOS)
+                image.paste(logo, (0, k.px(4)), logo)
+        except OSError:
+            pass
+        k.text(image, 70, 16, "RoundScreen", "semibold", 14, ui.INK)
+        k.text(image, 70, 36, f"Version {__version__}", "regular", 9.5, ui.SUBTLE_INK)
+        k.text(image, 70, 53, "Companion for the Waveshare ESP32-S3 knob",
+               "regular", 8.5, ui.MUTED_INK, width=width - 70)
+        return image
+
+    def about_rows(self):
+        """(label, value) lines for the Updates card."""
+        if not self.connected:
+            firmware = "Device not connected"
+        elif self.device_version:
+            firmware = self.device_version
+        else:
+            firmware = "Older than 1.0.0"
+        release = self.release
+        if self.release_state == "checking":
+            latest = "Checking\u2026"
+        elif self.release_state == "error":
+            latest = f"Couldn't check: {self.release_error}"
+        elif self.release_state == "ok" and release is None:
+            latest = "No release published yet"
+        elif release:
+            latest = release["tag"] or release["version"]
+            if release["published"]:
+                latest += f" \u00b7 {release['published']:%d %b %Y}"
+        else:
+            latest = "\u2014"
+        return [("App", __version__), ("Device firmware", firmware), ("Latest release", latest)]
+
+    def firmware_update_available(self):
+        release = self.release
+        return bool(self.connected and release and release["firmware_url"]
+                    and updater.is_newer(release["version"], self.device_version))
+
+    def app_update_available(self):
+        return bool(self.release and updater.is_newer(self.release["version"], __version__))
+
+    def paint_about_info(self):
+        k = self.kit
+        width = CARD_WIDTH - 36
+        rows = self.about_rows()
+        extra = 28 if self.update_text else 0
+        image = k.canvas(width, len(rows) * 24 + extra, ui.CARD_BG)
+        for index, (label, value) in enumerate(rows):
+            y = index * 24 + 12
+            k.text(image, 0, y, label, "regular", 9.5, ui.SUBTLE_INK)
+            k.text(image, 120, y, value, "semibold", 9.5, ui.INK, width=width - 120)
+        if self.update_text:
+            y = len(rows) * 24 + 8
+            k.text(image, 0, y, self.update_text, "regular", 9, ui.SUBTLE_INK, width=width)
+            if self.update_progress is not None:
+                k.rounded(image, (0, y + 11, width, y + 17), 3, ui.CARD_EDGE)
+                filled = max(6, width * self.update_progress)
+                k.rounded(image, (0, y + 11, filled, y + 17), 3,
+                          dial.label_ink(self.accent(self.mode)))
+        return image
+
     def refresh_identity(self):
         k = self.kit
         image = k.canvas(NAV_WIDTH, 50, ui.SIDEBAR_BG)
@@ -418,6 +572,9 @@ class App:
 
     def show_tab(self, key):
         self.settings_tab = key
+        if key == "about" and (self.release_state in ("idle", "error") or
+                               time.monotonic() - self.release_checked > RELEASE_CHECK_S):
+            self.check_release()
         for frame in self.tabs.values():
             frame.pack_forget()
         self.tabs[key].pack(fill="x", anchor="w")
@@ -528,6 +685,133 @@ class App:
         self.connected = False
         self.bridge.use_port(port)
         self.status.set(f"Connecting to {port}..." if port else "Looking for the device...")
+
+    # ----- tray -----------------------------------------------------------
+
+    def toggle_tray(self):
+        self.settings["minimize_to_tray"] = not self.settings["minimize_to_tray"]
+        config.save(self.settings)
+        self.tray_toggle.refresh()
+
+    def on_unmap(self, event):
+        if (event.widget is self.root and self.tray and self.settings["minimize_to_tray"]
+                and self.root.state() == "iconic"):
+            self.root.withdraw()
+            self.tray.show()
+
+    def minimize(self):
+        """Starts out of the way, as when launched at sign-in."""
+        if self.tray and self.settings["minimize_to_tray"]:
+            self.root.withdraw()
+            self.tray.show()
+        else:
+            self.root.iconify()
+
+    def show_window(self):
+        if self.tray:
+            self.tray.hide()
+        self.root.deiconify()
+        self.root.lift()
+        self.root.focus_force()
+
+    # ----- about and updates ---------------------------------------------
+
+    def check_release(self):
+        if self.release_state == "checking":
+            return
+        self.release_state = "checking"
+        self.refresh_about()
+
+        def run():
+            try:
+                self.events.put(("release", ("ok", updater.latest_release())))
+            except updater.UpdateError as exc:
+                self.events.put(("release", ("error", str(exc))))
+
+        threading.Thread(target=run, name="release-check", daemon=True).start()
+
+    def refresh_about(self):
+        if not hasattr(self, "about_info"):
+            return
+        self.about_info.show(self.paint_about_info())
+        for child in self.about_actions.winfo_children():
+            child.destroy()
+        actions = [("Check again", self.check_release, False,
+                    self.release_state != "checking" and not self.update_busy)]
+        if self.firmware_update_available() or self.update_busy:
+            actions.insert(0, ("Update firmware", self.update_firmware, True,
+                               not self.update_busy))
+        if self.app_update_available():
+            actions.insert(0, ("Update app", lambda: webbrowser.open(self.release["url"]),
+                               True, True))
+        # Wraps onto a second line when the buttons don't fit side by side.
+        room = self.kit.px(CARD_WIDTH - 36)
+        line, used = None, room
+        for label, command, primary, enabled in actions:
+            width = self.paint_pill(label, False).width + self.kit.px(8)
+            if used + width > room + self.kit.px(8):
+                line = tk.Frame(self.about_actions, bg=ui.CARD_BG)
+                line.pack(anchor="w", pady=(0 if used == room else self.kit.px(8), 0))
+                used = 0
+            used += width
+            button = ui.Button(
+                line, ui.CARD_BG,
+                lambda hover, label=label, primary=primary, enabled=enabled:
+                    self.paint_pill(label, hover, primary, enabled),
+                (command if enabled else (lambda: None)))
+            if not enabled:
+                button.config(cursor="arrow")
+            button.pack(side="left", padx=(0, self.kit.px(8)))
+        if self.page == "settings" and self.settings_tab == "about":
+            self.fit_window()
+
+    def update_firmware(self):
+        if self.update_busy or not self.firmware_update_available():
+            return
+        port = self.connected_port
+        release = self.release
+        current = self.device_version or "an older version"
+        if not messagebox.askyesno(
+                "Update firmware",
+                f"Install firmware {release['version']} on the knob at {port} "
+                f"(it has {current})?\n\nKeep the USB cable plugged in until it finishes. "
+                "The screen restarts at the end.", parent=self.root):
+            return
+        self.update_busy = True
+        self.update_text = "Starting\u2026"
+        self.update_progress = None
+        self.refresh_about()
+        threading.Thread(target=self.run_firmware_update, args=(release, port),
+                         name="firmware-update", daemon=True).start()
+
+    def run_firmware_update(self, release, port):
+        def report(text, fraction=None):
+            self.events.put(("update", (text, fraction)))
+
+        paused = False
+        try:
+            image = updater.data_dir() / "firmware" / release["firmware_name"]
+            if not image.exists():
+                report("Downloading the firmware\u2026", 0.0)
+                updater.download(release["firmware_url"], image,
+                                 lambda f: report("Downloading the firmware\u2026", f))
+            report("Getting the flashing tool\u2026", None)
+            command = updater.esptool_command(
+                lambda f: report("Downloading the flashing tool (once)\u2026", f))
+            report("Releasing the USB port\u2026", None)
+            paused = True
+            if not self.bridge.pause():
+                raise updater.UpdateError("the USB port is still busy")
+            report(f"Connecting to the knob on {port}\u2026", None)
+            updater.flash(command, port, image,
+                          lambda f: report(f"Writing the firmware\u2026 {round(f * 100)}%", f))
+            self.events.put(("update_done", (True, f"Firmware {release['version']} installed. "
+                                                   "The knob is restarting.")))
+        except updater.UpdateError as exc:
+            self.events.put(("update_done", (False, f"Update failed: {exc}")))
+        finally:
+            if paused:
+                self.bridge.resume()
 
     def refresh_media(self):
         if self.mode == "Media" and not self.media_pending:
@@ -838,6 +1122,34 @@ class App:
                         self.connected = False
                 elif kind == "disconnected":
                     self.connected = False
+                    self.device_version = None
+                    self.refresh_about()
+                elif kind == "version":
+                    if payload != self.device_version:
+                        self.device_version = payload
+                        self.refresh_about()
+                elif kind == "release":
+                    state, result = payload
+                    self.release_state = state
+                    self.release_checked = time.monotonic()
+                    if state == "ok":
+                        self.release = result
+                    else:
+                        self.release_error = result
+                    self.refresh_about()
+                elif kind == "update":
+                    self.update_text, self.update_progress = payload
+                    self.about_info.show(self.paint_about_info())
+                elif kind == "update_done":
+                    self.update_busy = False
+                    self.update_text = payload[1]
+                    self.update_progress = None
+                    self.refresh_about()
+                elif kind == "show":
+                    self.show_window()
+                elif kind == "quit":
+                    self.close()
+                    return
                 elif kind == "hello":
                     if not self.connected:
                         self.connected_port = payload
@@ -847,6 +1159,7 @@ class App:
                         self.reset_comet()
                         self.bridge.send_comet_reset()
                         self.status.set(f"Connected on {payload}")
+                        self.refresh_about()
                         self.bridge.send_style(self.settings["accent"],
                                                self.settings["number_size"])
                         try:
@@ -884,6 +1197,8 @@ class App:
 
     def close(self):
         self.actions.put((None, 0))
+        if self.tray:
+            self.tray.stop()
         self.bridge.stop()
         self.root.destroy()
 
@@ -897,13 +1212,8 @@ def main():
     if not handle:
         raise ctypes.WinError(ctypes.get_last_error())
     if ctypes.get_last_error() == 183:
-        user = ctypes.WinDLL("user32", use_last_error=True)
-        user.FindWindowW.argtypes = [ctypes.c_wchar_p, ctypes.c_wchar_p]
-        user.FindWindowW.restype = ctypes.c_void_p
-        window = user.FindWindowW(None, "RoundScreen")
-        if window:
-            user.ShowWindow(ctypes.c_void_p(window), 9)
-            user.SetForegroundWindow(ctypes.c_void_p(window))
+        # Already running (maybe hidden in the tray): bring that one forward.
+        tray.activate_running_instance()
         kernel.CloseHandle(handle)
         return
     try:
@@ -918,10 +1228,17 @@ def main():
         pass
     ui.register_fonts()
     root = tk.Tk()
+    events = []
+    icon = tray.TrayIcon("RoundScreen", ui.ICON_FILE,
+                         lambda: events and events[0].put(("show", None)),
+                         lambda: events and events[0].put(("quit", None)))
+    icon.start()
     try:
         try:
-            App(root)
+            app = App(root, tray=icon, start_minimized="--minimized" in sys.argv[1:])
+            events.append(app.events)
         except (OSError, ValueError, RuntimeError) as exc:
+            icon.stop()
             messagebox.showerror("RoundScreen startup failed", str(exc))
             root.destroy()
             return

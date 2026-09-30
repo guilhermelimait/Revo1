@@ -67,7 +67,7 @@ Type: files; Name: "{userstartup}\RoundScreen.lnk"
 
 [Icons]
 Name: "{autoprograms}\RoundScreen"; Filename: "{app}\RoundScreen.exe"; AppUserModelID: "guilhermelimait.RoundScreen"
-Name: "{userstartup}\RoundScreen"; Filename: "{app}\RoundScreen.exe"; Tasks: startup
+Name: "{userstartup}\RoundScreen"; Filename: "{app}\RoundScreen.exe"; Parameters: "--minimized"; Tasks: startup
 Name: "{autodesktop}\RoundScreen"; Filename: "{app}\RoundScreen.exe"; Tasks: desktopicon
 
 [Run]

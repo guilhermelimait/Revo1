@@ -10,6 +10,52 @@ from roundscreen.app import App
 
 
 class AppTests(unittest.TestCase):
+    def test_about_offers_firmware_only_when_the_release_is_newer(self):
+        root = tk.Tk()
+        root.withdraw()
+        saved = {"mode": "Volume", "orientation": 0, "port": ""}
+        release = {"tag": "v1.1.0", "version": "1.1.0", "published": None, "url": "u",
+                   "firmware_name": "roundscreen-firmware-1.1.0.bin",
+                   "firmware_url": "https://example.test/fw.bin", "firmware_size": 1}
+        with patch("roundscreen.app.config.load", return_value=saved), \
+             patch("roundscreen.app.config.save"), \
+             patch("roundscreen.app.DeviceBridge"), \
+             patch("roundscreen.app.controls.volume_level", return_value=60):
+            app = App(root)
+            app.events.put(("release", ("ok", release)))
+            app.events.put(("hello", "COM9"))
+            app.poll()
+            # Firmware that doesn't report a version is older than any release.
+            self.assertTrue(app.firmware_update_available())
+            app.events.put(("version", "1.1.0"))
+            app.poll()
+            self.assertFalse(app.firmware_update_available())
+            app.events.put(("disconnected", "COM9"))
+            app.poll()
+            self.assertIsNone(app.device_version)
+            self.assertFalse(app.firmware_update_available())
+            app.close()
+
+    def test_minimise_goes_to_the_tray_only_when_enabled(self):
+        root = tk.Tk()
+        saved = {"mode": "Volume", "orientation": 0, "port": "", "minimize_to_tray": False}
+        tray = SimpleNamespace(show=lambda: shown.append(True), hide=lambda: None,
+                               stop=lambda: None)
+        shown = []
+        with patch("roundscreen.app.config.load", return_value=saved), \
+             patch("roundscreen.app.config.save"), \
+             patch("roundscreen.app.DeviceBridge"), \
+             patch("roundscreen.app.controls.volume_level", return_value=60):
+            app = App(root, tray=tray)
+            with patch.object(root, "state", return_value="iconic"):
+                app.on_unmap(SimpleNamespace(widget=root))
+                self.assertEqual(shown, [])
+                app.toggle_tray()
+                app.on_unmap(SimpleNamespace(widget=root))
+            self.assertEqual(shown, [True])
+            self.assertEqual(root.wm_state(), "withdrawn")
+            app.close()
+
     def test_swipe_and_orientation_persist(self):
         root = tk.Tk()
         root.withdraw()

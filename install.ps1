@@ -39,7 +39,7 @@ $locations = @(
 foreach ($path in $locations) {
     $shortcut = $shell.CreateShortcut($path)
     $shortcut.TargetPath = $pythonw
-    $shortcut.Arguments = "-m roundscreen.app"
+    $shortcut.Arguments = if ($path -like "*\Startup\*") { "-m roundscreen.app --minimized" } else { "-m roundscreen.app" }
     $shortcut.WorkingDirectory = $project
     $shortcut.Description = "RoundScreen knob controls for volume, scrolling, brightness and media"
     $shortcut.Save()

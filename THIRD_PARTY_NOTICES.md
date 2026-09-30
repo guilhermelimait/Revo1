@@ -18,6 +18,7 @@ builds on the following third-party work, which keeps its own licence.
 | [Python](https://www.python.org) runtime and Tcl/Tk | bundled in `RoundScreen.exe` | PSF License, Tcl/Tk License |
 | [NumPy](https://numpy.org) | Python dependency | BSD-3-Clause |
 | [Pillow](https://python-pillow.org) | Python dependency | MIT-CMU |
+| [esptool](https://github.com/espressif/esptool) standalone build | downloaded on demand by the About page and `scripts/flash-firmware.ps1`, run as a separate program; not bundled | GPL-2.0-or-later |
 
 Waveshare and ESP32 are trademarks of their respective owners. This project
 is not affiliated with or endorsed by Waveshare or Espressif.
