@@ -2,6 +2,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <time.h>
 
 #include "driver/gpio.h"
 #include "driver/i2c_master.h"
@@ -185,6 +186,20 @@ static int pomo_shown = -1;
 
 /* Screen brightness in percent, from the app's settings. */
 static int backlight_percent = 100;
+/* When the knob is left alone the backlight fades: DIM_STEP_PERCENT less
+   after DIM_AFTER_S, and again every DIM_STEP_S, until it is off. Any touch
+   or turn brings it straight back. */
+#define DIM_AFTER_S 600
+#define DIM_STEP_S 300
+#define DIM_STEP_PERCENT 10
+static bool dim_enabled = true;
+static int backlight_applied = -1;
+
+/* Local wall-clock time from the app (TIME), kept as an offset from the
+   timer; unknown until the app has sent it since the knob started. */
+static bool clock_valid;
+static int64_t clock_offset_s;
+static bool clock_24h = true;
 
 /* Screensaver: pictures and clips the app converts to 360x360 JPEG frames
    and stores in the "media" partition. A 4 KB header lists the items; the
@@ -220,6 +235,13 @@ static volatile bool media_valid;
 static volatile bool media_busy;
 static uint32_t upload_size;
 static bool saver_enabled;
+/* What the screensaver shows: the stored pictures, or the date and time. */
+enum { SAVER_PICTURES, SAVER_CLOCK };
+static int saver_kind = SAVER_PICTURES;
+static bool saver_clock;
+static int64_t clock_second_shown = -1;
+static lv_obj_t *clock_label;
+static lv_obj_t *date_label;
 static int saver_idle_s = 300;
 static int saver_interval_s = 30;
 static bool saver_active;
@@ -316,6 +338,8 @@ typedef struct {
     uint16_t idle_s;
     uint16_t interval_s;
     uint8_t swipe;
+    uint8_t saver_kind;
+    uint8_t dim;
 } stored_settings_t;
 
 static bool settings_ready;
@@ -336,6 +360,8 @@ static stored_settings_t current_settings(void)
         .idle_s = (uint16_t)saver_idle_s,
         .interval_s = (uint16_t)saver_interval_s,
         .swipe = swipe_enabled,
+        .saver_kind = (uint8_t)saver_kind,
+        .dim = dim_enabled,
     };
     static const int sizes[] = {24, 32, 40, 48};
     for (size_t index = 0; index < sizeof(sizes) / sizeof(sizes[0]); index++) {
@@ -350,7 +376,8 @@ static bool same_settings(const stored_settings_t *a, const stored_settings_t *b
            a->number_size == b->number_size && a->accent == b->accent &&
            a->screens == b->screens && a->backlight == b->backlight &&
            a->saver == b->saver && a->idle_s == b->idle_s &&
-           a->interval_s == b->interval_s && a->swipe == b->swipe;
+           a->interval_s == b->interval_s && a->swipe == b->swipe &&
+           a->saver_kind == b->saver_kind && a->dim == b->dim;
 }
 
 static void load_settings(void)
@@ -395,6 +422,8 @@ static void load_settings(void)
         if (nvs_get_u16(handle, "idle", &word) == ESP_OK && word >= 10) saver_idle_s = word;
         if (nvs_get_u16(handle, "every", &word) == ESP_OK && word >= 1) saver_interval_s = word;
         if (nvs_get_u8(handle, "swipe", &byte) == ESP_OK) swipe_enabled = byte != 0;
+        if (nvs_get_u8(handle, "show", &byte) == ESP_OK && byte <= SAVER_CLOCK) saver_kind = byte;
+        if (nvs_get_u8(handle, "dim", &byte) == ESP_OK) dim_enabled = byte != 0;
         nvs_close(handle);
     }
     saved_settings = current_settings();
@@ -418,6 +447,8 @@ static void save_settings(void)
                     nvs_set_u16(handle, "idle", settings.idle_s) == ESP_OK &&
                     nvs_set_u16(handle, "every", settings.interval_s) == ESP_OK &&
                     nvs_set_u8(handle, "swipe", settings.swipe) == ESP_OK &&
+                    nvs_set_u8(handle, "show", settings.saver_kind) == ESP_OK &&
+                    nvs_set_u8(handle, "dim", settings.dim) == ESP_OK &&
                     nvs_commit(handle) == ESP_OK;
     nvs_close(handle);
     if (ok) saved_settings = settings;
@@ -1732,21 +1763,53 @@ static void handle_command(char *line)
         return;
     }
 
+    if (strncmp(line, "DIM,", 4) == 0) {
+        int enabled;
+        if (!parse_integer(line + 4, 0, 1, &enabled)) return;
+        dim_enabled = enabled;
+        apply_backlight();
+        save_settings();
+        printf("DIM_OK,%d\n", enabled);
+        return;
+    }
+
+    if (strncmp(line, "TIME,", 5) == 0) {
+        char *save = NULL;
+        const char *seconds_text = strtok_r(line + 5, ",", &save);
+        const char *format_text = strtok_r(NULL, ",", &save);
+        char *end = NULL;
+        const long long seconds = seconds_text ? strtoll(seconds_text, &end, 10) : 0;
+        int h24 = 1;
+        if (!seconds_text || !end || *end || seconds < 946684800LL ||
+            (format_text && !parse_integer(format_text, 0, 1, &h24))) {
+            return;
+        }
+        clock_offset_s = seconds - esp_timer_get_time() / 1000000;
+        clock_24h = h24;
+        clock_valid = true;
+        clock_second_shown = -1;
+        printf("TIME_OK\n");
+        return;
+    }
+
     if (strncmp(line, "SAVER,", 6) == 0) {
         char *save = NULL;
         const char *enabled_text = strtok_r(line + 6, ",", &save);
         const char *idle_text = strtok_r(NULL, ",", &save);
         const char *interval_text = strtok_r(NULL, ",", &save);
-        int enabled, idle, interval;
+        const char *kind_text = strtok_r(NULL, ",", &save);
+        int enabled, idle, interval, kind = SAVER_PICTURES;
         if (!enabled_text || !idle_text || !interval_text ||
             !parse_integer(enabled_text, 0, 1, &enabled) ||
             !parse_integer(idle_text, 10, 7200, &idle) ||
-            !parse_integer(interval_text, 1, 3600, &interval)) {
+            !parse_integer(interval_text, 1, 3600, &interval) ||
+            (kind_text && !parse_integer(kind_text, SAVER_PICTURES, SAVER_CLOCK, &kind))) {
             return;
         }
         saver_enabled = enabled;
         saver_idle_s = idle;
         saver_interval_s = interval;
+        saver_kind = kind;
         save_settings();
         printf("SAVER_OK\n");
         return;
@@ -1994,12 +2057,15 @@ static void poll_touch(void)
         rotate_touch_coordinates(&x, &y);
         touch_x = x;
         touch_y = y;
+        /* A touch on a dark screen only wakes it; nobody can see what it hits. */
+        const bool dark = backlight_applied == 0;
         last_input_us = esp_timer_get_time();
+        apply_backlight();
         if (!touch_active) {
             touch_active = true;
             touch_start_x = x;
             touch_start_y = y;
-            touch_swallowed = saver_active;
+            touch_swallowed = saver_active || dark;
             if (saver_active) stop_saver();
         }
     } else if (touch_active) {
@@ -2008,11 +2074,28 @@ static void poll_touch(void)
     }
 }
 
-/* Percent to PWM on a square law, so equal steps look like equal steps. */
+/* The brightness the screen should have now, idle dimming included. */
+static int backlight_level(int64_t now)
+{
+    const int64_t idle_s = (now - last_input_us) / 1000000;
+    if (!dim_enabled || idle_s < DIM_AFTER_S) return backlight_percent;
+    const int64_t steps = 1 + (idle_s - DIM_AFTER_S) / DIM_STEP_S;
+    const int64_t level = backlight_percent - steps * DIM_STEP_PERCENT;
+    return level > 0 ? (int)level : 0;
+}
+
+/* Percent to PWM on a square law, so equal steps look like equal steps.
+   Cheap enough for every loop: the LEDC is only touched on a change. */
 static void apply_backlight(void)
 {
-    int duty = (255 * backlight_percent * backlight_percent) / 10000;
-    if (duty < 3) duty = 3;
+    const int level = backlight_level(esp_timer_get_time());
+    if (level == backlight_applied) return;
+    backlight_applied = level;
+    int duty = 0;
+    if (level > 0) {
+        duty = (255 * level * level) / 10000;
+        if (duty < 3) duty = 3;
+    }
     ledc_set_duty(LEDC_LOW_SPEED_MODE, LEDC_CHANNEL_1, duty);
     ledc_update_duty(LEDC_LOW_SPEED_MODE, LEDC_CHANNEL_1);
 }
@@ -2206,6 +2289,16 @@ static void initialize_lvgl(void)
     lv_obj_set_style_text_font(time_label, &lv_font_montserrat_12, 0);
     lv_obj_align(time_label, LV_ALIGN_CENTER, 0, MEDIA_TIME_Y);
     lv_label_set_text(time_label, "");
+    clock_label = lv_label_create(lv_scr_act());
+    lv_obj_set_style_text_color(clock_label, lv_color_hex(0xF2F2F5), 0);
+    lv_obj_set_style_text_font(clock_label, &lv_font_montserrat_48, 0);
+    lv_obj_align(clock_label, LV_ALIGN_CENTER, 0, -10);
+    lv_obj_add_flag(clock_label, LV_OBJ_FLAG_HIDDEN);
+    date_label = lv_label_create(lv_scr_act());
+    lv_obj_set_style_text_color(date_label, lv_color_hex(0x8A8A98), 0);
+    lv_obj_set_style_text_font(date_label, &lv_font_montserrat_16, 0);
+    lv_obj_align(date_label, LV_ALIGN_CENTER, 0, 34);
+    lv_obj_add_flag(date_label, LV_OBJ_FLAG_HIDDEN);
     /* Sits on the upper face, between the cap and the ring. */
     refresh_screen();
 
@@ -2282,17 +2375,95 @@ static void begin_saver_item(int item, int64_t now)
     saver_next_frame = now;
 }
 
+/* Anti-aliased dot on the black clock face. */
+static void draw_clock_dot(float cx, float cy, float radius, const uint8_t *rgb)
+{
+    const int x0 = (int)floorf(cx - radius - 1), x1 = (int)ceilf(cx + radius + 1);
+    const int y0 = (int)floorf(cy - radius - 1), y1 = (int)ceilf(cy + radius + 1);
+    for (int y = y0; y <= y1; ++y) {
+        if (y < 0 || y >= LCD_HEIGHT) continue;
+        uint16_t *row = (uint16_t *)canvas_pixels + (size_t)y * LCD_WIDTH;
+        for (int x = x0; x <= x1; ++x) {
+            if (x < 0 || x >= LCD_WIDTH) continue;
+            const float dx = x - cx, dy = y - cy;
+            float cover = radius + 0.5f - sqrtf(dx * dx + dy * dy);
+            if (cover <= 0) cover = 0;
+            if (cover > 1) cover = 1;
+            row[x] = pack_pixel((int)(rgb[0] * cover), (int)(rgb[1] * cover),
+                                (int)(rgb[2] * cover));
+        }
+    }
+}
+
+/* One of the sixty second marks around the rim; the ones already passed this
+   minute are lit, so the ring fills like the dial's arc does. */
+static void draw_clock_tick(int second, bool lit)
+{
+    static const uint8_t unlit[3] = {0x34, 0x34, 0x3E};
+    const float angle = second * 6.0f * 0.0174532925f;
+    const float cx = SCREEN_CENTER + DIAL_ARC_R * sinf(angle);
+    const float cy = SCREEN_CENTER - DIAL_ARC_R * cosf(angle);
+    const float radius = second % 5 == 0 ? 3.2f : 2.0f;
+    draw_clock_dot(cx, cy, radius, lit ? accent_of(selected_mode) : unlit);
+    lv_area_t area = {(lv_coord_t)(cx - 6), (lv_coord_t)(cy - 6),
+                      (lv_coord_t)(cx + 6), (lv_coord_t)(cy + 6)};
+    lv_obj_invalidate_area(canvas, &area);
+}
+
+static void clock_tick(int64_t now)
+{
+    const int64_t local = clock_offset_s + now / 1000000;
+    if (local == clock_second_shown) return;
+    const bool whole = clock_second_shown < 0 || local / 60 != clock_second_shown / 60;
+    clock_second_shown = local;
+    const time_t seconds = (time_t)local;
+    struct tm fields;
+    gmtime_r(&seconds, &fields);
+    if (lvgl_mutex) xSemaphoreTake(lvgl_mutex, portMAX_DELAY);
+    if (whole) {
+        static const char *days[] = {"Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"};
+        static const char *months[] = {"Jan", "Feb", "Mar", "Apr", "May", "Jun",
+                                       "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"};
+        char text[24];
+        if (clock_24h) {
+            snprintf(text, sizeof(text), "%02d:%02d", fields.tm_hour, fields.tm_min);
+        } else {
+            const int hour = fields.tm_hour % 12 ? fields.tm_hour % 12 : 12;
+            snprintf(text, sizeof(text), "%d:%02d %s", hour, fields.tm_min,
+                     fields.tm_hour < 12 ? "AM" : "PM");
+        }
+        lv_label_set_text(clock_label, text);
+        snprintf(text, sizeof(text), "%s %d %s", days[fields.tm_wday], fields.tm_mday,
+                 months[fields.tm_mon]);
+        lv_label_set_text(date_label, text);
+        for (int second = 0; second < 60; ++second) {
+            draw_clock_tick(second, second <= fields.tm_sec);
+        }
+    } else {
+        draw_clock_tick(fields.tm_sec, true);
+    }
+    if (lvgl_mutex) xSemaphoreGive(lvgl_mutex);
+}
+
 static void start_saver(int64_t now)
 {
     saver_active = true;
+    saver_clock = saver_kind == SAVER_CLOCK;
     if (lvgl_mutex) xSemaphoreTake(lvgl_mutex, portMAX_DELAY);
     lv_obj_add_flag(title_label, LV_OBJ_FLAG_HIDDEN);
     lv_obj_add_flag(value_label, LV_OBJ_FLAG_HIDDEN);
     lv_obj_add_flag(artist_label, LV_OBJ_FLAG_HIDDEN);
     lv_obj_add_flag(time_label, LV_OBJ_FLAG_HIDDEN);
+    if (saver_clock) {
+        clear_canvas();
+        lv_obj_invalidate(canvas);
+        lv_obj_clear_flag(clock_label, LV_OBJ_FLAG_HIDDEN);
+        lv_obj_clear_flag(date_label, LV_OBJ_FLAG_HIDDEN);
+        clock_second_shown = -1;
+    }
     if (lvgl_mutex) xSemaphoreGive(lvgl_mutex);
     /* Each time the screensaver starts it picks up with the next item. */
-    begin_saver_item(saver_item + 1, now);
+    if (!saver_clock) begin_saver_item(saver_item + 1, now);
     printf("SAVER,ON\n");
 }
 
@@ -2301,25 +2472,39 @@ static void stop_saver(void)
     if (!saver_active) return;
     saver_active = false;
     if (lvgl_mutex) xSemaphoreTake(lvgl_mutex, portMAX_DELAY);
+    lv_obj_add_flag(clock_label, LV_OBJ_FLAG_HIDDEN);
+    lv_obj_add_flag(date_label, LV_OBJ_FLAG_HIDDEN);
     if (lvgl_mutex) xSemaphoreGive(lvgl_mutex);
     refresh_screen();
     printf("SAVER,OFF\n");
 }
 
+/* Whether the chosen screensaver has something to show. */
+static bool saver_ready(void)
+{
+    if (saver_kind == SAVER_CLOCK) return clock_valid;
+    return media_valid && !media_busy;
+}
+
 /* Starts, advances and ends the screensaver; called from the main loop. */
 static void saver_tick(int64_t now)
 {
-    if (saver_active && (!saver_enabled || media_busy || !media_valid)) {
+    if (saver_active && (!saver_enabled || !saver_ready() ||
+                         saver_clock != (saver_kind == SAVER_CLOCK))) {
         stop_saver();
         return;
     }
     if (!saver_active) {
-        if (saver_enabled && media_valid && !media_busy && !touch_active &&
+        if (saver_enabled && saver_ready() && !touch_active &&
             now - last_input_us >= (int64_t)saver_idle_s * 1000000) {
             start_saver(now);
         } else {
             return;
         }
+    }
+    if (saver_clock) {
+        clock_tick(now);
+        return;
     }
     if (now < saver_next_frame) return;
 
@@ -2458,7 +2643,16 @@ void app_main(void)
         }
         int detents = encoder_accumulator / ENCODER_PULSES_PER_DETENT;
         encoder_accumulator -= detents * ENCODER_PULSES_PER_DETENT;
-        if (pulses != 0) last_input_us = esp_timer_get_time();
+        const bool dark = backlight_applied == 0;
+        if (pulses != 0) {
+            last_input_us = esp_timer_get_time();
+            apply_backlight();
+        }
+        if (pulses != 0 && dark) {
+            /* The turn that lights a dark screen does nothing else. */
+            encoder_accumulator = 0;
+            detents = 0;
+        }
         if (detents != 0 && saver_active) {
             /* The turn that wakes the dial does nothing else. */
             stop_saver();
@@ -2492,6 +2686,7 @@ void app_main(void)
             last_frame = now;
         }
         saver_tick(now);
+        apply_backlight();
         if (now - last_hello >= 1000000) {
             printf("HELLO,REVO1,1\n");
             printf("VERSION,%s\n", REVO1_VERSION);

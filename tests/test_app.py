@@ -344,6 +344,31 @@ class AppTests(unittest.TestCase):
             app.bridge.send_swipes.assert_called_with(False)
             app.close()
 
+    def test_clock_screensaver_and_idle_dimming_reach_the_knob(self):
+        root = tk.Tk()
+        root.withdraw()
+        saved = {"mode": "Volume", "orientation": 0, "port": ""}
+        with patch("revo1.app.config.load", return_value=saved), \
+             patch("revo1.app.config.save"), \
+             patch("revo1.app.DeviceBridge"), \
+             patch("revo1.screensaver_page.local_clock", return_value=1790000000), \
+             patch("revo1.screensaver_page.uses_24_hour_clock", return_value=True), \
+             patch("revo1.app.controls.volume_level", return_value=60):
+            app = App(root)
+            app.events.put(("hello", "COM9"))
+            app.poll()
+            app.bridge.send_time.assert_called_with(1790000000, True)
+            app.bridge.send_dim.assert_called_with(True)
+            app.set_saver_choice("saver_show", "clock")
+            app.bridge.send_saver.assert_called_with(False, 300, 30, True)
+            app.toggle_setting("dim_idle")
+            app.bridge.send_dim.assert_called_with(False)
+            app.bridge.send_time.reset_mock()
+            app.time_pushed -= 3601
+            app.poll()
+            app.bridge.send_time.assert_called_once()
+            app.close()
+
     def test_menu_has_one_slot_per_screen(self):
         root = tk.Tk()
         root.withdraw()

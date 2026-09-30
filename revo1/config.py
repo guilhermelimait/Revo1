@@ -15,12 +15,15 @@ DEFAULTS = {"mode": "Volume", "orientation": 0, "port": "", "name": DEFAULT_NAME
             "invert_scroll": False, "invert_zoom": False, "swipe_screens": True,
             "screens": list(MODES), "backlight": 100,
             "focus_minutes": 25, "break_minutes": 5,
-            "saver_enabled": False, "saver_idle": 5, "saver_interval": 30}
+            "saver_enabled": False, "saver_idle": 5, "saver_interval": 30,
+            "saver_show": "pictures", "dim_idle": True}
 FLAGS = ("minimize_to_tray", "invert_scroll", "invert_zoom", "swipe_screens",
-         "saver_enabled")
+         "saver_enabled", "dim_idle")
 # Screensaver: minutes without touching the knob, and seconds per picture.
 SAVER_IDLE_CHOICES = (1, 2, 5, 10, 30)
 SAVER_INTERVAL_CHOICES = (10, 30, 60, 300)
+# What the screensaver shows: the stored pictures, or the date and time.
+SAVER_SHOW_CHOICES = ("pictures", "clock")
 POMODORO_MINUTES = range(1, 181)
 BACKLIGHT_RANGE = range(5, 101)
 
@@ -66,6 +69,7 @@ def load(path=None):
     number_size = data.get("number_size", 32)
     flags = {key: data.get(key, DEFAULTS[key]) for key in FLAGS}
     screens = data.get("screens", list(MODES))
+    saver_show = data.get("saver_show", DEFAULTS["saver_show"])
     numbers = {key: data.get(key, DEFAULTS[key])
                for key in ("backlight", "focus_minutes", "break_minutes",
                            "saver_idle", "saver_interval")}
@@ -74,6 +78,7 @@ def load(path=None):
             or number_size not in NUMBER_SIZES
             or not all(isinstance(flag, bool) for flag in flags.values())
             or not valid_screens(screens)
+            or saver_show not in SAVER_SHOW_CHOICES
             or not all(type(value) is int for value in numbers.values())
             or numbers["backlight"] not in BACKLIGHT_RANGE
             or numbers["focus_minutes"] not in POMODORO_MINUTES
@@ -88,7 +93,8 @@ def load(path=None):
     return {"mode": mode, "orientation": orientation, "port": port,
             "name": name.strip() or DEFAULT_NAME,
             "accent": accent if accent == STANDARD_ACCENT else accent.upper(),
-            "number_size": number_size, "screens": screens, **numbers, **flags}
+            "number_size": number_size, "screens": screens, "saver_show": saver_show,
+            **numbers, **flags}
 
 
 def save(settings, path=None):

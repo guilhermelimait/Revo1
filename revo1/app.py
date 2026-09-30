@@ -23,7 +23,7 @@ from revo1.layout import (CARD_WIDTH, MAIN_WIDTH, NAV_HEIGHT, NAV_WIDTH, PANEL_B
                           SIDEBAR_WIDTH, WINDOW_HEIGHT)
 from revo1.media import MediaSession
 from revo1.screensaver import Library
-from revo1.screensaver_page import ScreensaverPage
+from revo1.screensaver_page import TIME_RESEND_S, ScreensaverPage
 
 LEVEL_MODES = ("Volume", "Mic", "Brightness")
 KOFI_RED = "#FF5E5B"
@@ -52,6 +52,7 @@ class App(DashboardPage, ScreensaverPage):
         self.worker = threading.Thread(target=self.run_actions, daemon=True)
         self._connected = False
         self.state_pushed = 0.0
+        self.time_pushed = 0.0
         self.connected_port = None
         self.menu = False
         # The option the knob points at while the menu is open.
@@ -497,23 +498,23 @@ class App(DashboardPage, ScreensaverPage):
         k.text(image, width / 2, height / 2, f"{value}°", "semibold", 10, ink, anchor="mm")
         return image
 
-    def tab_width(self, key):
+    def tab_width(self, key, tabs=SETTINGS_TABS):
         """Tabs are as wide as their label plus a gap; the last one runs on to
         the edge so the hairline under them spans the whole page."""
         font = self.kit.font("semibold", 10)
-        widths = [font.getlength(label) / self.kit.scale + 28 for _, label in SETTINGS_TABS]
-        index = [key for key, _ in SETTINGS_TABS].index(key)
-        if index == len(SETTINGS_TABS) - 1:
+        widths = [font.getlength(label) / self.kit.scale + 28 for _, label in tabs]
+        index = [key for key, _ in tabs].index(key)
+        if index == len(tabs) - 1:
             return CARD_WIDTH - sum(round(width) for width in widths[:-1])
         return round(widths[index])
 
-    def paint_tab(self, key, label, hover):
+    def paint_tab(self, key, label, hover, tabs=SETTINGS_TABS, current=None):
         """Underline tabs: labels on one hairline, the open one in bold with a
         bar in the current accent. The first label lines up with the settings."""
         k = self.kit
-        width, height = self.tab_width(key), 34
+        width, height = self.tab_width(key, tabs), 34
         image = k.canvas(width, height, PANEL_BG)
-        active = key == self.settings_tab
+        active = key == (current or self.settings_tab)
         k.rounded(image, (0, height - 1, width, height), 0.1, ui.CARD_EDGE)
         text = k.font("semibold", 10).getlength(label) / k.scale
         if active:
@@ -936,6 +937,10 @@ class App(DashboardPage, ScreensaverPage):
             self.push_saver()
         elif key == "swipe_screens" and self.connected:
             self.bridge.send_swipes(self.settings["swipe_screens"])
+        elif key == "dim_idle":
+            if self.connected:
+                self.bridge.send_dim(self.settings["dim_idle"])
+            self.refresh_screensaver()
 
     def on_unmap(self, event):
         if (event.widget is self.root and self.tray and self.settings["minimize_to_tray"]
@@ -1469,6 +1474,8 @@ class App(DashboardPage, ScreensaverPage):
         self.bridge.send_screens(config.screen_mask(self.settings["screens"]))
         self.bridge.send_backlight(self.settings["backlight"])
         self.bridge.send_swipes(self.settings["swipe_screens"])
+        self.bridge.send_dim(self.settings["dim_idle"])
+        self.push_time()
         self.push_saver()
         self.push_pomodoro()
         self.bridge.request_library()
@@ -1572,6 +1579,9 @@ class App(DashboardPage, ScreensaverPage):
                     self.sync()
         except queue.Empty:
             pass
+        # The knob's clock drifts and knows nothing of daylight saving.
+        if self.connected and time.monotonic() - self.time_pushed > TIME_RESEND_S:
+            self.push_time()
         self.root.after(80, self.poll)
 
     # ----- pomodoro -------------------------------------------------------

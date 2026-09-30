@@ -98,9 +98,16 @@ class DeviceBridge:
     def send_backlight(self, percent):
         self.outbound.put(f"BACKLIGHT,{int(percent)}\n".encode("ascii"))
 
-    def send_saver(self, enabled, idle_seconds, interval_seconds):
+    def send_saver(self, enabled, idle_seconds, interval_seconds, clock=False):
         self.outbound.put(f"SAVER,{int(bool(enabled))},{int(idle_seconds)},"
-                          f"{int(interval_seconds)}\n".encode("ascii"))
+                          f"{int(interval_seconds)},{int(bool(clock))}\n".encode("ascii"))
+
+    def send_dim(self, enabled):
+        self.outbound.put(f"DIM,{int(bool(enabled))}\n".encode("ascii"))
+
+    def send_time(self, local_seconds, h24=True):
+        """local_seconds is the local wall-clock time counted as if it were UTC."""
+        self.outbound.put(f"TIME,{int(local_seconds)},{int(bool(h24))}\n".encode("ascii"))
 
     def request_library(self):
         self.outbound.put(b"LIBRARY\n")

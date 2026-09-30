@@ -71,6 +71,8 @@ class DashboardPage:
         if key == "Screensaver":
             count = len(self.library.items)
             pictures = f"{count} item{'s' if count != 1 else ''}"
+            if self.settings["saver_show"] == "clock":
+                pictures = "Date and time"
             if not self.settings["saver_enabled"]:
                 return "Off", pictures, None
             return f"After {self.settings['saver_idle']} min", pictures, None

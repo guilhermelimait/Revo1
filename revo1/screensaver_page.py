@@ -1,8 +1,11 @@
 """The Screensaver page: when to start, how long each picture stays, and the
 pictures and clips kept on the knob."""
 
+import calendar
 import threading
+import time
 import tkinter as tk
+import winreg
 from pathlib import Path
 from tkinter import filedialog, messagebox
 
@@ -18,6 +21,25 @@ THUMB_ROWS_SHOWN = 2
 THUMB_ROW = THUMB + 10
 IDLE_LABELS = {1: "1 min", 2: "2 min", 5: "5 min", 10: "10 min", 30: "30 min"}
 INTERVAL_LABELS = {10: "10 s", 30: "30 s", 60: "1 min", 300: "5 min"}
+SHOW_LABELS = {"pictures": "Pictures and videos", "clock": "Date and time"}
+SAVER_TABS = (("general", "General"), ("pictures", "Pictures and videos"))
+# How often the knob's clock is set again while connected.
+TIME_RESEND_S = 3600
+
+
+def uses_24_hour_clock():
+    """Follows the Windows short time format (H is 24-hour, h is 12-hour)."""
+    try:
+        with winreg.OpenKey(winreg.HKEY_CURRENT_USER, r"Control Panel\International") as key:
+            return "H" in winreg.QueryValueEx(key, "sShortTime")[0]
+    except OSError:
+        return True
+
+
+def local_clock():
+    """The local wall-clock time as seconds counted as if it were UTC, so the
+    knob can show it without knowing the time zone."""
+    return calendar.timegm(time.localtime())
 
 
 def _size_text(size):
@@ -38,25 +60,50 @@ class ScreensaverPage:
         image = k.canvas(CARD_WIDTH, 44, ui.MAIN_BG)
         k.text(image, 0, 22, "Screensaver", "semibold", 18, ui.INK)
         title.show(image)
-        title.pack(padx=k.px(28), pady=(k.px(18), k.px(8)), anchor="w")
-        tab = tk.Frame(page, bg=ui.MAIN_BG)
-        tab.pack(fill="x", anchor="w")
+        title.pack(padx=k.px(28), pady=(k.px(18), k.px(4)), anchor="w")
 
+        tabs = tk.Frame(page, bg=ui.MAIN_BG)
+        tabs.pack(padx=k.px(28), pady=(0, k.px(12)), anchor="w")
+        self.saver_tab = "general"
+        self.saver_tab_buttons = []
+        for key, label in SAVER_TABS:
+            button = ui.Button(tabs, ui.MAIN_BG,
+                               lambda hover, key=key, label=label: self.paint_tab(
+                                   key, label, hover, SAVER_TABS, self.saver_tab),
+                               lambda key=key: self.show_saver_tab(key))
+            button.pack(side="left")
+            self.saver_tab_buttons.append(button)
+        self.saver_tabs = {key: tk.Frame(page, bg=ui.MAIN_BG) for key, _ in SAVER_TABS}
+
+        tab = self.saver_tabs["general"]
         body = self.section(tab)
         self.saver_toggle = ui.Button(
             body, PANEL_BG,
             lambda hover: self.paint_toggle(
-                self.settings["saver_enabled"], "Show pictures when the knob is idle",
+                self.settings["saver_enabled"], "Screensaver when the knob is idle",
                 "A touch or a turn brings the dial back", hover),
             lambda: self.toggle_setting("saver_enabled"))
         self.saver_toggle.pack(anchor="w")
+        self.dim_toggle = ui.Button(
+            body, PANEL_BG,
+            lambda hover: self.paint_toggle(
+                self.settings["dim_idle"], "Dim the screen when idle",
+                "After 10 min, 10% dimmer every 5 min until off", hover),
+            lambda: self.toggle_setting("dim_idle"))
+        self.dim_toggle.pack(anchor="w", pady=(k.px(6), 0))
 
         body = self.section(tab)
         self.saver_choices = []
-        for caption, key, labels in (("START AFTER", "saver_idle", IDLE_LABELS),
-                                     ("SHOW EACH FOR", "saver_interval", INTERVAL_LABELS)):
-            self.caption(body, caption).pack(anchor="w", pady=(k.px(14) if key ==
-                                                               "saver_interval" else 0, 0))
+        for caption, key, labels in (("SHOW", "saver_show", SHOW_LABELS),
+                                     ("START AFTER", "saver_idle", IDLE_LABELS),
+                                     ("SHOW EACH PICTURE FOR", "saver_interval",
+                                      INTERVAL_LABELS)):
+            if key == "saver_interval":
+                tab = self.saver_tabs["pictures"]
+                body = self.section(tab)
+            elif key != "saver_show":
+                body = self.section(tab)
+            self.caption(body, caption).pack(anchor="w")
             row = tk.Frame(body, bg=PANEL_BG)
             row.pack(anchor="w", pady=(k.px(6), 0))
             buttons = []
@@ -104,7 +151,16 @@ class ScreensaverPage:
         self.saver_status.pack(anchor="w", pady=(k.px(8), 0))
         self.library_crc = self.library.checksum()
         self.screensaver_page = page
+        self.show_saver_tab(self.saver_tab)
         self.refresh_screensaver()
+
+    def show_saver_tab(self, key):
+        self.saver_tab = key
+        for frame in self.saver_tabs.values():
+            frame.pack_forget()
+        self.saver_tabs[key].pack(fill="x", anchor="w")
+        for button in self.saver_tab_buttons:
+            button.refresh()
 
     # ----- painters -----------------------------------------------------
 
@@ -226,7 +282,8 @@ class ScreensaverPage:
         if not hasattr(self, "screensaver_page"):
             return
         self.saver_toggle.refresh()
-        for button in self.saver_choices + self.saver_buttons:
+        self.dim_toggle.refresh()
+        for button in self.saver_choices + self.saver_buttons + self.saver_tab_buttons:
             button.refresh()
         self.saver_summary.show(self.paint_saver_summary())
         self.show_thumbs()
@@ -288,11 +345,16 @@ class ScreensaverPage:
         config.save(self.settings)
         self.push_saver()
 
+    def push_time(self):
+        self.time_pushed = time.monotonic()
+        self.bridge.send_time(local_clock(), uses_24_hour_clock())
+
     def push_saver(self):
         if self.connected:
             self.bridge.send_saver(self.settings["saver_enabled"],
                                    self.settings["saver_idle"] * 60,
-                                   self.settings["saver_interval"])
+                                   self.settings["saver_interval"],
+                                   self.settings["saver_show"] == "clock")
         self.refresh_screensaver()
 
     def add_saver_media(self):

@@ -66,7 +66,7 @@ LVGL 8.4 and the panel driver are declared in `main\idf_component.yml`.
 The native USB Serial/JTAG console runs at 115200 baud and implements the
 `HELLO,REVO1,1`, `VERSION`, `SYNC`, `ROT`, `MENU`, `CURSOR`, `TAP`, `SWIPE`, `MEDIA`, `STATE`,
 `SHOWMENU`, `COMETRESET`, `STYLE`, `TRACK`, `ARTIST`, `PLAY`, `SCREENS`,
-`BACKLIGHT`, `SWIPES`, `POMO`, `SAVER`, `LIBRARY` and media upload lines used by
+`BACKLIGHT`, `DIM`, `SWIPES`, `TIME`, `POMO`, `SAVER`, `LIBRARY` and media upload lines used by
 `revo1\bridge.py`. The menu has one sector per enabled screen (`SCREENS`
 mask), in the host mode order; `CURSOR` and `TAP` report the mode index, not
 the sector.
@@ -87,6 +87,12 @@ a tap on the dial sends `POMO,TOGGLE` back. The chime plays on the PC.
 
 `BACKLIGHT,<1..100>` sets the LEDC duty on GPIO 47 with a squared curve
 (`255 * p^2 / 10000`, at least 3) so the low end of the slider stays usable.
+
+With `DIM,1` (the default) the backlight fades when the knob is left alone:
+`DIM_STEP_PERCENT` (10) points less after `DIM_AFTER_S` (600 s) without a
+touch or a turn, and again every `DIM_STEP_S` (300 s), down to 0, where the
+LEDC duty is 0. A touch or a turn restores the set level at once; on a dark
+screen that first touch or turn does nothing else.
 
 ## Screensaver storage and upload
 
@@ -116,6 +122,12 @@ item>` idle seconds without a touch or a turn, prints `SAVER,ON`, and hides
 the dial labels; the waking touch or turn is swallowed and prints
 `SAVER,OFF`. A frame that fails to decode prints `SAVER,BAD,<item>` and the
 item is skipped.
+
+With the last `SAVER` field set to 1 the screensaver shows the date and time
+instead: the time in Montserrat 48, the date below it, and sixty second marks
+on the rim that fill in the accent colour through each minute. The clock
+comes from `TIME,<local seconds>,<24h>`, sent by the app on connect and every
+hour; until then the clock screensaver doesn't start.
 
 ## Media transport screen
 
@@ -189,8 +201,8 @@ this.
 The last mode, orientation, bar colour and number size are kept in NVS
 (namespace `revo1`: `mode`, `orient`, `numsize`, `accent`, with
 `0xFFFFFFFF` meaning standard colours), together with the enabled screens
-(`screens`), backlight (`light`), swipe switch (`swipe`) and screensaver settings (`saver`, `idle`,
-`every`). `load_settings` reads them before the
+(`screens`), backlight (`light`), idle dimming (`dim`), swipe switch (`swipe`)
+and screensaver settings (`saver`, `idle`, `every`, `show`). `load_settings` reads them before the
 display starts, so a restarted knob comes back in the same view and the same
 orientation even when the PC app isn't running. `save_settings` runs after
 `STATE`, `STYLE`, a menu tap or a swipe, and only writes flash when a value

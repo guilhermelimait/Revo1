@@ -43,9 +43,13 @@ class BridgeTests(unittest.TestCase):
         bridge.send_saver(True, 300, 30)
         bridge.request_library()
         bridge.send_swipes(False)
-        sent = [bridge.outbound.get_nowait() for _ in range(6)]
+        bridge.send_saver(True, 60, 10, clock=True)
+        bridge.send_dim(True)
+        bridge.send_time(1790000000, h24=False)
+        sent = [bridge.outbound.get_nowait() for _ in range(9)]
         self.assertEqual(sent, [b"SCREENS,65\n", b"POMO,1,299,300,1\n", b"BACKLIGHT,40\n",
-                                b"SAVER,1,300,30\n", b"LIBRARY\n", b"SWIPES,0\n"])
+                                b"SAVER,1,300,30,0\n", b"LIBRARY\n", b"SWIPES,0\n",
+                                b"SAVER,1,60,10,1\n", b"DIM,1\n", b"TIME,1790000000,0\n"])
 
     def test_device_lines_become_events(self):
         events = queue.Queue()

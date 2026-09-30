@@ -19,6 +19,9 @@ First public release.
 - Screensaver: pictures, animated GIFs and videos are cropped to the round
   screen, stored in a 12.9 MB `media` flash partition and shown
   in rotation after a chosen idle time; a touch or a turn wakes the dial.
+  The screensaver can show the date and time instead (`TIME`, `SAVER`).
+- Idle dimming: after 10 minutes without input the backlight drops 10 points
+  every 5 minutes until it is off; any touch or turn restores it (`DIM`).
   Videos are read by FFmpeg (LGPL build), which the app downloads once, with
   your permission, the first time you add one; it isn't bundled.
 - Screen backlight slider in **Settings > Device** (`BACKLIGHT`).

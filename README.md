@@ -66,9 +66,13 @@ sync as you turn the knob.
 - **Screensaver:** add pictures (JPEG, PNG, BMP, WebP, ...), animated GIFs
   or short videos (MP4, MOV, AVI, MKV, WebM). Revo1 crops them to the round
   screen and stores them on the knob (up to about 12.9 MB), which shows them
-  in rotation after the minutes of idle time you choose. A touch or a turn
-  brings the dial back.
-- **Screen backlight** adjustable from the app.
+  in rotation after the minutes of idle time you choose. Or show the **date
+  and time** instead, with a ring of second marks. A touch or a turn brings
+  the dial back.
+- **Screen backlight** adjustable from the app, and optional **idle dimming**:
+  after 10 minutes without a touch or a turn the backlight drops by 10 points
+  every 5 minutes until the screen is off, and comes straight back on the
+  next touch or turn.
 - **Media screen** for whatever is playing (Spotify, a browser tab, ...):
   title, artist, progress ring, and big play/pause, previous and next buttons.
   Turning the knob seeks 5 seconds per click.
@@ -154,8 +158,9 @@ once the knob answers.
 - **Tap the back arrow** at the top (or the centre) to open the menu. Turn to
   move the highlight, then tap to confirm, or tap an icon directly.
 - On the **Pomodoro** screen, tap the dial to start or pause the timer.
-- While the **screensaver** runs, a touch or a turn wakes the dial (that
-  first touch or turn does nothing else).
+- While the **screensaver** runs, or when idle dimming has turned the
+  screen off, a touch or a turn wakes the dial (that first touch or turn
+  does nothing else).
 - On the **media** screen, tap play/pause, previous or next.
 
 The knob has no push button.
@@ -171,8 +176,12 @@ in the left sidebar.
   the knob while the timer is stopped), then **Start**, **Pause** or
   **Reset**. The timer runs in the app, so keep Revo1 running (it can sit
   in the notification area).
-- **Screensaver:** switch it on, choose **Start after** (idle minutes) and
-  **Show each for**, then **Add pictures or videos...**. Hover a thumbnail
+- **Screensaver:** on the **General** tab, switch it on, choose what to
+  **Show** (**Pictures and videos**, or **Date and time**, which follows the
+  PC's clock and its 12/24-hour format) and **Start after** (idle minutes),
+  and turn **Dim the screen when idle** on or off. On the **Pictures and
+  videos** tab choose **Show each picture for**, then **Add pictures or
+  videos...**. Hover a thumbnail
   and click the cross to remove it. **Send to knob** copies the collection
   to the device (about 110 KB/s, so a full collection takes about two
   minutes); the line under the buttons says whether the knob is up to date.
@@ -299,7 +308,9 @@ USB serial: 115200 baud, ASCII lines terminated by `\n`.
 | PC to device | `SWIPES,0` or `SWIPES,1` | Turn swiping between screens off or on; answered by `SWIPES_OK,<0 or 1>` |
 | PC to device | `POMO,<0 focus\|1 break>,<remaining s>,<total s>,<0\|1 running>` | Pomodoro state |
 | Device to PC | `POMO,TOGGLE` | Pomodoro dial tapped |
-| PC to device | `SAVER,<0\|1>,<idle s>,<seconds per item>` | Screensaver settings; answered by `SAVER_OK` |
+| PC to device | `SAVER,<0\|1>,<idle s>,<seconds per item>,<0 pictures\|1 clock>` | Screensaver settings; answered by `SAVER_OK` |
+| PC to device | `TIME,<local seconds>,<1 for 24-hour\|0>` | Sets the knob's clock (local time counted as if it were UTC); answered by `TIME_OK` |
+| PC to device | `DIM,0` or `DIM,1` | Idle dimming off or on; answered by `DIM_OK,<0 or 1>` |
 | Device to PC | `SAVER,ON` or `SAVER,OFF` | Screensaver started or stopped |
 | PC to device | `LIBRARY` | Ask for `LIBRARY,<capacity>,<items>,<bytes>,<CRC-32 hex>` (also sent after each change) |
 | PC to device | `MEDIA_BEGIN,<bytes>`, `MD,<offset>,<base64>`, `MEDIA_END`, `MEDIA_CLEAR` | Screensaver upload; see [firmware/README.md](firmware/README.md) |

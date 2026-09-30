@@ -29,7 +29,8 @@ class ConfigTests(unittest.TestCase):
                         "swipe_screens": False,
                         "screens": ["Volume", "Brightness", "Pomodoro"], "backlight": 40,
                         "focus_minutes": 50, "break_minutes": 10, "saver_enabled": True,
-                        "saver_idle": 10, "saver_interval": 60}
+                        "saver_idle": 10, "saver_interval": 60, "saver_show": "clock",
+                        "dim_idle": False}
             config.save(settings, path)
             self.assertEqual(config.load(path), settings)
             self.assertEqual(json.loads(path.read_text()), settings)
@@ -49,7 +50,7 @@ class ConfigTests(unittest.TestCase):
                         '{"screens":[]}', '{"screens":["Volume","Volume"]}',
                         '{"screens":["Radio"]}', '{"backlight":4}', '{"backlight":50.5}',
                         '{"focus_minutes":0}', '{"break_minutes":true}',
-                        '{"saver_idle":3}', '{"saver_interval":15}', '{"saver_enabled":1}'):
+                        '{"saver_idle":3}', '{"saver_show":"video"}', '{"saver_interval":15}', '{"saver_enabled":1}'):
                 path.write_text(bad, encoding="utf-8")
                 with self.assertRaises(ValueError):
                     config.load(path)
