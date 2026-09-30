@@ -12,7 +12,8 @@ First public release.
 - Radial icon menu opened from the centre or the mode name; knob to choose,
   tap to confirm.
 - Settings: device name, automatic device detection, screen orientation,
-  bar colour (standard, preset or custom) and number size.
+  bar colour (standard, preset or custom), number size, and separate
+  **Invert scroll** / **Invert zoom** switches for the knob direction.
 - Optional minimise to the notification area (tray), also used when started
   at sign-in.
 - About page: app and firmware versions, the latest GitHub release, and a

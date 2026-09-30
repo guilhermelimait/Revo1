@@ -218,6 +218,23 @@ class App:
             button.pack(side="left", padx=(0, k.px(8)))
             self.orientation_buttons.append(button)
 
+        card = ui.Card(tab, k, CARD_WIDTH, ui.MAIN_BG)
+        card.pack(padx=k.px(28), pady=(0, k.px(20)), anchor="w")
+        body = card.body
+        self.caption(body, "KNOB DIRECTION").pack(anchor="w")
+        self.invert_toggles = []
+        for key, title, detail in (
+                ("invert_scroll", "Invert scroll",
+                 "Turning clockwise scrolls up instead of down"),
+                ("invert_zoom", "Invert zoom",
+                 "Turning clockwise zooms out instead of in")):
+            toggle = ui.Button(body, ui.CARD_BG,
+                               lambda hover, key=key, title=title, detail=detail:
+                                   self.paint_toggle(self.settings[key], title, detail, hover),
+                               lambda key=key: self.toggle_setting(key))
+            toggle.pack(anchor="w", pady=(k.px(6), 0))
+            self.invert_toggles.append(toggle)
+
     def build_interface_tab(self, tab):
         k = self.kit
         card = ui.Card(tab, k, CARD_WIDTH, ui.MAIN_BG)
@@ -436,13 +453,16 @@ class App:
         return image
 
     def paint_tray_toggle(self, hover):
+        return self.paint_toggle(self.settings["minimize_to_tray"],
+                                 "Minimise to the notification area",
+                                 "Keeps Revo1 running next to the clock", hover)
+
+    def paint_toggle(self, on, title, detail, hover):
         k = self.kit
         width, height = CARD_WIDTH - 36, 40
         image = k.canvas(width, height, ui.CARD_BG)
-        on = self.settings["minimize_to_tray"]
-        k.text(image, 0, 12, "Minimise to the notification area", "semibold", 10, ui.INK)
-        k.text(image, 0, 30, "Keeps Revo1 running next to the clock", "regular", 8.5,
-               ui.MUTED_INK, width=width - 60)
+        k.text(image, 0, 12, title, "semibold", 10, ui.INK)
+        k.text(image, 0, 30, detail, "regular", 8.5, ui.MUTED_INK, width=width - 60)
         x0, y0 = width - 44, height / 2 - 12
         track = ui.INK if on else (ui.SUBTLE_INK if hover else ui.IDLE_GREY)
         k.rounded(image, (x0, y0, x0 + 44, y0 + 24), 12, track)
@@ -691,9 +711,13 @@ class App:
     # ----- tray -----------------------------------------------------------
 
     def toggle_tray(self):
-        self.settings["minimize_to_tray"] = not self.settings["minimize_to_tray"]
+        self.toggle_setting("minimize_to_tray")
+
+    def toggle_setting(self, key):
+        self.settings[key] = not self.settings[key]
         config.save(self.settings)
-        self.tray_toggle.refresh()
+        for toggle in [self.tray_toggle] + self.invert_toggles:
+            toggle.refresh()
 
     def on_unmap(self, event):
         if (event.widget is self.root and self.tray and self.settings["minimize_to_tray"]
@@ -1089,6 +1113,10 @@ class App:
             if not self.comet_animating:
                 self.comet_animating = True
                 self.animate_comet()
+        # The comet always follows the hand; only what the turn does flips.
+        if ((self.mode == "Scroll" and self.settings["invert_scroll"])
+                or (self.mode == "Zoom" and self.settings["invert_zoom"])):
+            steps = -steps
         self.actions.put((self.mode, steps))
 
     def advance_comet(self):

@@ -11,7 +11,9 @@ DEFAULT_NAME = "Revo1"
 STANDARD_ACCENT = "standard"
 NUMBER_SIZES = (24, 32, 40, 48)
 DEFAULTS = {"mode": "Volume", "orientation": 0, "port": "", "name": DEFAULT_NAME,
-            "accent": STANDARD_ACCENT, "number_size": 32, "minimize_to_tray": False}
+            "accent": STANDARD_ACCENT, "number_size": 32, "minimize_to_tray": False,
+            "invert_scroll": False, "invert_zoom": False}
+FLAGS = ("minimize_to_tray", "invert_scroll", "invert_zoom")
 
 
 def valid_accent(value):
@@ -43,15 +45,16 @@ def load(path=None):
     name = data.get("name", DEFAULT_NAME)
     accent = data.get("accent", STANDARD_ACCENT)
     number_size = data.get("number_size", 32)
-    minimize_to_tray = data.get("minimize_to_tray", False)
+    flags = {key: data.get(key, False) for key in FLAGS}
     if (mode not in MODES or orientation not in ORIENTATIONS or not isinstance(port, str)
             or not isinstance(name, str) or not valid_accent(accent)
-            or number_size not in NUMBER_SIZES or not isinstance(minimize_to_tray, bool)):
+            or number_size not in NUMBER_SIZES
+            or not all(isinstance(flag, bool) for flag in flags.values())):
         raise ValueError(f"Invalid settings in {path}")
     return {"mode": mode, "orientation": orientation, "port": port,
             "name": name.strip() or DEFAULT_NAME,
             "accent": accent if accent == STANDARD_ACCENT else accent.upper(),
-            "number_size": number_size, "minimize_to_tray": minimize_to_tray}
+            "number_size": number_size, **flags}
 
 
 def save(settings, path=None):

@@ -114,7 +114,9 @@ Pick a control in the left sidebar. **Settings** has three tabs:
 
 - **Device:** the name shown in the sidebar, the list of connected knobs
   (refreshed automatically every two seconds; pick one or leave it on
-  **Automatic**), and the screen orientation (0, 90, 180 or 270 degrees).
+  **Automatic**), the screen orientation (0, 90, 180 or 270 degrees), and
+  **Knob direction**: **Invert scroll** and **Invert zoom** swap what a
+  clockwise turn does (the comet on the dial still follows your hand).
 - **Interface:** **Standard** colours (one per control), a swatch, or
   **Custom...** for any single bar colour; and the number size (Small, Medium,
   Large or X-Large). Under **Window**, turn on **Minimise to the notification

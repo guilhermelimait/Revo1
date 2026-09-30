@@ -1,3 +1,4 @@
+import queue
 import tkinter as tk
 import unittest
 from types import SimpleNamespace
@@ -206,6 +207,34 @@ class AppTests(unittest.TestCase):
             self.assertEqual(app.comet_direction, -1)
             app.select_mode("Zoom")
             self.assertEqual(app.comet_q8, start)
+            app.close()
+
+    def test_invert_flips_the_action_but_not_the_comet(self):
+        root = tk.Tk()
+        root.withdraw()
+        saved = {"mode": "Scroll", "orientation": 0, "port": ""}
+        with patch("revo1.app.config.load", return_value=saved), \
+             patch("revo1.app.config.save") as save, \
+             patch("revo1.app.DeviceBridge"):
+            app = App(root)
+            app.actions = queue.Queue()
+            app.rotate(2)
+            self.assertEqual(app.actions.get_nowait(), ("Scroll", 2))
+            app.toggle_setting("invert_scroll")
+            self.assertTrue(save.call_args[0][0]["invert_scroll"])
+            target = app.comet_target_q8
+            app.rotate(2)
+            self.assertEqual(app.actions.get_nowait(), ("Scroll", -2))
+            self.assertEqual(app.comet_target_q8, target - 2 * dial.COMET_STEP_Q8)
+            app.select_mode("Zoom")
+            app.rotate(1)
+            self.assertEqual(app.actions.get_nowait(), ("Zoom", 1))
+            app.toggle_setting("invert_zoom")
+            app.rotate(1)
+            self.assertEqual(app.actions.get_nowait(), ("Zoom", -1))
+            app.select_mode("Volume")
+            app.rotate(1)
+            self.assertEqual(app.actions.get_nowait(), ("Volume", 1))
             app.close()
 
     def test_external_volume_change_updates_device_once(self):
