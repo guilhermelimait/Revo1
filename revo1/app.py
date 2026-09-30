@@ -174,7 +174,7 @@ class App:
             button = ui.Button(tabs, ui.MAIN_BG,
                                lambda hover, key=key, label=label: self.paint_tab(key, label, hover),
                                lambda key=key: self.show_tab(key))
-            button.pack(side="left", padx=(0, k.px(6)))
+            button.pack(side="left")
             self.tab_buttons.append(button)
 
         self.tabs = {key: tk.Frame(page, bg=ui.MAIN_BG) for key, _ in SETTINGS_TABS}
@@ -382,18 +382,21 @@ class App:
         return image
 
     def paint_tab(self, key, label, hover):
+        """Underline tabs: plain labels on one hairline, the open one marked by
+        a bar in the current accent."""
         k = self.kit
-        # The row of tabs spans the card width, however many tabs there are.
-        width, height = CARD_WIDTH // len(SETTINGS_TABS) - 6, 32
+        # The row spans the card width, however many tabs there are.
+        width, height = CARD_WIDTH // len(SETTINGS_TABS), 34
         image = k.canvas(width, height, ui.MAIN_BG)
-        if key == self.settings_tab:
-            k.rounded(image, (0, 0, width, height), 9, ui.INK)
-            ink = "#FFFFFF"
-        else:
-            k.rounded(image, (0, 0, width, height), 9, ui.CARD_BG if hover else ui.MAIN_BG,
-                      ui.CARD_EDGE)
-            ink = ui.SUBTLE_INK
-        k.text(image, width / 2, height / 2, label, "semibold", 10, ink, anchor="mm")
+        active = key == self.settings_tab
+        k.rounded(image, (0, height - 1, width, height), 0.1, ui.CARD_EDGE)
+        if active:
+            k.rounded(image, (8, height - 3, width - 8, height), 1.5, self.accent(self.mode))
+        elif hover:
+            k.rounded(image, (8, height - 2, width - 8, height), 1, ui.MUTED_INK)
+        ink = ui.INK if active else (ui.SUBTLE_INK if hover else ui.MUTED_INK)
+        k.text(image, width / 2, (height - 3) / 2, label, "semibold" if active else "device",
+               10, ink, anchor="mm")
         return image
 
     def paint_accent_choice(self, key, hover):
@@ -640,7 +643,8 @@ class App:
         self.apply_style()
 
     def apply_style(self):
-        for button in self.accent_buttons + self.size_buttons + self.device_rows:
+        for button in (self.accent_buttons + self.size_buttons + self.device_rows
+                       + self.tab_buttons):
             button.refresh()
         self.refresh_nav()
         self.render()
