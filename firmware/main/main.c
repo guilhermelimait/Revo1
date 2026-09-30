@@ -305,7 +305,6 @@ static bool show_menu = true;
 static bool touch_active;
 static uint16_t touch_start_x;
 static uint16_t touch_start_y;
-static int64_t encoder_last_edge;
 static esp_err_t touch_error;
 /* Set once the PC has sent a STATE since boot; until then the firmware asks
    for one, so a restarted knob gets its settings back from a connected app. */
@@ -1380,7 +1379,7 @@ static void apply_labels(void)
                           media_title[0] ? media_title : "NOTHING PLAYING");
         lv_label_set_text(artist_label, media_artist);
         const int elapsed = media_elapsed();
-        char clock[24];
+        char clock[48];
         snprintf(clock, sizeof(clock), "%d:%02d / %d:%02d",
                  elapsed / 60, elapsed % 60,
                  media_duration / 60, media_duration % 60);
@@ -1394,7 +1393,7 @@ static void apply_labels(void)
 
     if (selected_mode == POMODORO_MODE) {
         const int remaining = pomo_remaining_now();
-        char clock[12];
+        char clock[24];
         snprintf(clock, sizeof(clock), "%d:%02d", remaining / 60, remaining % 60);
         pomo_shown = remaining;
         lv_obj_set_style_text_font(value_label, number_font, 0);
@@ -1408,7 +1407,7 @@ static void apply_labels(void)
         return;
     }
 
-    char value[12];
+    char value[32];
     if (mode_is_level(selected_mode)) {
         snprintf(value, sizeof(value), "%d", selected_value);
         lv_obj_set_style_text_font(value_label, number_font, 0);
