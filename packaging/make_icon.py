@@ -32,12 +32,12 @@ BOLT = [(0.56, 0.00), (0.16, 0.58), (0.46, 0.58), (0.36, 1.00),
         (0.84, 0.40), (0.54, 0.40), (0.74, 0.00)]
 
 
-def add_bolt(image, height, shadow=True):
+def add_bolt(image, height, shadow=True, aspect=0.78, depth=0.85):
     """Draws the bolt in the middle of `image`, shaded from the ring's deep
     tail colour at the bottom to its bright accent at the top."""
     n = image.width
     big = n * SS
-    width = height * 0.78
+    width = height * aspect
     x0, y0 = (big - width * SS) / 2, (big - height * SS) / 2
     points = [(x0 + x * width * SS, y0 + y * height * SS) for x, y in BOLT]
     mask = Image.new("L", (big, big), 0)
@@ -54,7 +54,7 @@ def add_bolt(image, height, shadow=True):
     draw = ImageDraw.Draw(shade)
     for y in range(n):
         t = min(max((y - top) / max(bottom - top, 1), 0), 1)
-        draw.line((0, y, n, y), fill=mix(ACCENT, tail, t * 0.85) + (255,))
+        draw.line((0, y, n, y), fill=mix(ACCENT, tail, t * depth) + (255,))
     image.paste(shade, (0, 0), mask)
     return image
 
@@ -74,7 +74,9 @@ def bold(size):
     draw.ellipse((0, 0, n - 1, n - 1), fill=(150, 150, 162, 255))
     edge = max(SS, n // 32)
     draw.ellipse((edge, edge, n - 1 - edge, n - 1 - edge), fill=(236, 236, 240, 255))
-    band = n * 0.17
+    # Tray and title-bar sizes: a thinner ring and a bigger cap, so the bolt
+    # has room to be seen.
+    band = n * (0.12 if size <= 24 else 0.17)
     box = (edge + band * 0.2, edge + band * 0.2, n - 1 - edge - band * 0.2, n - 1 - edge - band * 0.2)
     draw.arc(box, 0, 360, fill=(206, 206, 214, 255), width=round(band))
     tail = tuple(v * c // 255 for v, c in zip(ACCENT, dial.TAIL))
@@ -84,11 +86,13 @@ def bold(size):
         start = 90 + sweep * i / steps
         draw.arc(box, start, start + sweep / steps + 0.8,
                  fill=mix(tail, ACCENT, i / steps) + (255,), width=round(band))
-    cap = n * 0.26
+    cap = n * (0.34 if size <= 24 else 0.29)
     c = n / 2
     draw.ellipse((c - cap, c - cap, c + cap, c + cap), fill=(248, 248, 250, 255))
     image = image.resize((size, size), Image.LANCZOS)
-    return add_bolt(image, size * 0.36, shadow=size >= 32)
+    if size <= 24:
+        return add_bolt(image, size * 0.56, shadow=False, aspect=0.9, depth=1.0)
+    return add_bolt(image, size * 0.44, shadow=True, aspect=0.84)
 
 
 def main():
