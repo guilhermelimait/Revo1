@@ -158,11 +158,6 @@ class App(DashboardPage, ScreensaverPage, GamesPage):
         self.identity = ui.Picture(bar, ui.SIDEBAR_BG)
         self.identity.pack(padx=k.px(12), pady=(k.px(22), k.px(18)), anchor="w")
         self.nav = {}
-        settings = ui.Button(bar, ui.SIDEBAR_BG,
-                             lambda hover: self.paint_nav("Settings", hover),
-                             lambda: self.navigate("Settings"))
-        settings.pack(side="bottom", padx=k.px(12), pady=(0, k.px(18)), anchor="w")
-        self.nav["Settings"] = settings
         self.nav_list = tk.Frame(bar, bg=ui.SIDEBAR_BG)
         self.nav_list.pack(fill="x")
         self.build_nav()
@@ -170,12 +165,13 @@ class App(DashboardPage, ScreensaverPage, GamesPage):
 
     def build_nav(self):
         """The sidebar lists the screens that are on the knob, between the
-        dashboard and the screensaver."""
+        dashboard and the screensaver, with settings right after them."""
         k = self.kit
         for child in self.nav_list.winfo_children():
             child.destroy()
-        self.nav = {"Settings": self.nav["Settings"]}
-        for key in ("Dashboard",) + tuple(self.settings["screens"]) + ("Screensaver",):
+        self.nav = {}
+        for key in (("Dashboard",) + tuple(self.settings["screens"])
+                    + ("Screensaver", "Settings")):
             button = ui.Button(self.nav_list, ui.SIDEBAR_BG,
                                lambda hover, key=key: self.paint_nav(key, hover),
                                lambda key=key: self.navigate(key))
