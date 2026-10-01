@@ -1588,8 +1588,6 @@ class App(DashboardPage, ScreensaverPage, GamesPage):
                     self.pomodoro_action("start")
                 elif kind == "game":
                     self.game_result = payload
-                    if self.page == "dashboard":
-                        self.refresh_dashboard_tile("Games")
                     if self.mode == "Games" and not self.menu:
                         self.render()
                 elif kind == "levels":

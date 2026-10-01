@@ -3,11 +3,10 @@
 ## Unreleased
 
 - New Games screen: a round card per game on the knob and a grid of game
-  cards in the app (with "Soon" placeholders), starting with Whack-a-Mole. Turn the
-  knob to aim at one of seven
-  holes and touch to whack; gold moles are worth +3 and bombs cost -3. The
-  knob keeps the best score, and the dashboard shows your last and best
-  scores.
+  cards in the app (with "Soon" placeholders), starting with Whack-a-Mole.
+  Turn the knob to aim at one of seven holes and touch to whack; gold moles
+  are worth +3 and bombs cost -3. The knob keeps the best score, and the
+  app's Games cards show your last and best scores.
 - The app window is taller so the sidebar fits all eight screens.
 
 ## 1.0.1 - 2026-09-30
