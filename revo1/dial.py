@@ -61,6 +61,7 @@ ACCENTS = {
     "Zoom": (0, 226, 158),
     "Media": (255, 116, 56),
     "Pomodoro": (232, 58, 58),
+    "Games": (150, 200, 30),
 }
 
 # Swatches offered for a single custom bar colour.

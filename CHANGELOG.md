@@ -1,5 +1,13 @@
 # Changelog
 
+## Unreleased
+
+- New Games screen with Whack-a-Mole. Turn the knob to aim at one of seven
+  holes and touch to whack; gold moles are worth +3 and bombs cost -3. The
+  knob keeps the best score, and the dashboard shows your last and best
+  scores.
+- The app window is taller so the sidebar fits all eight screens.
+
 ## 1.0.1 - 2026-09-30
 
 - Simpler back icon on the dial: a plain chevron instead of an arrow in a ring.

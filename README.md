@@ -55,14 +55,19 @@ sync as you turn the knob.
 
 ## Features
 
-- **Seven screens:** system volume, mouse-wheel scrolling, display brightness,
-  microphone level, zoom (Ctrl + wheel), media playback and a Pomodoro timer.
+- **Eight screens:** system volume, mouse-wheel scrolling, display brightness,
+  microphone level, zoom (Ctrl + wheel), media playback, a Pomodoro timer and
+  Games.
 - **Dashboard:** every screen at a glance with its live value, and a switch
   to hide the ones you don't use from the knob's menu and swipes.
 - **Pomodoro:** pick the focus and break lengths, then tap the dial (on the
   knob or in the app) to start or pause. The ring counts down on the knob,
   and the PC plays a chime when it's time for a break and when the break
   ends.
+- **Games:** Whack-a-Mole, played on the knob. Turn to aim at one of seven
+  holes and touch to whack. Gold moles are worth 3 points and bombs cost 3.
+  A round lasts 30 seconds and gets faster as it goes. The knob keeps your
+  best score, and the app shows your last and best scores.
 - **Screensaver:** add pictures (JPEG, PNG, BMP, WebP, ...), animated GIFs
   or short videos (MP4, MOV, AVI, MKV, WebM). Revo1 crops them to the round
   screen and stores them on the knob (up to about 12.9 MB), which shows them
@@ -158,6 +163,10 @@ once the knob answers.
 - **Tap the back icon** at the top (or the centre) to open the menu. Turn to
   move the highlight, then tap to confirm, or tap an icon directly.
 - On the **Pomodoro** screen, tap the dial to start or pause the timer.
+- On the **Games** screen, tap the centre to start a round of Whack-a-Mole.
+  Turn the knob to move the ring between the holes and touch anywhere to whack
+  the hole under the ring, or touch a hole directly. The ring around the edge
+  shows the time left.
 - While the **screensaver** runs, or when idle dimming has turned the
   screen off, a touch or a turn wakes the dial (that first touch or turn
   does nothing else).
@@ -246,6 +255,8 @@ never overwritten with old saved values.
 - Windows only (it uses Windows audio, brightness and media APIs).
 - Brightness works on screens Windows can dim through WMI (usually laptops).
 - No album artwork yet: the serial link is line-based text.
+- Games run on the knob only. The app shows the board and your scores but
+  you can't play in the window.
 - The Pomodoro timer and its chime run in the app: the knob shows the time
   but doesn't count on its own.
 - The knob has no clock battery: the date and time screensaver starts once
@@ -291,8 +302,8 @@ USB serial: 115200 baud, ASCII lines terminated by `\n`.
 | Device to PC | `SYNC` | Sent with `HELLO` until the first `STATE` after a restart; the app resends style and state |
 | Device to PC | `ROT,<signed steps>` | Knob movement |
 | Device to PC | `MENU` | Centre or back-icon tap opens the menu |
-| Device to PC | `TAP,<0..6>` | Menu choice confirmed (mode index) |
-| Device to PC | `CURSOR,<0..6>` | Knob moved the menu highlight (mode index) |
+| Device to PC | `TAP,<0..7>` | Menu choice confirmed (mode index) |
+| Device to PC | `CURSOR,<0..7>` | Knob moved the menu highlight (mode index) |
 | Device to PC | `SWIPE,LEFT` or `SWIPE,RIGHT` | Change control |
 | PC to device | `STATE,<MODE>,<0..100>,<0\|90\|180\|270>` | Set screen state |
 | PC to device | `SHOWMENU` | Show radial menu |
@@ -307,6 +318,7 @@ USB serial: 115200 baud, ASCII lines terminated by `\n`.
 | PC to device | `SWIPES,0` or `SWIPES,1` | Turn swiping between screens off or on; answered by `SWIPES_OK,<0 or 1>` |
 | PC to device | `POMO,<0 focus\|1 break>,<remaining s>,<total s>,<0\|1 running>` | Pomodoro state |
 | Device to PC | `POMO,TOGGLE` | Pomodoro dial tapped |
+| Device to PC | `GAME,WHACK,<score>,<best>` | Whack-a-Mole round finished |
 | PC to device | `SAVER,<0\|1>,<idle s>,<seconds per item>,<0 pictures\|1 clock>` | Screensaver settings; answered by `SAVER_OK` |
 | PC to device | `TIME,<local seconds>,<1 for 24-hour\|0>` | Sets the knob's clock (local time counted as if it were UTC); answered by `TIME_OK` |
 | PC to device | `DIM,0` or `DIM,1` | Idle dimming off or on; answered by `DIM_OK,<0 or 1>` |
@@ -315,7 +327,7 @@ USB serial: 115200 baud, ASCII lines terminated by `\n`.
 | PC to device | `MEDIA_BEGIN,<bytes>`, `MD,<offset>,<base64>`, `MEDIA_END`, `MEDIA_CLEAR` | Screensaver upload; see [firmware/README.md](firmware/README.md) |
 
 Mode names, in sector order: `VOLUME`, `SCROLL`, `BRIGHTNESS`, `MIC`, `ZOOM`,
-`MEDIA`, `POMODORO`. The preview uses a neutral midpoint for non-percentage controls.
+`MEDIA`, `POMODORO`, `GAMES`. The preview uses a neutral midpoint for non-percentage controls.
 
 Each knob detent sends exactly one step. The encoder is not a quadrature
 encoder and emits two pulses per detent, which the firmware divides down; see

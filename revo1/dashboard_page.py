@@ -68,6 +68,11 @@ class DashboardPage:
                 remaining != timer.total) else "ready"
             return (f"{remaining // 60}:{remaining % 60:02d}",
                     f"{pomodoro.PHASE_NAMES[timer.phase]} \u00b7 {status}", timer.fraction())
+        if key == "Games":
+            result = self.game_result
+            if result is None:
+                return "Whack-a-Mole", "Play on the knob", None
+            return f"Best {result[1]}", f"Last round {result[0]}", None
         if key == "Screensaver":
             count = len(self.library.items)
             pictures = f"{count} item{'s' if count != 1 else ''}"

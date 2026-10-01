@@ -4,7 +4,10 @@ from pathlib import Path
 from tempfile import NamedTemporaryFile
 
 
-MODES = ("Volume", "Scroll", "Brightness", "Mic", "Zoom", "Media", "Pomodoro")
+MODES = ("Volume", "Scroll", "Brightness", "Mic", "Zoom", "Media", "Pomodoro", "Games")
+# The screens before Games existed. A file written then lists only these as
+# known, so screens added since start switched on rather than missing.
+LEGACY_SCREENS = MODES[:7]
 ORIENTATIONS = (0, 90, 180, 270)
 DEFAULT_NAME = "Revo1"
 # "standard" gives each control its own colour; otherwise one "#RRGGBB" for all.
@@ -13,7 +16,7 @@ NUMBER_SIZES = (24, 32, 40, 48)
 DEFAULTS = {"mode": "Volume", "orientation": 0, "port": "", "name": DEFAULT_NAME,
             "accent": STANDARD_ACCENT, "number_size": 32, "minimize_to_tray": False,
             "invert_scroll": False, "invert_zoom": False, "swipe_screens": True,
-            "screens": list(MODES), "backlight": 100,
+            "screens": list(MODES), "known_screens": list(MODES), "backlight": 100,
             "focus_minutes": 25, "break_minutes": 5,
             "saver_enabled": False, "saver_idle": 5, "saver_interval": 30,
             "saver_show": "pictures", "dim_idle": True}
@@ -69,6 +72,7 @@ def load(path=None):
     number_size = data.get("number_size", 32)
     flags = {key: data.get(key, DEFAULTS[key]) for key in FLAGS}
     screens = data.get("screens", list(MODES))
+    known = data.get("known_screens", list(LEGACY_SCREENS))
     saver_show = data.get("saver_show", DEFAULTS["saver_show"])
     numbers = {key: data.get(key, DEFAULTS[key])
                for key in ("backlight", "focus_minutes", "break_minutes",
@@ -78,6 +82,8 @@ def load(path=None):
             or number_size not in NUMBER_SIZES
             or not all(isinstance(flag, bool) for flag in flags.values())
             or not valid_screens(screens)
+            or not isinstance(known, list)
+            or not all(isinstance(item, str) for item in known)
             or saver_show not in SAVER_SHOW_CHOICES
             or not all(type(value) is int for value in numbers.values())
             or numbers["backlight"] not in BACKLIGHT_RANGE
@@ -87,13 +93,15 @@ def load(path=None):
             or numbers["saver_interval"] not in SAVER_INTERVAL_CHOICES):
         raise ValueError(f"Invalid settings in {path}")
     # Keep the menu order fixed whatever order the file lists them in.
-    screens = [candidate for candidate in MODES if candidate in screens]
+    screens = [candidate for candidate in MODES
+               if candidate in screens or candidate not in known]
     if mode not in screens:
         mode = screens[0]
     return {"mode": mode, "orientation": orientation, "port": port,
             "name": name.strip() or DEFAULT_NAME,
             "accent": accent if accent == STANDARD_ACCENT else accent.upper(),
-            "number_size": number_size, "screens": screens, "saver_show": saver_show,
+            "number_size": number_size, "screens": screens,
+            "known_screens": list(MODES), "saver_show": saver_show,
             **numbers, **flags}
 
 

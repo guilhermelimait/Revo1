@@ -55,6 +55,13 @@ ICONS = {
         ("seg", 0, -11, 0, -7.5, 2.4),
         ("seg", -3.5, -11.5, 3.5, -11.5, 2.8),
     ],
+    "Games": [
+        ("capsule", -6, 1, 6, 1, 7.5, 2.4),
+        ("seg", -9, 1, -4, 1, 2.2),
+        ("seg", -6.5, -1.5, -6.5, 3.5, 2.2),
+        ("disc", 4.5, -0.5, 1.5),
+        ("disc", 7.5, 2.5, 1.5),
+    ],
 }
 
 # Shapes the PC window also draws, in the same distance-field style; the
@@ -103,6 +110,9 @@ SHAPES = {
         ("seg", -3.5, 0, 2.5, -7, 2.6),
         ("seg", -3.5, 0, 2.5, 7, 2.6),
     ],
+    # Whack-a-Mole's empty hole, as the knob draws it (draw_whack_hole).
+    "HoleRim": [("disc", 0, 0, 12.5)],
+    "HoleDirt": [("disc", 0, 1.2, 10.5)],
     "Plus": [("seg", -7, 0, 7, 0, 2.4), ("seg", 0, -7, 0, 7, 2.4)],
     "Close": [("seg", -5, -5, 5, 5, 2.2), ("seg", 5, -5, -5, 5, 2.2)],
 }

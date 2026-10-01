@@ -67,7 +67,7 @@ LVGL 8.4 and the panel driver are declared in `main\idf_component.yml`.
 The native USB Serial/JTAG console runs at 115200 baud and implements the
 `HELLO,REVO1,1`, `VERSION`, `SYNC`, `ROT`, `MENU`, `CURSOR`, `TAP`, `SWIPE`, `MEDIA`, `STATE`,
 `SHOWMENU`, `COMETRESET`, `STYLE`, `TRACK`, `ARTIST`, `PLAY`, `SCREENS`,
-`BACKLIGHT`, `DIM`, `SWIPES`, `TIME`, `POMO`, `SAVER`, `LIBRARY` and media upload lines used by
+`BACKLIGHT`, `DIM`, `SWIPES`, `TIME`, `POMO`, `SAVER`, `LIBRARY`, `GAME` and media upload lines used by
 `revo1\bridge.py`. The menu has one sector per enabled screen (`SCREENS`
 mask), in the host mode order; `CURSOR` and `TAP` report the mode index, not
 the sector.
@@ -83,6 +83,32 @@ The host owns the timer. `POMO,<phase>,<remaining s>,<total s>,<running>`
 arrives on every change and once a minute; the firmware counts the seconds
 down locally in between so the ring and the `M:SS` number move smoothly, and
 a tap on the dial sends `POMO,TOGGLE` back. The chime plays on the PC.
+
+## Games
+
+The Games screen (mode 7) runs Whack-a-Mole entirely on the knob. Seven holes
+sit on a ring of radius 118: the first is at 45 degrees and the rest follow
+clockwise every 45 degrees, leaving the top slot for the back icon. In the
+lobby, a tap on the cap starts a 30-second round. While a round runs:
+
+- The knob moves the aim ring between holes, and no `ROT` is sent.
+- A touch anywhere except the back icon whacks the aimed hole. Touching a hole
+  moves the aim there first.
+- A plain mole scores 1. Gold moles appear after 15% of the round and score 3.
+  Bombs appear after 25% and cost 3.
+- Up to 1, then 2, then 3 moles are up at once as the round goes on. A mole
+  stays up for 1350 ms at the start and 650 ms at the end, and the gap between
+  moles shrinks from 850 ms to 450 ms, with up to 30% random jitter.
+- The outer ring drains as the time runs out.
+
+At the end the knob shows the score and sends `GAME,WHACK,<score>,<best>`.
+The best score is kept in NVS key `whack`. Taps in the first 800 ms after a
+round ends are ignored, so a late whack doesn't start a new round. Leaving the
+screen abandons the round.
+
+To keep redraws cheap, the empty board is copied once into a PSRAM backdrop
+(`game_backdrop`). Each change then repaints only the holes that changed, and
+only inside the arc band, so the ring is left alone.
 
 ## Backlight
 
@@ -176,10 +202,10 @@ cap and the ring; a tap within 30 px of it opens the menu.
   `COMETRESET` on connect in case the device kept running while it was closed.
 - **Media** uses the gauge as song progress.
 - **The menu** keeps the same chrome, but the ring is split into one segment
-  per enabled screen (up to seven), aligned with the touch sectors. The segment for the
+  per enabled screen (up to eight), aligned with the touch sectors. The segment for the
   last-used mode is lit in that mode's accent colour. Each control is shown
   as an icon (speaker, mouse, sun, microphone, magnifier, play/pause,
-  timer) rather than a word. The icons are small vector shapes drawn with signed distances
+  timer) rather than a word. Games uses a gamepad. The icons are small vector shapes drawn with signed distances
   (`draw_menu_icons`), so their edges are anti-aliased; they are drawn with
   the chrome and cost nothing per frame. The last-used icon uses a deepened
   accent. There is no HOME strip: a centre tap opens the menu from any mode.
@@ -203,7 +229,7 @@ The last mode, orientation, bar colour and number size are kept in NVS
 (namespace `revo1`: `mode`, `orient`, `numsize`, `accent`, with
 `0xFFFFFFFF` meaning standard colours), together with the enabled screens
 (`screens`), backlight (`light`), idle dimming (`dim`), swipe switch (`swipe`)
-and screensaver settings (`saver`, `idle`, `every`, `show`). `load_settings` reads them before the
+screensaver settings (`saver`, `idle`, `every`, `show`) and the Whack-a-Mole best score (`whack`). `load_settings` reads them before the
 display starts, so a restarted knob comes back in the same view and the same
 orientation even when the PC app isn't running. `save_settings` runs after
 every command or touch that changes one of them, and only writes flash when a

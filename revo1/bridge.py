@@ -11,7 +11,7 @@ DEVICE_IDS = (0x303A, 0x1001)
 # The firmware's greeting. Early builds, made while the project was called
 # RoundScreen, still say so; they're accepted so the app can update them.
 HELLO_LINES = ("HELLO,REVO1,1", "HELLO,ROUNDSCREEN,1")
-MODE_COUNT = 7
+MODE_COUNT = 8
 # Raw bytes per upload line; the firmware accepts up to 3072.
 UPLOAD_CHUNK = 3072
 # Chunks in flight before waiting for an acknowledgement.
@@ -205,6 +205,13 @@ class DeviceBridge:
             self.events.put(("menu", None))
         elif line == "SYNC":
             self.events.put(("sync", port))
+        elif line.startswith("GAME,WHACK,"):
+            try:
+                score, best = (int(part) for part in line[11:].split(","))
+            except ValueError:
+                return line
+            if 0 <= score <= 65535 and 0 <= best <= 65535:
+                self.events.put(("game", (score, best)))
         elif line == "POMO,TOGGLE":
             self.events.put(("pomodoro_toggle", None))
         elif line in ("SAVER,ON", "SAVER,OFF"):

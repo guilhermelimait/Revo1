@@ -26,6 +26,13 @@ from revo1.screensaver import Library
 from revo1.screensaver_page import TIME_RESEND_S, ScreensaverPage
 
 LEVEL_MODES = ("Volume", "Mic", "Brightness")
+# Whack-a-Mole's board, matching WHACK_* and GAME_TITLE_Y in the firmware.
+GAME_HOLES = 7
+GAME_RING_R = 118
+GAME_ICON_SIZE = 1.75
+GAME_TITLE_Y = -40
+GAME_HOLE_RIM = (0xC4, 0xC4, 0xCE)
+GAME_HOLE_DIRT = (0x4A, 0x40, 0x3C)
 KOFI_RED = "#FF5E5B"
 DEVICE_ROW_HEIGHT = 36
 DEVICE_SCAN_MS = 2000
@@ -60,6 +67,8 @@ class App(DashboardPage, ScreensaverPage):
         self.pomodoro = pomodoro.PomodoroTimer(self.settings["focus_minutes"],
                                                self.settings["break_minutes"])
         self.pomodoro_sent = 0.0
+        # (last score, best) from the knob's most recent Whack-a-Mole round.
+        self.game_result = None
         self.pomodoro_shown = None
         self.chime_folder = config.config_path().parent
         self.library = Library()
@@ -1247,6 +1256,26 @@ class App(DashboardPage, ScreensaverPage):
             draw = ImageDraw.Draw(image)
             self.put_text(draw, c, c, str(self.value), self.settings["number_size"],
                           dial.VALUE_INK)
+        elif self.mode == "Games":
+            # The game runs on the knob; the window shows its board at rest.
+            pixels = np.array(self.dial.level(accent, 1.0))
+            for hole in range(GAME_HOLES):
+                radians = math.radians(45 - hole * 45)
+                x = c + GAME_RING_R * math.cos(radians)
+                y = c - GAME_RING_R * math.sin(radians)
+                self.draw_icon(pixels, "HoleRim", x, y, GAME_HOLE_RIM, size=GAME_ICON_SIZE)
+                self.draw_icon(pixels, "HoleDirt", x, y, GAME_HOLE_DIRT, size=GAME_ICON_SIZE)
+            image = Image.fromarray(pixels)
+            draw = ImageDraw.Draw(image)
+            self.put_text(draw, c, c + GAME_TITLE_Y, "WHACK-A-MOLE", 16, dial.VALUE_INK)
+            if self.game_result is None:
+                self.put_text(draw, c, c, "Play on the knob", 16, dial.VALUE_INK)
+            else:
+                score, best = self.game_result
+                self.put_text(draw, c, c, str(score), self.settings["number_size"],
+                              dial.VALUE_INK)
+                self.put_text(draw, c, c + dial.MEDIA_TIME_Y, f"BEST {best}", 12,
+                              dial.TIME_INK)
         else:
             image = self.dial.comet(accent, (self.comet_q8 >> 8) & dial.MASK,
                                     self.comet_direction)
@@ -1380,6 +1409,8 @@ class App(DashboardPage, ScreensaverPage):
         self.comet_direction = 1
 
     def rotate(self, steps):
+        if self.mode == "Games":
+            return
         if self.mode == "Pomodoro":
             # The knob sets the length of the phase shown while it is stopped.
             if not self.pomodoro.running:
@@ -1564,6 +1595,12 @@ class App(DashboardPage, ScreensaverPage):
                     self.render()
                 elif kind == "pomodoro_toggle":
                     self.pomodoro_action("start")
+                elif kind == "game":
+                    self.game_result = payload
+                    if self.page == "dashboard":
+                        self.refresh_dashboard_tile("Games")
+                    if self.mode == "Games" and not self.menu:
+                        self.render()
                 elif kind == "levels":
                     self.levels_pending = False
                     self.levels = payload
