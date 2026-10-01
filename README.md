@@ -64,7 +64,8 @@ sync as you turn the knob.
   knob or in the app) to start or pause. The ring counts down on the knob,
   and the PC plays a chime when it's time for a break and when the break
   ends.
-- **Games:** a card for each game, played on the knob. The first is
+- **Games:** a round card for each game, played on the knob; the app shows
+  every game as a card in a grid, with your scores. The first is
   Whack-a-Mole: turn to aim at one of seven
   holes and touch to whack. Gold moles are worth 3 points and bombs cost 3.
   A round lasts 30 seconds and gets faster as it goes. The knob keeps your
@@ -170,6 +171,8 @@ once the knob answers.
   anywhere to whack the hole under the ring, or touch a hole directly. The
   ring around the edge shows the time left. After a round, tap the centre to
   play again, or tap the back icon to return to the cards.
+- The app's **Games** screen shows every game as a card in a grid, with your
+  best and last scores. Cards marked **Soon** are games still to come.
 - While the **screensaver** runs, or when idle dimming has turned the
   screen off, a touch or a turn wakes the dial (that first touch or turn
   does nothing else).

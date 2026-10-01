@@ -198,18 +198,16 @@ static int pomo_shown = -1;
 #define WHACK_BOX 30
 #define WHACK_HIT_R 34
 #define GAME_TITLE_Y (-40)
-/* The Games screen opens on a card per game; a tap on the card plays it. */
+/* The Games screen opens on a round card per game, centred on the dial; a tap
+   on the card plays it. */
 #define GAME_COUNT 1
-#define CARD_CY 0
-#define CARD_HALF_W 100
-#define CARD_HALF_H 84
-#define CARD_RADIUS 22
-#define CARD_ART_Y (-38)
+#define CARD_R 100
+#define CARD_ART_Y (-44)
 #define CARD_ART_SIZE 1.8f
-#define CARD_NAME_Y 16
-#define CARD_BEST_Y 40
-#define CARD_PLAY_Y 62
-#define CARD_DOTS_Y 100
+#define CARD_NAME_Y 8
+#define CARD_BEST_Y 32
+#define CARD_PLAY_Y 56
+#define CARD_DOTS_Y 124
 enum { GAME_LOBBY, GAME_PLAYING, GAME_OVER };
 enum { MOLE_NONE, MOLE_PLAIN, MOLE_GOLD, MOLE_BOMB };
 enum { FLASH_NONE, FLASH_HIT, FLASH_BOOM };
@@ -1475,11 +1473,11 @@ static void draw_card_art(int game, float cx, float cy)
 /* One card at a time, with chevrons and page dots once there are several. */
 static void draw_game_cards(void)
 {
-    const float cx = SCREEN_CENTER, cy = SCREEN_CENTER + CARD_CY;
-    draw_round_box(cx, cy + 4, CARD_HALF_W + 1, CARD_HALF_H + 1, CARD_RADIUS, 0x60, 0x60, 0x70, 40);
-    draw_round_box(cx, cy, CARD_HALF_W, CARD_HALF_H, CARD_RADIUS, 0xC8, 0xC8, 0xD2, 256);
-    draw_round_box(cx, cy, CARD_HALF_W - 1, CARD_HALF_H - 1, CARD_RADIUS - 1,
-                   0xFA, 0xFA, 0xFC, 256);
+    const float cx = SCREEN_CENTER, cy = SCREEN_CENTER;
+    const float r = CARD_R;
+    draw_round_box(cx, cy + 4, r + 1, r + 1, r + 1, 0x60, 0x60, 0x70, 40);
+    draw_round_box(cx, cy, r, r, r, 0xC8, 0xC8, 0xD2, 256);
+    draw_round_box(cx, cy, r - 1, r - 1, r - 1, 0xFA, 0xFA, 0xFC, 256);
     draw_card_art(game_card, cx, SCREEN_CENTER + CARD_ART_Y);
     if (GAME_COUNT > 1) {
         draw_chevrons();
@@ -1913,7 +1911,7 @@ static bool whack_tap(int dx, int dy)
     }
     if (game_state == GAME_PLAYING) return false;
     if (game_state == GAME_LOBBY) {
-        if (abs(dx) > CARD_HALF_W || abs(dy - CARD_CY) > CARD_HALF_H) return false;
+        if (dx * dx + dy * dy > CARD_R * CARD_R) return false;
     } else if (dx * dx + dy * dy >= DIAL_CAP_R * DIAL_CAP_R) {
         return false;
     }

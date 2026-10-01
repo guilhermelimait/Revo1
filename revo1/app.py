@@ -18,6 +18,7 @@ from revo1 import __version__, config, dial, icons, pomodoro, tray, ui, updater
 from revo1 import windows_controls as controls
 from revo1.bridge import DeviceBridge, find_devices
 from revo1.dashboard_page import DashboardPage
+from revo1.games_page import GamesPage
 from revo1.dial import DialRenderer
 from revo1.layout import (CARD_WIDTH, MAIN_WIDTH, NAV_HEIGHT, NAV_WIDTH, PANEL_BG,
                           SIDEBAR_WIDTH, WINDOW_HEIGHT)
@@ -26,20 +27,6 @@ from revo1.screensaver import Library
 from revo1.screensaver_page import TIME_RESEND_S, ScreensaverPage
 
 LEVEL_MODES = ("Volume", "Mic", "Brightness")
-# The Games card, matching CARD_* in the firmware.
-CARD_CY = 0
-CARD_HALF_W = 100
-CARD_HALF_H = 84
-CARD_RADIUS = 22
-CARD_ART_Y = -38
-CARD_ART_SIZE = 1.8
-CARD_NAME_Y = 16
-CARD_BEST_Y = 40
-CARD_PLAY_Y = 62
-# Whack-a-Mole's card picture: (shape, colour), drawn in order.
-WHACK_ART = (("HoleRim", (0xC4, 0xC4, 0xCE)), ("HoleDirt", (0x4A, 0x40, 0x3C)),
-             ("MoleBody", (0x8C, 0x5E, 0x3C)), ("MoleFace", (0xD2, 0xA4, 0x7C)),
-             ("MoleEyes", (0x1E, 0x1A, 0x18)), ("MoleNose", (0xE8, 0x6A, 0x82)))
 KOFI_RED = "#FF5E5B"
 DEVICE_ROW_HEIGHT = 36
 DEVICE_SCAN_MS = 2000
@@ -50,7 +37,7 @@ SETTINGS_TABS = (("device", "Device"), ("controls", "Controls"), ("interface", "
 RELEASE_CHECK_S = 30 * 60
 
 
-class App(DashboardPage, ScreensaverPage):
+class App(DashboardPage, ScreensaverPage, GamesPage):
     def __init__(self, root, tray=None, start_minimized=False):
         self.root = root
         self.tray = tray
@@ -199,11 +186,14 @@ class App(DashboardPage, ScreensaverPage):
     def build_control_page(self):
         k = self.kit
         page = tk.Frame(self.root, bg=ui.MAIN_BG)
-        self.canvas = tk.Canvas(page, width=self.dial.size, height=self.dial.size,
+        # Games swap the dial for their cards; the knob's menu still shows the dial.
+        self.dial_box = tk.Frame(page, bg=ui.MAIN_BG)
+        self.dial_box.pack()
+        self.canvas = tk.Canvas(self.dial_box, width=self.dial.size, height=self.dial.size,
                                 bg=ui.MAIN_BG, highlightthickness=0)
         self.canvas.bind("<Button-1>", self.canvas_click)
         self.canvas.pack(pady=(k.px(30), k.px(12)))
-        self.label = ui.Picture(page, ui.MAIN_BG)
+        self.label = ui.Picture(self.dial_box, ui.MAIN_BG)
         self.label.pack()
         # Timer lengths and buttons, shown only on the Pomodoro screen.
         self.pomodoro_bar = tk.Frame(page, bg=ui.MAIN_BG)
@@ -233,6 +223,7 @@ class App(DashboardPage, ScreensaverPage):
             self.pomodoro_buttons += buttons
         if self.mode == "Pomodoro":
             self.pomodoro_bar.pack(pady=(k.px(12), 0))
+        self.build_games_panel(page)
         self.control_page = page
 
     def build_settings_page(self):
@@ -1199,30 +1190,23 @@ class App(DashboardPage, ScreensaverPage):
                       anchor="mm")
         self.label.show(image)
 
-    def draw_game_card(self, image):
-        """The Games card: a soft shadow, a hairline edge and a pale face,
-        drawn four times larger and scaled down so the corners are smooth."""
-        s, k = self.scale, 4
-        c = dial.CENTER
-        layer = Image.new("RGBA", (image.width * k, image.height * k), (0, 0, 0, 0))
-        draw = ImageDraw.Draw(layer)
-
-        def box(grow, dy, radius, fill):
-            draw.rounded_rectangle(
-                [((c - CARD_HALF_W - grow) * s * k, (c + CARD_CY + dy - CARD_HALF_H - grow) * s * k),
-                 ((c + CARD_HALF_W + grow) * s * k, (c + CARD_CY + dy + CARD_HALF_H + grow) * s * k)],
-                radius=radius * s * k, fill=fill)
-
-        box(1, 4, CARD_RADIUS, (0x60, 0x60, 0x70, 40))
-        box(0, 0, CARD_RADIUS, (0xC8, 0xC8, 0xD2, 255))
-        box(-1, 0, CARD_RADIUS - 1, (0xFA, 0xFA, 0xFC, 255))
-        layer = layer.resize(image.size, Image.LANCZOS)
-        return Image.alpha_composite(image.convert("RGBA"), layer).convert("RGB")
-
     def render(self):
         """Mirrors the device: same chrome, arc, type and layout."""
         accent = self.accent(self.mode)
         c = dial.CENTER
+        games = self.mode == "Games" and not self.menu
+        if games:
+            self.dial_box.pack_forget()
+            self.games_panel.pack(fill="x")
+            self.refresh_games()
+            return
+        if self.games_panel.winfo_manager():
+            self.games_panel.pack_forget()
+        if not self.dial_box.winfo_manager():
+            if self.pomodoro_bar.winfo_manager():
+                self.dial_box.pack(before=self.pomodoro_bar)
+            else:
+                self.dial_box.pack()
 
         if self.menu:
             screens = self.settings["screens"]
@@ -1283,20 +1267,6 @@ class App(DashboardPage, ScreensaverPage):
             draw = ImageDraw.Draw(image)
             self.put_text(draw, c, c, str(self.value), self.settings["number_size"],
                           dial.VALUE_INK)
-        elif self.mode == "Games":
-            # The games run on the knob; the window shows their card.
-            image = self.draw_game_card(self.dial.level(accent, 1.0).convert("RGB"))
-            pixels = np.array(image)
-            for shape, colour in WHACK_ART:
-                self.draw_icon(pixels, shape, c, c + CARD_ART_Y, colour, size=CARD_ART_SIZE)
-            image = Image.fromarray(pixels)
-            draw = ImageDraw.Draw(image)
-            self.put_text(draw, c, c + CARD_NAME_Y, "WHACK-A-MOLE", 16, dial.VALUE_INK)
-            if self.game_result is not None:
-                self.put_text(draw, c, c + CARD_BEST_Y, f"BEST {self.game_result[1]}", 12,
-                              dial.TIME_INK)
-            ink = tuple(channel * 3 // 5 for channel in ui.rgb(accent))
-            self.put_text(draw, c, c + CARD_PLAY_Y, "Play on the knob", 12, ink)
         else:
             image = self.dial.comet(accent, (self.comet_q8 >> 8) & dial.MASK,
                                     self.comet_direction)

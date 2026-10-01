@@ -87,8 +87,10 @@ a tap on the dial sends `POMO,TOGGLE` back. The chime plays on the PC.
 ## Games
 
 The Games screen (mode 7) opens on a card per game (`GAME_COUNT`). Each card is
-a rounded box drawn with a signed distance (`draw_round_box`) and holds the
-game's picture, name and best score. With more than one game, the knob moves
+a circle of radius 100 centred on the dial, drawn with a signed distance
+(`draw_round_box`), and holds the game's picture, name and best score. The
+ring around it stays full, in the screen's colour (the user's bar colour when
+one is set). With more than one game, the knob moves
 between cards and chevrons and page dots appear. A tap on the card starts the
 game. Inside a game the back icon returns to the cards; on the cards it opens
 the menu as usual.
