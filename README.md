@@ -64,7 +64,8 @@ sync as you turn the knob.
   knob or in the app) to start or pause. The ring counts down on the knob,
   and the PC plays a chime when it's time for a break and when the break
   ends.
-- **Games:** Whack-a-Mole, played on the knob. Turn to aim at one of seven
+- **Games:** a card for each game, played on the knob. The first is
+  Whack-a-Mole: turn to aim at one of seven
   holes and touch to whack. Gold moles are worth 3 points and bombs cost 3.
   A round lasts 30 seconds and gets faster as it goes. The knob keeps your
   best score, and the app shows your last and best scores.
@@ -163,10 +164,12 @@ once the knob answers.
 - **Tap the back icon** at the top (or the centre) to open the menu. Turn to
   move the highlight, then tap to confirm, or tap an icon directly.
 - On the **Pomodoro** screen, tap the dial to start or pause the timer.
-- On the **Games** screen, tap the centre to start a round of Whack-a-Mole.
-  Turn the knob to move the ring between the holes and touch anywhere to whack
-  the hole under the ring, or touch a hole directly. The ring around the edge
-  shows the time left.
+- The **Games** screen opens on the game cards. Turn the knob to pick a
+  card (once there is more than one game) and tap it to play. In
+  Whack-a-Mole, turn the knob to move the ring between the holes and touch
+  anywhere to whack the hole under the ring, or touch a hole directly. The
+  ring around the edge shows the time left. After a round, tap the centre to
+  play again, or tap the back icon to return to the cards.
 - While the **screensaver** runs, or when idle dimming has turned the
   screen off, a touch or a turn wakes the dial (that first touch or turn
   does nothing else).

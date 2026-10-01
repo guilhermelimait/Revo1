@@ -198,6 +198,18 @@ static int pomo_shown = -1;
 #define WHACK_BOX 30
 #define WHACK_HIT_R 34
 #define GAME_TITLE_Y (-40)
+/* The Games screen opens on a card per game; a tap on the card plays it. */
+#define GAME_COUNT 1
+#define CARD_CY 0
+#define CARD_HALF_W 100
+#define CARD_HALF_H 84
+#define CARD_RADIUS 22
+#define CARD_ART_Y (-38)
+#define CARD_ART_SIZE 1.8f
+#define CARD_NAME_Y 16
+#define CARD_BEST_Y 40
+#define CARD_PLAY_Y 62
+#define CARD_DOTS_Y 100
 enum { GAME_LOBBY, GAME_PLAYING, GAME_OVER };
 enum { MOLE_NONE, MOLE_PLAIN, MOLE_GOLD, MOLE_BOMB };
 enum { FLASH_NONE, FLASH_HIT, FLASH_BOOM };
@@ -207,7 +219,9 @@ typedef struct {
     int64_t until;
     int64_t flash_until;
 } whack_hole_t;
+/* GAME_LOBBY is the card view; the other states are inside a game. */
 static int game_state = GAME_LOBBY;
+static int game_card;
 static whack_hole_t whack_holes[WHACK_HOLES];
 static int whack_cursor;
 static int whack_score;
@@ -1316,19 +1330,19 @@ static int pomo_fill_q8(void)
 /* ----- whack-a-mole: drawing ------------------------------------------ */
 
 static const icon_part_t whack_rim_parts[] = {{PART_DISC, {0, 0, 12.5f}}};
-static const icon_part_t whack_dirt_parts[] = {{PART_DISC, {0, 1.2f, 10.5f}}};
+static const icon_part_t whack_dirt_parts[] = {{PART_DISC, {0, 0, 10.5f}}};
 static const icon_part_t whack_aim_parts[] = {{PART_ARC, {0, 0, 15, 1.6f, -180, 180}}};
-static const icon_part_t mole_body_parts[] = {{PART_DISC, {0, -1, 8.5f}}};
-static const icon_part_t mole_face_parts[] = {{PART_DISC, {0, 2, 4.8f}}};
+static const icon_part_t mole_body_parts[] = {{PART_DISC, {0, 0, 8.5f}}};
+static const icon_part_t mole_face_parts[] = {{PART_DISC, {0, 3, 4.8f}}};
 static const icon_part_t mole_eye_parts[] = {
-    {PART_DISC, {-3.2f, -3.5f, 1.3f}},
-    {PART_DISC, {3.2f, -3.5f, 1.3f}},
+    {PART_DISC, {-3.2f, -2.5f, 1.3f}},
+    {PART_DISC, {3.2f, -2.5f, 1.3f}},
 };
-static const icon_part_t mole_nose_parts[] = {{PART_DISC, {0, 0.6f, 1.6f}}};
-static const icon_part_t bomb_body_parts[] = {{PART_DISC, {0, 1.5f, 8}}};
-static const icon_part_t bomb_shine_parts[] = {{PART_DISC, {-3, -1.5f, 1.8f}}};
-static const icon_part_t bomb_fuse_parts[] = {{PART_SEG, {3.5f, -5, 6, -9.5f, 1.8f}}};
-static const icon_part_t bomb_spark_parts[] = {{PART_DISC, {6.5f, -10.5f, 2}}};
+static const icon_part_t mole_nose_parts[] = {{PART_DISC, {0, 1.6f, 1.6f}}};
+static const icon_part_t bomb_body_parts[] = {{PART_DISC, {0, 0, 8}}};
+static const icon_part_t bomb_shine_parts[] = {{PART_DISC, {-3, -3, 1.8f}}};
+static const icon_part_t bomb_fuse_parts[] = {{PART_SEG, {3.5f, -6.5f, 5.5f, -10, 1.8f}}};
+static const icon_part_t bomb_spark_parts[] = {{PART_DISC, {6, -11, 1.8f}}};
 static const icon_part_t whack_burst_parts[] = {
     {PART_SEG, {-9, 0, 9, 0, 2.4f}},
     {PART_SEG, {0, -9, 0, 9, 2.4f}},
@@ -1412,6 +1426,74 @@ static void draw_whack_board(void)
     for (int hole = 0; hole < WHACK_HOLES; ++hole) draw_whack_hole(hole);
 }
 
+/* Blends a filled, anti-aliased rounded box into the canvas. */
+static void draw_round_box(float cx, float cy, float half_w, float half_h, float radius,
+                           int red, int green, int blue, int alpha)
+{
+    uint16_t *pixels = (uint16_t *)canvas_pixels;
+    const int x0 = (int)floorf(cx - half_w) - 1, x1 = (int)ceilf(cx + half_w) + 1;
+    const int y0 = (int)floorf(cy - half_h) - 1, y1 = (int)ceilf(cy + half_h) + 1;
+    for (int y = y0; y <= y1; ++y) {
+        if (y < 0 || y >= LCD_HEIGHT) continue;
+        for (int x = x0; x <= x1; ++x) {
+            if (x < 0 || x >= LCD_WIDTH) continue;
+            const float qx = fabsf(x + 0.5f - cx) - (half_w - radius);
+            const float qy = fabsf(y + 0.5f - cy) - (half_h - radius);
+            const float ox = qx > 0 ? qx : 0, oy = qy > 0 ? qy : 0;
+            const float inside = qx > qy ? qx : qy;
+            const float distance = sqrtf(ox * ox + oy * oy) + (inside < 0 ? inside : 0) - radius;
+            float cover = 0.5f - distance;
+            if (cover <= 0) continue;
+            if (cover > 1) cover = 1;
+            const int weight = (int)(cover * alpha);
+            uint16_t *target = &pixels[(size_t)y * LCD_WIDTH + x];
+            const uint16_t native = (uint16_t)((*target >> 8) | (*target << 8));
+            int r = (native >> 8) & 0xF8;
+            int g = (native >> 3) & 0xFC;
+            int b = (native << 3) & 0xF8;
+            r += ((red - r) * weight) >> 8;
+            g += ((green - g) * weight) >> 8;
+            b += ((blue - b) * weight) >> 8;
+            *target = pack_pixel(r, g, b);
+        }
+    }
+}
+
+/* The picture on a game's card. */
+static void draw_card_art(int game, float cx, float cy)
+{
+    (void)game;
+    const float s = CARD_ART_SIZE;
+    draw_menu_icon(&whack_rim, cx, cy, s, 0xC4, 0xC4, 0xCE);
+    draw_menu_icon(&whack_dirt, cx, cy, s, 0x4A, 0x40, 0x3C);
+    draw_menu_icon(&mole_body, cx, cy, s, 0x8C, 0x5E, 0x3C);
+    draw_menu_icon(&mole_face, cx, cy, s, 0xD2, 0xA4, 0x7C);
+    draw_menu_icon(&mole_eyes, cx, cy, s, 0x1E, 0x1A, 0x18);
+    draw_menu_icon(&mole_nose, cx, cy, s, 0xE8, 0x6A, 0x82);
+}
+
+/* One card at a time, with chevrons and page dots once there are several. */
+static void draw_game_cards(void)
+{
+    const float cx = SCREEN_CENTER, cy = SCREEN_CENTER + CARD_CY;
+    draw_round_box(cx, cy + 4, CARD_HALF_W + 1, CARD_HALF_H + 1, CARD_RADIUS, 0x60, 0x60, 0x70, 40);
+    draw_round_box(cx, cy, CARD_HALF_W, CARD_HALF_H, CARD_RADIUS, 0xC8, 0xC8, 0xD2, 256);
+    draw_round_box(cx, cy, CARD_HALF_W - 1, CARD_HALF_H - 1, CARD_RADIUS - 1,
+                   0xFA, 0xFA, 0xFC, 256);
+    draw_card_art(game_card, cx, SCREEN_CENTER + CARD_ART_Y);
+    if (GAME_COUNT > 1) {
+        draw_chevrons();
+        const uint8_t *accent = accent_of(GAMES_MODE);
+        for (int game = 0; game < GAME_COUNT; ++game) {
+            const float x = cx + (game - (GAME_COUNT - 1) / 2.0f) * 14;
+            const bool on = game == game_card;
+            draw_round_box(x, SCREEN_CENTER + CARD_DOTS_Y, 3.5f, 3.5f, 3.5f,
+                           on ? accent[0] * 3 / 4 : 0xA8, on ? accent[1] * 3 / 4 : 0xA8,
+                           on ? accent[2] * 3 / 4 : 0xB4, 256);
+        }
+    }
+}
+
 /* Puts back the face under one hole, leaving the arc's band alone. */
 static void whack_restore_hole(int hole)
 {
@@ -1456,7 +1538,11 @@ static void render_canvas(void)
             } else if (mode_is_level(selected_mode)) {
                 draw_chevrons();
             } else if (selected_mode == GAMES_MODE) {
-                draw_whack_board();
+                if (game_state == GAME_LOBBY) {
+                    draw_game_cards();
+                } else {
+                    draw_whack_board();
+                }
             }
         }
         capture_arc_backdrop();
@@ -1529,9 +1615,21 @@ static void draw_frame(void)
 static void apply_labels(void)
 {
     if (saver_active) return;
-    /* Games move the title into the cap, above the score. */
+    /* Games move the labels: onto the card, or the title into the cap above
+       the score. */
+    const bool games = !show_menu && selected_mode == GAMES_MODE;
+    const bool cards = games && game_state == GAME_LOBBY;
     lv_obj_align(title_label, LV_ALIGN_CENTER, 0,
-                 !show_menu && selected_mode == GAMES_MODE ? GAME_TITLE_Y : MEDIA_TITLE_Y);
+                 cards ? CARD_NAME_Y : games ? GAME_TITLE_Y : MEDIA_TITLE_Y);
+    lv_obj_align(time_label, LV_ALIGN_CENTER, 0, cards ? CARD_BEST_Y : MEDIA_TIME_Y);
+    lv_obj_align(artist_label, LV_ALIGN_CENTER, 0, cards ? CARD_PLAY_Y : MEDIA_ARTIST_Y);
+    {
+        const uint8_t *accent = accent_of(GAMES_MODE);
+        lv_obj_set_style_text_color(artist_label,
+                                    cards ? lv_color_make(accent[0] * 3 / 5, accent[1] * 3 / 5,
+                                                          accent[2] * 3 / 5)
+                                          : lv_color_hex(0x76768A), 0);
+    }
     if (show_menu) {
         /* The cap names the option the knob points at; a tap confirms it. */
         const uint8_t *accent = accent_of(menu_cursor);
@@ -1586,14 +1684,18 @@ static void apply_labels(void)
         char line[32];
         if (game_state == GAME_LOBBY) {
             lv_label_set_text(title_label, "WHACK-A-MOLE");
-            lv_obj_set_style_text_font(value_label, &lv_font_montserrat_16, 0);
-            lv_label_set_text(value_label, "Tap to play");
             if (whack_best > 0) {
                 snprintf(line, sizeof(line), "BEST %d", whack_best);
             } else {
-                line[0] = '\0';
+                snprintf(line, sizeof(line), "NO SCORE YET");
             }
             lv_label_set_text(time_label, line);
+            lv_label_set_text(artist_label, "Tap to play");
+            lv_obj_clear_flag(title_label, LV_OBJ_FLAG_HIDDEN);
+            lv_obj_clear_flag(time_label, LV_OBJ_FLAG_HIDDEN);
+            lv_obj_clear_flag(artist_label, LV_OBJ_FLAG_HIDDEN);
+            lv_obj_add_flag(value_label, LV_OBJ_FLAG_HIDDEN);
+            return;
         } else {
             if (game_state == GAME_PLAYING) {
                 const int64_t left = whack_end_us - esp_timer_get_time();
@@ -1797,11 +1899,24 @@ static bool whack_press(int x, int y)
     return true;
 }
 
-/* A tap on the cap starts a round, outside one. */
+/* On the cards a tap on the card plays it; after a round a tap on the cap
+   plays again, and the back icon goes back to the cards. */
 static bool whack_tap(int dx, int dy)
 {
-    if (show_menu || selected_mode != GAMES_MODE || game_state == GAME_PLAYING) return false;
-    if (dx * dx + dy * dy >= DIAL_CAP_R * DIAL_CAP_R) return false;
+    if (show_menu || selected_mode != GAMES_MODE) return false;
+    if (game_state != GAME_LOBBY && abs(dx) <= FOOTER_HIT_W &&
+        abs(dy - FOOTER_Y) <= FOOTER_HIT_H) {
+        memset(whack_holes, 0, sizeof(whack_holes));
+        game_state = GAME_LOBBY;
+        refresh_screen();
+        return true;
+    }
+    if (game_state == GAME_PLAYING) return false;
+    if (game_state == GAME_LOBBY) {
+        if (abs(dx) > CARD_HALF_W || abs(dy - CARD_CY) > CARD_HALF_H) return false;
+    } else if (dx * dx + dy * dy >= DIAL_CAP_R * DIAL_CAP_R) {
+        return false;
+    }
     const int64_t now = esp_timer_get_time();
     /* A late tap from the round that just ended must not start another. */
     if (game_state == GAME_OVER && now - whack_over_us < 800000) return true;
@@ -1811,6 +1926,14 @@ static bool whack_tap(int dx, int dy)
 
 static void whack_rotate(int detents)
 {
+    if (game_state == GAME_LOBBY) {
+        const int card = ((game_card + detents) % GAME_COUNT + GAME_COUNT) % GAME_COUNT;
+        if (card != game_card) {
+            game_card = card;
+            refresh_screen();
+        }
+        return;
+    }
     const int old = whack_cursor;
     whack_cursor = ((whack_cursor + detents) % WHACK_HOLES + WHACK_HOLES) % WHACK_HOLES;
     if (whack_cursor != old) whack_redraw((1u << old) | (1u << whack_cursor));

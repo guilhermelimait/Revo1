@@ -110,9 +110,13 @@ SHAPES = {
         ("seg", -3.5, 0, 2.5, -7, 2.6),
         ("seg", -3.5, 0, 2.5, 7, 2.6),
     ],
-    # Whack-a-Mole's empty hole, as the knob draws it (draw_whack_hole).
+    # Whack-a-Mole's hole and mole, as the knob draws them (draw_card_art).
     "HoleRim": [("disc", 0, 0, 12.5)],
-    "HoleDirt": [("disc", 0, 1.2, 10.5)],
+    "HoleDirt": [("disc", 0, 0, 10.5)],
+    "MoleBody": [("disc", 0, 0, 8.5)],
+    "MoleFace": [("disc", 0, 3, 4.8)],
+    "MoleEyes": [("disc", -3.2, -2.5, 1.3), ("disc", 3.2, -2.5, 1.3)],
+    "MoleNose": [("disc", 0, 1.6, 1.6)],
     "Plus": [("seg", -7, 0, 7, 0, 2.4), ("seg", 0, -7, 0, 7, 2.4)],
     "Close": [("seg", -5, -5, 5, 5, 2.2), ("seg", 5, -5, -5, 5, 2.2)],
 }

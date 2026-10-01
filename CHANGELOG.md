@@ -2,7 +2,8 @@
 
 ## Unreleased
 
-- New Games screen with Whack-a-Mole. Turn the knob to aim at one of seven
+- New Games screen: a card per game, starting with Whack-a-Mole. Turn the
+  knob to aim at one of seven
   holes and touch to whack; gold moles are worth +3 and bombs cost -3. The
   knob keeps the best score, and the dashboard shows your last and best
   scores.

@@ -86,10 +86,18 @@ a tap on the dial sends `POMO,TOGGLE` back. The chime plays on the PC.
 
 ## Games
 
-The Games screen (mode 7) runs Whack-a-Mole entirely on the knob. Seven holes
-sit on a ring of radius 118: the first is at 45 degrees and the rest follow
-clockwise every 45 degrees, leaving the top slot for the back icon. In the
-lobby, a tap on the cap starts a 30-second round. While a round runs:
+The Games screen (mode 7) opens on a card per game (`GAME_COUNT`). Each card is
+a rounded box drawn with a signed distance (`draw_round_box`) and holds the
+game's picture, name and best score. With more than one game, the knob moves
+between cards and chevrons and page dots appear. A tap on the card starts the
+game. Inside a game the back icon returns to the cards; on the cards it opens
+the menu as usual.
+
+Whack-a-Mole runs entirely on the knob. Seven holes sit on a ring of radius
+118: the first is at 45 degrees and the rest follow clockwise every 45 degrees,
+leaving the top slot for the back icon. Every part of a hole, its mole or its
+bomb is drawn around the hole's own centre, so the aim ring is concentric with
+it. A tap on the card starts a 30-second round. While a round runs:
 
 - The knob moves the aim ring between holes, and no `ROT` is sent.
 - A touch anywhere except the back icon whacks the aimed hole. Touching a hole
@@ -102,6 +110,7 @@ lobby, a tap on the cap starts a 30-second round. While a round runs:
 - The outer ring drains as the time runs out.
 
 At the end the knob shows the score and sends `GAME,WHACK,<score>,<best>`.
+A tap on the cap plays again.
 The best score is kept in NVS key `whack`. Taps in the first 800 ms after a
 round ends are ignored, so a late whack doesn't start a new round. Leaving the
 screen abandons the round.

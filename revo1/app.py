@@ -26,13 +26,20 @@ from revo1.screensaver import Library
 from revo1.screensaver_page import TIME_RESEND_S, ScreensaverPage
 
 LEVEL_MODES = ("Volume", "Mic", "Brightness")
-# Whack-a-Mole's board, matching WHACK_* and GAME_TITLE_Y in the firmware.
-GAME_HOLES = 7
-GAME_RING_R = 118
-GAME_ICON_SIZE = 1.75
-GAME_TITLE_Y = -40
-GAME_HOLE_RIM = (0xC4, 0xC4, 0xCE)
-GAME_HOLE_DIRT = (0x4A, 0x40, 0x3C)
+# The Games card, matching CARD_* in the firmware.
+CARD_CY = 0
+CARD_HALF_W = 100
+CARD_HALF_H = 84
+CARD_RADIUS = 22
+CARD_ART_Y = -38
+CARD_ART_SIZE = 1.8
+CARD_NAME_Y = 16
+CARD_BEST_Y = 40
+CARD_PLAY_Y = 62
+# Whack-a-Mole's card picture: (shape, colour), drawn in order.
+WHACK_ART = (("HoleRim", (0xC4, 0xC4, 0xCE)), ("HoleDirt", (0x4A, 0x40, 0x3C)),
+             ("MoleBody", (0x8C, 0x5E, 0x3C)), ("MoleFace", (0xD2, 0xA4, 0x7C)),
+             ("MoleEyes", (0x1E, 0x1A, 0x18)), ("MoleNose", (0xE8, 0x6A, 0x82)))
 KOFI_RED = "#FF5E5B"
 DEVICE_ROW_HEIGHT = 36
 DEVICE_SCAN_MS = 2000
@@ -1192,6 +1199,26 @@ class App(DashboardPage, ScreensaverPage):
                       anchor="mm")
         self.label.show(image)
 
+    def draw_game_card(self, image):
+        """The Games card: a soft shadow, a hairline edge and a pale face,
+        drawn four times larger and scaled down so the corners are smooth."""
+        s, k = self.scale, 4
+        c = dial.CENTER
+        layer = Image.new("RGBA", (image.width * k, image.height * k), (0, 0, 0, 0))
+        draw = ImageDraw.Draw(layer)
+
+        def box(grow, dy, radius, fill):
+            draw.rounded_rectangle(
+                [((c - CARD_HALF_W - grow) * s * k, (c + CARD_CY + dy - CARD_HALF_H - grow) * s * k),
+                 ((c + CARD_HALF_W + grow) * s * k, (c + CARD_CY + dy + CARD_HALF_H + grow) * s * k)],
+                radius=radius * s * k, fill=fill)
+
+        box(1, 4, CARD_RADIUS, (0x60, 0x60, 0x70, 40))
+        box(0, 0, CARD_RADIUS, (0xC8, 0xC8, 0xD2, 255))
+        box(-1, 0, CARD_RADIUS - 1, (0xFA, 0xFA, 0xFC, 255))
+        layer = layer.resize(image.size, Image.LANCZOS)
+        return Image.alpha_composite(image.convert("RGBA"), layer).convert("RGB")
+
     def render(self):
         """Mirrors the device: same chrome, arc, type and layout."""
         accent = self.accent(self.mode)
@@ -1257,25 +1284,19 @@ class App(DashboardPage, ScreensaverPage):
             self.put_text(draw, c, c, str(self.value), self.settings["number_size"],
                           dial.VALUE_INK)
         elif self.mode == "Games":
-            # The game runs on the knob; the window shows its board at rest.
-            pixels = np.array(self.dial.level(accent, 1.0))
-            for hole in range(GAME_HOLES):
-                radians = math.radians(45 - hole * 45)
-                x = c + GAME_RING_R * math.cos(radians)
-                y = c - GAME_RING_R * math.sin(radians)
-                self.draw_icon(pixels, "HoleRim", x, y, GAME_HOLE_RIM, size=GAME_ICON_SIZE)
-                self.draw_icon(pixels, "HoleDirt", x, y, GAME_HOLE_DIRT, size=GAME_ICON_SIZE)
+            # The games run on the knob; the window shows their card.
+            image = self.draw_game_card(self.dial.level(accent, 1.0).convert("RGB"))
+            pixels = np.array(image)
+            for shape, colour in WHACK_ART:
+                self.draw_icon(pixels, shape, c, c + CARD_ART_Y, colour, size=CARD_ART_SIZE)
             image = Image.fromarray(pixels)
             draw = ImageDraw.Draw(image)
-            self.put_text(draw, c, c + GAME_TITLE_Y, "WHACK-A-MOLE", 16, dial.VALUE_INK)
-            if self.game_result is None:
-                self.put_text(draw, c, c, "Play on the knob", 16, dial.VALUE_INK)
-            else:
-                score, best = self.game_result
-                self.put_text(draw, c, c, str(score), self.settings["number_size"],
-                              dial.VALUE_INK)
-                self.put_text(draw, c, c + dial.MEDIA_TIME_Y, f"BEST {best}", 12,
+            self.put_text(draw, c, c + CARD_NAME_Y, "WHACK-A-MOLE", 16, dial.VALUE_INK)
+            if self.game_result is not None:
+                self.put_text(draw, c, c + CARD_BEST_Y, f"BEST {self.game_result[1]}", 12,
                               dial.TIME_INK)
+            ink = tuple(channel * 3 // 5 for channel in ui.rgb(accent))
+            self.put_text(draw, c, c + CARD_PLAY_Y, "Play on the knob", 12, ink)
         else:
             image = self.dial.comet(accent, (self.comet_q8 >> 8) & dial.MASK,
                                     self.comet_direction)
