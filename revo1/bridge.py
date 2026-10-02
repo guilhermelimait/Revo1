@@ -6,7 +6,7 @@ import time
 import serial
 from serial.tools import list_ports
 
-from revo1 import links, secure
+from revo1 import config, links, secure
 
 # USB IDs of the ESP32-S3 native USB Serial/JTAG port the knob enumerates as.
 DEVICE_IDS = (0x303A, 0x1001)
@@ -97,10 +97,12 @@ class DeviceBridge:
     def send_state(self, mode, value, orientation):
         self.outbound.put(f"STATE,{mode.upper()},{value},{orientation}\n".encode("ascii"))
 
-    def send_style(self, accent, number_size):
-        """accent is "standard" or "#RRGGBB"; number_size is the font in pixels."""
+    def send_style(self, accent, number_size, bar_style="fade"):
+        """accent is "standard" or "#RRGGBB"; number_size is the font in pixels;
+        bar_style is one of config.BAR_STYLES."""
         colour = "STANDARD" if accent == "standard" else accent.lstrip("#").upper()
-        self.outbound.put(f"STYLE,{colour},{number_size}\n".encode("ascii"))
+        bar = config.BAR_STYLES.index(bar_style)
+        self.outbound.put(f"STYLE,{colour},{number_size},{bar}\n".encode("ascii"))
 
     def send_comet_reset(self):
         """Puts the device's scroll/zoom comet back at its start position."""

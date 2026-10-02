@@ -20,8 +20,11 @@ DEFAULT_NAME = "Revo1"
 # "standard" gives each control its own colour; otherwise one "#RRGGBB" for all.
 STANDARD_ACCENT = "standard"
 NUMBER_SIZES = (24, 32, 40, 48)
+# How a level ring is coloured along its length; the order is the number sent
+# to the knob.
+BAR_STYLES = ("fade", "soft", "solid", "glow")
 DEFAULTS = {"mode": "Volume", "orientation": 0, "port": "", "name": DEFAULT_NAME,
-            "accent": STANDARD_ACCENT, "number_size": 32, "minimize_to_tray": False,
+            "accent": STANDARD_ACCENT, "bar_style": "fade", "number_size": 32, "minimize_to_tray": False,
             "invert_scroll": False, "invert_zoom": False, "swipe_screens": True,
             "screens": list(MODES), "known_screens": list(MODES), "backlight": 100,
             "focus_minutes": 25, "break_minutes": 5,
@@ -102,6 +105,7 @@ def load(path=None):
     name = pick("name", lambda value: isinstance(value, str))
     accent = pick("accent", valid_accent)
     number_size = pick("number_size", number_in(NUMBER_SIZES))
+    bar_style = pick("bar_style", lambda value: value in BAR_STYLES)
     flags = {key: pick(key, lambda value: isinstance(value, bool)) for key in FLAGS}
     screens = data.get("screens", list(MODES))
     if isinstance(screens, list):
@@ -132,7 +136,7 @@ def load(path=None):
     return {"mode": mode, "orientation": orientation, "port": port,
             "name": name.strip() or DEFAULT_NAME,
             "accent": accent if accent == STANDARD_ACCENT else accent.upper(),
-            "number_size": number_size, "screens": screens,
+            "bar_style": bar_style, "number_size": number_size, "screens": screens,
             "known_screens": list(MODES), "saver_show": saver_show,
             "clock_format": clock_format, "saver_ring": saver_ring,
             **{key: value.upper() for key, value in colours.items()},

@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- New **Bar style** choice under Settings > Interface, beside the bar colour:
+  **Fade to solid** (the default), **Soft gradient**, **Solid** or **Glowing
+  tip**. The knob keeps it across restarts; `STYLE` gains an optional third
+  field for it.
 - The level ring's dark-to-bright gradient now eases into one even colour
   from 85% up, so a full ring closes without a seam where the dark start met
   the bright end. At 100% the white end mark is hidden too.

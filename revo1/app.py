@@ -56,6 +56,8 @@ KOFI_RED = "#FF5E5B"
 DEVICE_ROW_HEIGHT = 36
 DEVICE_SCAN_MS = 2000
 NUMBER_LABELS = {24: "Small", 32: "Medium", 40: "Large", 48: "X-Large"}
+BAR_STYLE_LABELS = {"fade": "Fade to solid", "soft": "Soft gradient", "solid": "Solid",
+                    "glow": "Glowing tip"}
 SETTINGS_TABS = (("device", "Device"), ("controls", "Controls"), ("interface", "Interface"),
                  ("wireless", "Wireless"), ("about", "About"))
 # How long a release check stays fresh before the About tab asks GitHub again.
@@ -128,6 +130,7 @@ class App(DashboardPage, ScreensaverPage, GamesPage, WirelessTab):
         root.bind("<Unmap>", self.on_unmap)
 
         self.dial = DialRenderer(background=ui.rgb(ui.MAIN_BG), scale=self.scale)
+        self.dial.bar_style = self.settings["bar_style"]
         self.dial_image = None
         self.dial_item = None
         self.comet_animating = False
@@ -377,6 +380,16 @@ class App(DashboardPage, ScreensaverPage, GamesPage, WirelessTab):
                                       lambda colour=colour: self.set_accent(colour)))
         self.pack_row(swatches, 6)
         self.accent_buttons += swatches
+        self.caption(body, "BAR STYLE").pack(anchor="w", pady=(k.px(16), 0))
+        row = tk.Frame(body, bg=PANEL_BG)
+        row.pack(anchor="w", pady=(k.px(2), 0))
+        styles = [ui.Button(row, PANEL_BG,
+                            lambda hover, style=style: self.paint_radio(
+                                self.settings["bar_style"] == style, BAR_STYLE_LABELS[style], hover),
+                            lambda style=style: self.set_bar_style(style))
+                  for style in config.BAR_STYLES]
+        self.pack_row(styles, 20)
+        self.accent_buttons += styles
 
         body = self.section(tab)
         self.caption(body, "NUMBER SIZE").pack(anchor="w")
@@ -897,6 +910,12 @@ class App(DashboardPage, ScreensaverPage, GamesPage, WirelessTab):
         config.save(self.settings)
         self.apply_style()
 
+    def set_bar_style(self, style):
+        self.settings["bar_style"] = style
+        self.dial.bar_style = style
+        config.save(self.settings)
+        self.apply_style()
+
     def set_number_size(self, size):
         self.settings["number_size"] = size
         config.save(self.settings)
@@ -911,7 +930,8 @@ class App(DashboardPage, ScreensaverPage, GamesPage, WirelessTab):
         self.refresh_screensaver()
         self.render()
         if self.connected:
-            self.bridge.send_style(self.settings["accent"], self.settings["number_size"])
+            self.bridge.send_style(self.settings["accent"], self.settings["number_size"],
+                                   self.settings["bar_style"])
 
     def save_name(self, event=None):
         name = self.name_entry.get().strip() or config.DEFAULT_NAME
@@ -1656,7 +1676,8 @@ class App(DashboardPage, ScreensaverPage, GamesPage, WirelessTab):
         # running while the app was closed.
         self.reset_comet()
         self.bridge.send_comet_reset()
-        self.bridge.send_style(self.settings["accent"], self.settings["number_size"])
+        self.bridge.send_style(self.settings["accent"], self.settings["number_size"],
+                               self.settings["bar_style"])
         self.bridge.send_screens(config.screen_mask(self.settings["screens"]))
         self.bridge.send_backlight(self.settings["backlight"])
         self.bridge.send_swipes(self.settings["swipe_screens"])

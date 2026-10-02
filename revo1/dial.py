@@ -22,6 +22,12 @@ MASK = SEGMENTS - 1
 GAUGE_START = 768
 GAUGE_SPAN = SEGMENTS
 BLEND_FROM = GAUGE_SPAN * 85 // 100
+# Bar styles (level_shade in the firmware): the soft gradient's starting ramp
+# position, and the glowing tip's body shade, tip length and fade-out point.
+SOFT_FLOOR = 217
+GLOW_BODY = 170
+GLOW_TIP = 96
+GLOW_FADE_FROM = GAUGE_SPAN * 95 // 100
 FOOTER_Y = -118
 # Tapping the back button on the upper face goes back to the menu.
 FOOTER_HIT_W = 30
@@ -171,6 +177,26 @@ def menu_sector_of(segment, count=6):
     return np.where(np.abs(offset) <= MENU_SEGMENT_HALF, sector, -1)
 
 
+def level_shade(d, filled, style):
+    """Ramp position (0 deep tail .. 255 full accent) `d` segments into a gauge
+    filled `filled` segments. Every style closes on one even colour at 100%."""
+    d = np.asarray(d, dtype=np.int64)
+    if style == "solid":
+        return np.full_like(d, 255)
+    if style == "glow":
+        tip = np.where(d > filled - GLOW_TIP, ((d - (filled - GLOW_TIP)) * 255) // GLOW_TIP, 0)
+        if filled > GLOW_FADE_FROM:
+            tip = (tip * (GAUGE_SPAN - filled)) // (GAUGE_SPAN - GLOW_FADE_FROM)
+        return GLOW_BODY + ((255 - GLOW_BODY) * tip) // 255
+    shade = (d * 255) // filled if filled > 0 else np.full_like(d, 255)
+    if style == "soft":
+        shade = SOFT_FLOOR + (shade * (255 - SOFT_FLOOR)) // 255
+    if filled > BLEND_FROM:
+        blend = ((filled - BLEND_FROM) * 255) // (GAUGE_SPAN - BLEND_FROM)
+        shade = shade + ((255 - shade) * blend) // 255
+    return shade
+
+
 def _in_gauge(segment):
     return ((GAUGE_START - segment) & MASK) <= GAUGE_SPAN
 
@@ -190,6 +216,7 @@ class DialRenderer:
         self._base = _chrome(background)
         self._chrome = {"gauge": self._with_track(self._base, _in_gauge(self._segment))}
         self._menus = {}
+        self.bar_style = "fade"
 
     def _menu(self, count):
         """Slot map and chrome for a menu of `count` slots, built once each."""
@@ -240,12 +267,7 @@ class DialRenderer:
         swept = (GAUGE_START - self._segment) & MASK
         on = (swept <= filled) & _in_gauge(self._segment)
         level = np.where(on, 255, 0)
-        shade = np.where(on, (swept * 255) // max(filled, 1), 0)
-        # Near full the deep tail eases into the full accent, so a full ring
-        # closes on one even colour (GAUGE_BLEND_FROM in the firmware).
-        if filled > BLEND_FROM:
-            blend = ((filled - BLEND_FROM) * 255) // (GAUGE_SPAN - BLEND_FROM)
-            shade = shade + ((255 - shade) * blend) // 255
+        shade = np.where(on, level_shade(swept, filled, self.bar_style), 0)
         head = (GAUGE_START - filled) & MASK if 0 < filled < GAUGE_SPAN else None
         return self._composite(self._chrome["gauge"], accent, level, shade, head)
 

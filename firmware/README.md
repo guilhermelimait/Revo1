@@ -267,8 +267,13 @@ cap and the ring; a tap within 30 px of it opens the menu.
 - **Level modes** fill the gauge clockwise from 6 o'clock all the way round, so
   at 100% the colour meets itself as a full ring.
   The colour runs from a deep tail to the full accent at the head, and a bright
-  tick marks the live end. Past `GAUGE_BLEND_FROM` (85%) the tail eases into the
-  full accent, so 100% is one even ring with no seam and no tick.
+  tick marks the live end. `level_shade` picks each segment's place on that
+  ramp for the bar style (`bar_style`, NVS key `bar`): **fade** (the full
+  ramp, easing into the full accent past `GAUGE_BLEND_FROM`, 85%), **soft**
+  (the same from `SOFT_FLOOR` up), **solid** (the full accent throughout) or
+  **glow** (an even `GLOW_BODY` with the last `GLOW_TIP` segments brightening,
+  faded out past `GLOW_FADE_FROM`, 95%). Every style is one even ring at 100%,
+  where the tick is hidden too. `dial.level_shade` in the app mirrors it.
 - **Scroll and zoom** show the mode's icon in the middle of the cap, its name
   below (`MODE_ICON_*`, `MODE_LABEL_Y`, both in the accent), and a comet that
   follows the knob. Each detent moves `arc_target` by `COMET_STEP_Q8` (32 segments),
@@ -293,7 +298,8 @@ cap and the ring; a tap within 30 px of it opens the menu.
   The centre cap is radius 76, so the menu icons (radius 120) sit wholly on
   the grey face.
 
-`STYLE,<STANDARD|RRGGBB>,<24|32|40|48>` sets the interface style. With a
+`STYLE,<STANDARD|RRGGBB>,<24|32|40|48>[,<bar style 0-3>]` sets the interface
+style; without the third field the bar style is kept. With a
 colour, `accent_of` returns it for every mode instead of `mode_accents`, so
 the bars, the menu highlight and the media button all use it. The size picks
 the Montserrat font for the big number (`number_font`). Montserrat 24, 40 and

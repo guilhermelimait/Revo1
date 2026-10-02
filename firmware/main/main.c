@@ -85,6 +85,12 @@
 #define GAUGE_START 768
 #define GAUGE_SPAN ARC_SEGMENTS
 #define GAUGE_BLEND_FROM (GAUGE_SPAN * 85 / 100)
+/* Soft gradient: the tail starts this far up the ramp. Glowing tip: the body's
+   ramp position, the tip's length in segments, and where the tip fades out. */
+#define SOFT_FLOOR 217
+#define GLOW_BODY 170
+#define GLOW_TIP 96
+#define GLOW_FADE_FROM (GAUGE_SPAN * 95 / 100)
 #define FOOTER_Y (-118)
 /* Tapping the back button goes back to the menu. */
 #define FOOTER_HIT_W 30
@@ -331,6 +337,10 @@ static uint8_t clock_ink[3] = {0xF2, 0xF2, 0xF5};
 static uint8_t clock_bg[3] = {0, 0, 0};
 static uint8_t clock_track[3] = {0x30, 0x30, 0x31};
 static bool clock_shade = true;
+/* How a level ring is coloured along its length; the order is the number the
+   PC sends as the third field of STYLE. */
+enum { BAR_FADE, BAR_SOFT, BAR_SOLID, BAR_GLOW, BAR_STYLE_COUNT };
+static int bar_style = BAR_FADE;
 static int saver_idle_s = 300;
 static int saver_interval_s = 30;
 static bool saver_active;
@@ -457,6 +467,7 @@ typedef struct {
     uint8_t shade;
     uint32_t ink;
     uint32_t face;
+    uint8_t bar;
 } stored_settings_t;
 
 static uint32_t rgb_word(const uint8_t rgb[3])
@@ -495,6 +506,7 @@ static stored_settings_t current_settings(void)
         .shade = clock_shade,
         .ink = rgb_word(clock_ink),
         .face = rgb_word(clock_bg),
+        .bar = (uint8_t)bar_style,
     };
     static const int sizes[] = {24, 32, 40, 48};
     for (size_t index = 0; index < sizeof(sizes) / sizeof(sizes[0]); index++) {
@@ -512,7 +524,7 @@ static bool same_settings(const stored_settings_t *a, const stored_settings_t *b
            a->interval_s == b->interval_s && a->swipe == b->swipe &&
            a->saver_kind == b->saver_kind && a->dim == b->dim &&
            a->ring == b->ring && a->shade == b->shade && a->ink == b->ink &&
-           a->face == b->face;
+           a->face == b->face && a->bar == b->bar;
 }
 
 static void load_settings(void)
@@ -568,6 +580,7 @@ static void load_settings(void)
             set_rgb(clock_bg, accent);
         }
         if (nvs_get_u16(handle, "whack", &word) == ESP_OK) whack_best = word;
+        if (nvs_get_u8(handle, "bar", &byte) == ESP_OK && byte < BAR_STYLE_COUNT) bar_style = byte;
         nvs_close(handle);
     }
     saved_settings = current_settings();
@@ -597,6 +610,7 @@ static void save_settings(void)
                     nvs_set_u8(handle, "shade", settings.shade) == ESP_OK &&
                     nvs_set_u32(handle, "ink", settings.ink) == ESP_OK &&
                     nvs_set_u32(handle, "face", settings.face) == ESP_OK &&
+                    nvs_set_u8(handle, "bar", settings.bar) == ESP_OK &&
                     nvs_commit(handle) == ESP_OK;
     nvs_close(handle);
     if (ok) saved_settings = settings;
@@ -1086,6 +1100,31 @@ static void draw_arc(void)
     }
 }
 
+/* The ramp position (0 deep tail .. 255 full accent) of the segment `d` steps
+   into a gauge filled `filled` segments, for the chosen bar style. Every style
+   closes on one even colour at 100%, so a full ring shows no seam. */
+static int level_shade(int d, int filled)
+{
+    if (bar_style == BAR_SOLID) return 255;
+    if (bar_style == BAR_GLOW) {
+        /* An even body; only the last GLOW_TIP segments brighten, and the tip
+           fades out over the last few percent so a full ring is plain. */
+        int tip = d > filled - GLOW_TIP ? ((d - (filled - GLOW_TIP)) * 255) / GLOW_TIP : 0;
+        if (filled > GLOW_FADE_FROM) {
+            tip = (tip * (GAUGE_SPAN - filled)) / (GAUGE_SPAN - GLOW_FADE_FROM);
+        }
+        return GLOW_BODY + ((255 - GLOW_BODY) * tip) / 255;
+    }
+    int shade = filled > 0 ? (d * 255) / filled : 255;
+    if (bar_style == BAR_SOFT) shade = SOFT_FLOOR + (shade * (255 - SOFT_FLOOR)) / 255;
+    /* Past GAUGE_BLEND_FROM the tail eases into the full accent. */
+    if (filled > GAUGE_BLEND_FROM) {
+        const int blend = ((filled - GAUGE_BLEND_FROM) * 255) / (GAUGE_SPAN - GAUGE_BLEND_FROM);
+        shade += ((255 - shade) * blend) / 255;
+    }
+    return shade;
+}
+
 static void build_level_arc(int fill_q8)
 {
     memset(arc_level, 0, sizeof(arc_level));
@@ -1094,15 +1133,10 @@ static void build_level_arc(int fill_q8)
     int filled = (GAUGE_SPAN * fill_q8) >> 8;
     if (filled < 0) filled = 0;
     if (filled > GAUGE_SPAN) filled = GAUGE_SPAN;
-    /* Past GAUGE_BLEND_FROM the deep tail eases into the full accent, so a
-       full ring closes on one even colour instead of dark meeting bright. */
-    const int blend = filled > GAUGE_BLEND_FROM
-        ? ((filled - GAUGE_BLEND_FROM) * 255) / (GAUGE_SPAN - GAUGE_BLEND_FROM) : 0;
     for (int d = 0; d <= filled && d <= ARC_MASK; ++d) {
         const int i = (GAUGE_START - d) & ARC_MASK;
-        const int shade = filled > 0 ? (d * 255) / filled : 255;
         arc_level[i] = 255;
-        arc_ramp[i] = (uint8_t)(shade + ((255 - shade) * blend) / 255);
+        arc_ramp[i] = (uint8_t)level_shade(d, filled);
     }
     arc_head = filled > 0 && filled < GAUGE_SPAN ? ((GAUGE_START - filled) & ARC_MASK) : -1;
 }
@@ -2799,8 +2833,11 @@ static void handle_command(char *line)
         char *save = NULL;
         const char *accent_text = strtok_r(line + 6, ",", &save);
         const char *size_text = strtok_r(NULL, ",", &save);
+        const char *bar_text = strtok_r(NULL, ",", &save);
         int size;
+        int bar = bar_style;
         if (!accent_text || !size_text || !parse_integer(size_text, 24, 48, &size)) return;
+        if (bar_text && !parse_integer(bar_text, 0, BAR_STYLE_COUNT - 1, &bar)) return;
         bool custom = false;
         uint8_t rgb[3] = {0};
         if (strcmp(accent_text, "STANDARD") != 0) {
@@ -2817,6 +2854,7 @@ static void handle_command(char *line)
         custom_accent = custom;
         memcpy(custom_rgb, rgb, sizeof(custom_rgb));
         number_font = font;
+        bar_style = bar;
         save_settings();
         refresh_screen();
         host_printf("STYLE_OK\n");
