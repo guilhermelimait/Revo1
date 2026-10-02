@@ -20,10 +20,11 @@
   Medium (the app's font), with a larger date and AM/PM.
 - Choose **24-hour** (the default) or **AM/PM** for the screensaver clock on
   the Screensaver page, instead of following the Windows time format.
-- The Screensaver page has three tabs: General (screensaver and dimming on
-  or off, plus summary cards), Timing (when it starts and how long each
-  picture stays) and Display (what it shows, a preview of the knob, the
-  clock format and the pictures). All choice buttons are the same size.
+- The Screensaver page has four tabs that fit the window without resizing
+  it: General (screensaver and dimming on or off, plus summary cards),
+  Timing (when it starts and how long each picture stays), Display (what it
+  shows, a preview of the knob, the clock format and seconds ring) and
+  Pictures (the library). All choice buttons are the same size.
 - New screensaver choice, **Pictures and time**: the time and date over your
   pictures, each picture darkened in the middle so the time is readable
   (`SAVER` kind 2). Until the app has set the knob's clock it shows the

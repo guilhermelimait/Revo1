@@ -200,7 +200,7 @@ in the left sidebar.
   the knob while the timer is stopped), then **Start**, **Pause** or
   **Reset**. The timer runs in the app, so keep Revo1 running (it can sit
   in the notification area).
-- **Screensaver:** three tabs. **General** switches the screensaver and
+- **Screensaver:** four tabs, each fitting the window. **General** switches the screensaver and
   **Dim the screen** on or off, with **At a glance** cards summing up the
   settings (click one to change it). **Timing** has **Start after** (1, 2, 5,
   10 or 30 minutes idle) and **Each picture** (10 s, 30 s, 1, 3 or 5
@@ -208,10 +208,10 @@ in the left sidebar.
   time**, or **Pictures and time** (the time and date over your pictures,
   with the middle of each picture darkened so the time stays readable). A
   preview of the knob sits beside that choice's settings: **24-hour** (the
-  default) or **AM/PM** for the clock, the **Seconds ring** round the edge
-  (**Bullets**, **Bar**, **Wiggly**, **Ticks**, **Comet** or **None**), and
-  your pictures and clips; click
-  **Add pictures or videos...** to add more. Hover a thumbnail
+  default) or **AM/PM** for the clock and the **Seconds ring** round the edge
+  (**Bullets**, **Bar**, **Wiggly**, **Ticks**, **Comet** or **None**).
+  **Pictures** holds your pictures and clips; click **Add pictures or
+  videos...** to add more. Hover a thumbnail
   and click the cross to remove it. **Send to knob** copies the collection
   to the device (about 110 KB/s, so a full collection takes about two
   minutes); the line under the buttons says whether the knob is up to date.

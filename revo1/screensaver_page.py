@@ -17,7 +17,8 @@ from revo1 import config, dial, screensaver, ui
 from revo1.layout import CARD_WIDTH, PANEL_BG
 from revo1.screensaver import DEFAULT_CAPACITY, FILE_TYPES, MediaError
 
-SAVER_TABS = (("general", "General"), ("timing", "Timing"), ("display", "Display"))
+SAVER_TABS = (("general", "General"), ("timing", "Timing"), ("display", "Display"),
+              ("pictures", "Pictures"))
 IDLE_LABELS = {1: "1 min", 2: "2 min", 5: "5 min", 10: "10 min", 30: "30 min"}
 INTERVAL_LABELS = {10: "10 s", 30: "30 s", 60: "1 min", 180: "3 min", 300: "5 min"}
 CLOCK_LABELS = {"24h": "24-hour", "12h": "AM/PM"}
@@ -47,10 +48,15 @@ PREVIEW_GAP = 28
 COLUMN_W = CARD_WIDTH - PREVIEW - PREVIEW_GAP
 BLOCK_GAP = 24
 THUMB = 48
-THUMB_COLUMNS = 9
-THUMB_ROWS_SHOWN = 2
+THUMB_COLUMNS = 13
+# The library always shows this many rows (it scrolls past them), so the
+# Pictures tab keeps one height and fits the window.
+THUMB_ROWS_SHOWN = 3
 THUMB_ROW = THUMB + 10
-THUMB_STEP = (COLUMN_W - THUMB) / (THUMB_COLUMNS - 1)
+# The thumbnails sit in a rounded panel, inset by this much.
+LIBRARY_PAD = 16
+THUMB_STEP = (CARD_WIDTH - 2 * LIBRARY_PAD - THUMB) / (THUMB_COLUMNS - 1)
+LIBRARY_HEIGHT = THUMB_ROW * THUMB_ROWS_SHOWN - 10 + 2 * LIBRARY_PAD
 # How often the knob's clock is set again while connected.
 TIME_RESEND_S = 3600
 
@@ -182,6 +188,7 @@ class ScreensaverPage:
         self.build_saver_general(self.saver_tabs["general"])
         self.build_saver_timing(self.saver_tabs["timing"])
         self.build_saver_display(self.saver_tabs["display"])
+        self.build_saver_pictures(self.saver_tabs["pictures"])
         self.library_crc = self.library.checksum()
         self.screensaver_page = page
         self.show_saver_tab(self.saver_tab)
@@ -278,12 +285,25 @@ class ScreensaverPage:
         self.pack_row(buttons, RING_GAP)
         self.saver_choices += buttons
 
-        self.saver_pictures_box = box = tk.Frame(column, bg=PANEL_BG)
-        self.saver_summary = ui.Picture(box, PANEL_BG)
+        # With pictures only, the column points to the Pictures tab instead.
+        self.saver_library_box = box = tk.Frame(column, bg=PANEL_BG)
+        self.saver_library_note = ui.Picture(box, PANEL_BG)
+        self.saver_library_note.pack(anchor="w")
+        self.saver_library_link = ui.Button(
+            box, PANEL_BG,
+            lambda hover: self.paint_choice(False, "Manage pictures \u203a", hover,
+                                            CHOICE_W * 2 + CHOICE_GAP),
+            lambda: self.show_saver_tab("pictures"))
+        self.saver_library_link.pack(anchor="w", pady=(k.px(14), 0))
+
+    def build_saver_pictures(self, tab):
+        k = self.kit
+        body = self.section(tab)
+        self.saver_summary = ui.Picture(body, PANEL_BG)
         self.saver_summary.pack(anchor="w")
-        self.thumb_canvas = tk.Canvas(box, bg=PANEL_BG, highlightthickness=0, bd=0,
-                                      width=k.px(COLUMN_W),
-                                      height=k.px(THUMB_ROW * THUMB_ROWS_SHOWN - 10))
+        self.thumb_canvas = tk.Canvas(body, bg=PANEL_BG, highlightthickness=0, bd=0,
+                                      width=k.px(CARD_WIDTH),
+                                      height=k.px(LIBRARY_HEIGHT))
         self.thumb_canvas.pack(anchor="w", pady=(k.px(14), 0))
         self.thumb_item = self.thumb_canvas.create_image(0, 0, anchor="nw")
         self.thumb_photo = None
@@ -292,9 +312,9 @@ class ScreensaverPage:
         self.thumb_canvas.bind("<Leave>", lambda event: self.set_thumb_hover(None))
         self.thumb_canvas.bind("<Button-1>", self.click_thumb)
         self.thumb_canvas.bind("<MouseWheel>", self.scroll_thumbs)
-        row = tk.Frame(box, bg=PANEL_BG)
+        row = tk.Frame(body, bg=PANEL_BG)
         row.pack(anchor="w", pady=(k.px(14), 0))
-        widths = self.fill_widths([0, 0], CHOICE_GAP, COLUMN_W)
+        widths = self.fill_widths([0, 0], CHOICE_GAP)
         self.saver_buttons = [
             ui.Button(row, PANEL_BG,
                       lambda hover, width=widths[0]: self.paint_pill(
@@ -308,7 +328,7 @@ class ScreensaverPage:
                       self.upload_saver_media),
         ]
         self.pack_row(self.saver_buttons, CHOICE_GAP)
-        self.saver_status = ui.Picture(box, PANEL_BG)
+        self.saver_status = ui.Picture(body, PANEL_BG)
         self.saver_status.pack(anchor="w", pady=(k.px(8), 0))
 
     def saver_heading(self, parent, title, detail, width=CARD_WIDTH):
@@ -507,6 +527,23 @@ class ScreensaverPage:
         k.text(image, c, size + 18, "Preview", "regular", 8.5, ui.MUTED_INK, anchor="mm")
         return image
 
+    def paint_library_note(self):
+        """The Display tab's pointer to the library when only pictures show."""
+        k = self.kit
+        width, height = COLUMN_W, 62
+        image = k.canvas(width, height, PANEL_BG)
+        count = len(self.library.items)
+        k.text(image, 0, 10, "Your pictures", "semibold", 11, ui.INK)
+        if count:
+            text = (f"{count} item{'s' if count != 1 else ''} \u00b7 "
+                    f"{_size_text(self.library.total_bytes())}, shown one after another.")
+        else:
+            text = "No pictures yet. Add some in the Pictures tab."
+        k.text(image, 0, 31, text, "regular", 9, ui.MUTED_INK, width=width)
+        k.text(image, 0, 52, "Add, remove and send them to the knob in the Pictures tab.",
+               "regular", 9, ui.MUTED_INK, width=width)
+        return image
+
     def capacity(self):
         if self.device_library:
             return self.device_library["capacity"]
@@ -514,7 +551,7 @@ class ScreensaverPage:
 
     def paint_saver_summary(self):
         k = self.kit
-        width, height = COLUMN_W, HEADING_HEIGHT
+        width, height = CARD_WIDTH, HEADING_HEIGHT
         image = k.canvas(width, height, PANEL_BG)
         used, capacity = self.library.total_bytes(), self.capacity()
         count = len(self.library.items)
@@ -533,20 +570,23 @@ class ScreensaverPage:
         mark on clips and a remove button on the one under the pointer."""
         k = self.kit
         items = self.library.items
-        rows = max(1, (len(items) + THUMB_COLUMNS - 1) // THUMB_COLUMNS)
-        image = k.canvas(COLUMN_W, rows * THUMB_ROW - 10, PANEL_BG)
+        rows = max(THUMB_ROWS_SHOWN, (len(items) + THUMB_COLUMNS - 1) // THUMB_COLUMNS)
+        height = rows * THUMB_ROW - 10 + 2 * LIBRARY_PAD
+        image = k.canvas(CARD_WIDTH, height, PANEL_BG)
+        k.rounded(image, (0, 0, CARD_WIDTH, height), 12, ui.CARD_BG, ui.CARD_EDGE)
         size = k.px(THUMB)
         if not items:
-            k.text(image, 0, THUMB / 2,
+            k.icon(image, "Screensaver", CARD_WIDTH / 2, height / 2 - 14, ui.MUTED_INK, 0.9)
+            k.text(image, CARD_WIDTH / 2, height / 2 + 16,
                    "No pictures yet. Add some to use them on the knob.",
-                   "regular", 9, ui.MUTED_INK)
+                   "regular", 9, ui.MUTED_INK, anchor="mm")
             return image
         mask = Image.new("L", (size * 4, size * 4), 0)
         ImageDraw.Draw(mask).ellipse((0, 0, size * 4 - 1, size * 4 - 1), fill=255)
         mask = mask.resize((size, size), Image.LANCZOS)
         for index, item in enumerate(items):
-            x = (index % THUMB_COLUMNS) * THUMB_STEP
-            y = (index // THUMB_COLUMNS) * THUMB_ROW
+            x = LIBRARY_PAD + (index % THUMB_COLUMNS) * THUMB_STEP
+            y = LIBRARY_PAD + (index // THUMB_COLUMNS) * THUMB_ROW
             try:
                 with Image.open(self.library.thumbnail(item["id"])) as thumb:
                     picture = thumb.convert("RGB").resize((size, size), Image.LANCZOS)
@@ -563,7 +603,7 @@ class ScreensaverPage:
 
     def paint_saver_status(self):
         k = self.kit
-        width = COLUMN_W
+        width = CARD_WIDTH
         image = k.canvas(width, 24, PANEL_BG)
         state = self.upload_state
         progress = None
@@ -617,45 +657,38 @@ class ScreensaverPage:
     def refresh_screensaver(self):
         if not hasattr(self, "screensaver_page"):
             return
-        k = self.kit
         for button in ([self.saver_toggle, self.dim_toggle] + self.saver_tab_buttons +
                        self.saver_glance + self.saver_choices + self.saver_buttons +
-                       self.saver_show_cards):
+                       self.saver_show_cards + [self.saver_library_link]):
             button.refresh()
         show = self.settings["saver_show"]
-        boxes = tuple(box for box, wanted in ((self.saver_clock_box, show != "pictures"),
-                                              (self.saver_pictures_box, show != "clock"))
-                      if wanted)
-        if boxes != self.saver_boxes_shown:
+        box = self.saver_library_box if show == "pictures" else self.saver_clock_box
+        if box is not self.saver_boxes_shown:
             self.saver_clock_box.pack_forget()
-            self.saver_pictures_box.pack_forget()
-            for index, box in enumerate(boxes):
-                box.pack(anchor="w", pady=(0 if index == 0 else k.px(BLOCK_GAP), 0))
-            self.saver_boxes_shown = boxes
+            self.saver_library_box.pack_forget()
+            box.pack(anchor="w")
+            self.saver_boxes_shown = box
         self.saver_preview.show(self.paint_saver_preview())
-        if show != "clock":
-            self.saver_summary.show(self.paint_saver_summary())
-            self.show_thumbs()
-            self.saver_status.show(self.paint_saver_status())
+        if show == "pictures":
+            self.saver_library_note.show(self.paint_library_note())
+        self.saver_summary.show(self.paint_saver_summary())
+        self.show_thumbs()
+        self.saver_status.show(self.paint_saver_status())
         self.refresh_dashboard_tile("Screensaver")
-        if self.page == "screensaver":
-            self.fit_window(self.screensaver_page)
 
     def show_thumbs(self):
         image = self.paint_thumbs()
         self.thumb_photo = ImageTk.PhotoImage(image, master=self.thumb_canvas)
         self.thumb_canvas.itemconfigure(self.thumb_item, image=self.thumb_photo)
-        # Up to two rows show at once; more scroll.
-        rows = min(THUMB_ROWS_SHOWN,
-                   max(1, -(-len(self.library.items) // THUMB_COLUMNS)))
-        self.thumb_canvas.configure(scrollregion=(0, 0, image.width, image.height),
-                                    height=self.kit.px(THUMB_ROW * rows - 10))
+        self.thumb_canvas.configure(scrollregion=(0, 0, image.width, image.height))
 
     def thumb_at(self, event):
         k = self.kit
-        x = event.x / k.scale
-        y = self.thumb_canvas.canvasy(event.y) / k.scale
+        x = event.x / k.scale - LIBRARY_PAD
+        y = self.thumb_canvas.canvasy(event.y) / k.scale - LIBRARY_PAD
         step = THUMB_STEP
+        if x < 0 or y < 0:
+            return None, 0, 0
         column = int(x // step)
         row = int(y // THUMB_ROW)
         if column >= THUMB_COLUMNS or x - column * step > THUMB or y - row * THUMB_ROW > THUMB:
