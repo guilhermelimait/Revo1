@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- The top of the sidebar shows a small knob next to the name, with a ring
+  that lights green while connected. Below the name, an icon and label show
+  the link in use: USB cable, Wi-Fi or Bluetooth.
 - Wireless is now automatic: once the knob is paired, unplugging the cable
   is enough for Revo1 to find it over Wi-Fi or Bluetooth. The **Use
   wireless when the cable is unplugged** switch is gone.

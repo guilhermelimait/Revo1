@@ -165,8 +165,9 @@ powershell -ExecutionPolicy Bypass -File .\scripts\flash-firmware.ps1 -Restore .
 (Use your own backup file name. Keep it: it is the only copy of the stock
 firmware.)
 
-Then start Revo1 from the Start Menu: the sidebar shows **Connected**
-once the knob answers.
+Then start Revo1 from the Start Menu. Once the knob answers, the ring on
+the little knob beside the name turns green, and the line below it shows
+how the knob is linked: **On USB cable**, **On Wi-Fi** or **On Bluetooth**.
 
 ## Using it
 

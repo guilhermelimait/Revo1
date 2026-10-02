@@ -30,6 +30,9 @@ from revo1.wireless_page import WirelessTab, link_kind
 LEVEL_MODES = ("Volume", "Mic", "Brightness")
 MUTE_MODES = ("Volume", "Mic")
 MUTED_RED = "#E5484D"
+# How the knob is reached, as the sidebar names it: (icon, words).
+LINK_NAMES = {"usb": ("Usb", "USB cable"), "wifi": ("Wifi", "Wi-Fi"),
+              "ble": ("Bluetooth", "Bluetooth")}
 # Beside the dial: what the knob does on each screen.
 SCREEN_HELP = {
     "Volume": ("Turn the knob to set the PC volume.",
@@ -777,11 +780,46 @@ class App(DashboardPage, ScreensaverPage, GamesPage, WirelessTab):
     def refresh_identity(self):
         k = self.kit
         image = k.canvas(NAV_WIDTH, 50, ui.SIDEBAR_BG)
-        k.text(image, 12, 15, self.settings["name"], "semibold", 14, ui.INK, width=NAV_WIDTH - 20)
-        k.dot(image, 16, 38, 3.5, ui.OK_GREEN if self.connected else ui.IDLE_GREY)
-        k.text(image, 26, 38, "Connected" if self.connected else "Not connected",
-               "regular", 9, ui.SUBTLE_INK)
+        self.paint_knob_badge(image, 24, 25, 17)
+        k.text(image, 50, 15, self.settings["name"], "semibold", 14, ui.INK, width=NAV_WIDTH - 54)
+        link = LINK_NAMES.get(self.link_kind) if self.connected else None
+        if link:
+            icon, name = link
+            k.icon(image, icon, 55, 38, ui.OK_GREEN, 0.42)
+            k.text(image, 64, 38, f"On {name}", "regular", 9, ui.SUBTLE_INK,
+                   width=NAV_WIDTH - 66)
+        else:
+            k.dot(image, 54, 38, 3.5, ui.OK_GREEN if self.connected else ui.IDLE_GREY)
+            k.text(image, 63, 38, "Connected" if self.connected else "Not connected",
+                   "regular", 9, ui.SUBTLE_INK)
         self.identity.show(image)
+
+    def paint_knob_badge(self, image, cx, cy, radius):
+        """A miniature of the knob: a light bezel round a dark screen, whose
+        ring lights up while the app is connected to it."""
+        k = self.kit
+        factor = 4
+        size = k.px(radius * 2) * factor
+        badge = Image.new("RGBA", (size, size), (0, 0, 0, 0))
+        draw = ImageDraw.Draw(badge)
+        unit = size / (radius * 2)
+
+        def circle(r, fill=None, outline=None, width=0):
+            pad = size / 2 - r * unit
+            draw.ellipse((pad, pad, size - pad, size - pad), fill=fill, outline=outline,
+                         width=round(width * unit))
+
+        circle(radius, fill=(0xC4, 0xC4, 0xCC))
+        circle(radius - 1, fill=(0xEC, 0xEC, 0xF0))
+        circle(radius - 4, fill=(0x1C, 0x1C, 0x24))
+        ring = radius - 7
+        pad = size / 2 - ring * unit
+        box = (pad, pad, size - pad, size - pad)
+        draw.arc(box, 135, 405, fill=(0x3A, 0x3A, 0x46), width=round(2.2 * unit))
+        if self.connected:
+            draw.arc(box, 135, 315, fill=ui.rgb(ui.OK_GREEN), width=round(2.2 * unit))
+        badge = badge.resize((size // factor, size // factor), Image.LANCZOS)
+        image.paste(badge, (k.px(cx - radius), k.px(cy - radius)), badge)
 
     def refresh_status(self):
         image = self.kit.canvas(CARD_WIDTH, 20, PANEL_BG)
