@@ -313,6 +313,12 @@ class Library:
     def thumbnail(self, item_id):
         return self.folder / f"{item_id}.png"
 
+    def first_frame(self, item_id):
+        """The first 360x360 JPEG of an item, as it is shown on the knob."""
+        with open(self.folder / f"{item_id}.bin", "rb") as blob:
+            length = struct.unpack("<I", blob.read(4))[0]
+            return blob.read(length)
+
     def pack(self):
         return pack_library([((self.folder / f"{item['id']}.bin").read_bytes(),
                               item["frames"], item["frame_ms"]) for item in self.items])

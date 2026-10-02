@@ -131,6 +131,7 @@ class App(DashboardPage, ScreensaverPage, GamesPage):
         self.reset_comet()
         self.page = "dashboard"
         self.settings_tab = "device"
+        self.saver_tab = "general"
         self.devices = None
         self.device_rows = []
         self.scan_pending = False
@@ -641,16 +642,17 @@ class App(DashboardPage, ScreensaverPage, GamesPage):
         width = self.kit.font("semibold", 9.5).getlength(label) / self.kit.scale + 28
         return round(width + (16 if heart else 0))
 
-    def paint_pill(self, label, hover, primary=False, enabled=True, width=None, heart=False):
+    def paint_pill(self, label, hover, primary=False, enabled=True, width=None, heart=False,
+                   height=30):
         k = self.kit
-        width, height = width or self.pill_width(label, heart), 30
+        width = width or self.pill_width(label, heart)
         image = k.canvas(width, height, PANEL_BG)
         if primary and enabled:
             fill = dial.label_ink(self.accent(self.mode)) if hover else ui.INK
-            k.rounded(image, (0, 0, width, height), 15, fill)
+            k.rounded(image, (0, 0, width, height), height / 2, fill)
             ink = "#FFFFFF"
         else:
-            k.rounded(image, (0, 0, width, height), 15,
+            k.rounded(image, (0, 0, width, height), height / 2,
                       "#FFFFFF" if hover and enabled else ui.CARD_BG, ui.CARD_EDGE)
             ink = ui.INK if enabled else ui.MUTED_INK
         if heart:

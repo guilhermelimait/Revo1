@@ -24,9 +24,10 @@ FLAGS = ("minimize_to_tray", "invert_scroll", "invert_zoom", "swipe_screens",
          "saver_enabled", "dim_idle")
 # Screensaver: minutes without touching the knob, and seconds per picture.
 SAVER_IDLE_CHOICES = (1, 2, 5, 10, 30)
-SAVER_INTERVAL_CHOICES = (10, 30, 60, 300)
-# What the screensaver shows: the stored pictures, or the date and time.
-SAVER_SHOW_CHOICES = ("pictures", "clock")
+SAVER_INTERVAL_CHOICES = (10, 30, 60, 180, 300)
+# What the screensaver shows: the stored pictures, the date and time, or the
+# time over the pictures. The order is the number sent to the knob.
+SAVER_SHOW_CHOICES = ("pictures", "clock", "both")
 # The screensaver clock: 24-hour first (and the default), then AM/PM.
 CLOCK_FORMATS = ("24h", "12h")
 POMODORO_MINUTES = range(1, 181)

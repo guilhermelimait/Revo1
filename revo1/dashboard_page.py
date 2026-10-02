@@ -77,6 +77,8 @@ class DashboardPage:
             pictures = f"{count} item{'s' if count != 1 else ''}"
             if self.settings["saver_show"] == "clock":
                 pictures = "Date and time"
+            elif self.settings["saver_show"] == "both":
+                pictures = f"{pictures} and the time"
             if not self.settings["saver_enabled"]:
                 return "Off", pictures, None
             return f"After {self.settings['saver_idle']} min", pictures, None

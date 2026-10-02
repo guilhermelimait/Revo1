@@ -292,9 +292,10 @@ static volatile bool media_busy;
 static uint32_t upload_size;
 static bool saver_enabled;
 /* What the screensaver shows: the stored pictures, or the date and time. */
-enum { SAVER_PICTURES, SAVER_CLOCK };
+enum { SAVER_PICTURES, SAVER_CLOCK, SAVER_BOTH };
 static int saver_kind = SAVER_PICTURES;
-static bool saver_clock;
+/* What the running screensaver shows (one of the SAVER_ kinds). */
+static int saver_shown;
 static int64_t clock_second_shown = -1;
 static lv_obj_t *clock_label;
 static lv_obj_t *ampm_label;
@@ -480,7 +481,7 @@ static void load_settings(void)
         if (nvs_get_u16(handle, "idle", &word) == ESP_OK && word >= 10) saver_idle_s = word;
         if (nvs_get_u16(handle, "every", &word) == ESP_OK && word >= 1) saver_interval_s = word;
         if (nvs_get_u8(handle, "swipe", &byte) == ESP_OK) swipe_enabled = byte != 0;
-        if (nvs_get_u8(handle, "show", &byte) == ESP_OK && byte <= SAVER_CLOCK) saver_kind = byte;
+        if (nvs_get_u8(handle, "show", &byte) == ESP_OK && byte <= SAVER_BOTH) saver_kind = byte;
         if (nvs_get_u8(handle, "dim", &byte) == ESP_OK) dim_enabled = byte != 0;
         if (nvs_get_u16(handle, "whack", &word) == ESP_OK) whack_best = word;
         nvs_close(handle);
@@ -2375,7 +2376,7 @@ static void handle_command(char *line)
             !parse_integer(enabled_text, 0, 1, &enabled) ||
             !parse_integer(idle_text, 10, 7200, &idle) ||
             !parse_integer(interval_text, 1, 3600, &interval) ||
-            (kind_text && !parse_integer(kind_text, SAVER_PICTURES, SAVER_CLOCK, &kind))) {
+            (kind_text && !parse_integer(kind_text, SAVER_PICTURES, SAVER_BOTH, &kind))) {
             return;
         }
         saver_enabled = enabled;
@@ -2946,6 +2947,40 @@ static UINT jpeg_output(JDEC *decoder, void *bitmap, JRECT *rect)
     return 1;
 }
 
+/* Darkens the middle of a picture so the clock on top of it stays readable:
+   about half brightness behind the time, easing back to full towards the rim. */
+static void shade_for_clock(uint16_t *pixels)
+{
+    static uint8_t ramp[1024];
+    static bool ready;
+    if (!ready) {
+        for (int i = 0; i < 1024; ++i) {
+            const float r = sqrtf(i * 64.0f);
+            float t = (r - 110.0f) / 70.0f;
+            if (t < 0) t = 0;
+            if (t > 1) t = 1;
+            t = t * t * (3 - 2 * t);
+            ramp[i] = (uint8_t)(255.0f * (0.45f + 0.55f * t));
+        }
+        ready = true;
+    }
+    for (int y = 0; y < LCD_HEIGHT; ++y) {
+        const int dy = 2 * y - (LCD_HEIGHT - 1);
+        uint16_t *row = pixels + (size_t)y * LCD_WIDTH;
+        for (int x = 0; x < LCD_WIDTH; ++x) {
+            const int dx = 2 * x - (LCD_WIDTH - 1);
+            const int factor = ramp[((dx * dx + dy * dy) >> 2) >> 6];
+            if (factor == 255) continue;
+            const uint16_t v = (uint16_t)((row[x] >> 8) | (row[x] << 8));
+            const int r = ((v >> 11) * factor) >> 8;
+            const int g = (((v >> 5) & 63) * factor) >> 8;
+            const int b = ((v & 31) * factor) >> 8;
+            const uint16_t shaded = (uint16_t)((r << 11) | (g << 5) | b);
+            row[x] = (uint16_t)((shaded >> 8) | (shaded << 8));
+        }
+    }
+}
+
 /* Decodes one stored JPEG frame straight onto the screen. */
 static bool show_saver_frame(uint32_t offset, uint32_t length)
 {
@@ -2962,6 +2997,7 @@ static bool show_saver_frame(uint32_t offset, uint32_t length)
         jd_decomp(&decoder, jpeg_output, 0) != JDR_OK) {
         return false;
     }
+    if (saver_shown == SAVER_BOTH && clock_valid) shade_for_clock(frame_pixels);
     if (lvgl_mutex) xSemaphoreTake(lvgl_mutex, portMAX_DELAY);
     memcpy(canvas_pixels, frame_pixels, (size_t)LCD_WIDTH * LCD_HEIGHT * sizeof(uint16_t));
     lv_obj_invalidate(canvas);
@@ -3042,10 +3078,15 @@ static void clock_tick(int64_t now)
         snprintf(text, sizeof(text), "%s %d %s", days[fields.tm_wday], fields.tm_mday,
                  months[fields.tm_mon]);
         lv_label_set_text(date_label, text);
-        for (int second = 0; second < 60; ++second) {
-            draw_clock_tick(second, second <= fields.tm_sec);
+        lv_obj_clear_flag(clock_label, LV_OBJ_FLAG_HIDDEN);
+        lv_obj_clear_flag(date_label, LV_OBJ_FLAG_HIDDEN);
+        /* Over pictures the second marks would be painted over each frame. */
+        if (saver_shown == SAVER_CLOCK) {
+            for (int second = 0; second < 60; ++second) {
+                draw_clock_tick(second, second <= fields.tm_sec);
+            }
         }
-    } else {
+    } else if (saver_shown == SAVER_CLOCK) {
         draw_clock_tick(fields.tm_sec, true);
     }
     if (lvgl_mutex) xSemaphoreGive(lvgl_mutex);
@@ -3054,22 +3095,21 @@ static void clock_tick(int64_t now)
 static void start_saver(int64_t now)
 {
     saver_active = true;
-    saver_clock = saver_kind == SAVER_CLOCK;
+    saver_shown = saver_kind;
     if (lvgl_mutex) xSemaphoreTake(lvgl_mutex, portMAX_DELAY);
     lv_obj_add_flag(title_label, LV_OBJ_FLAG_HIDDEN);
     lv_obj_add_flag(value_label, LV_OBJ_FLAG_HIDDEN);
     lv_obj_add_flag(artist_label, LV_OBJ_FLAG_HIDDEN);
     lv_obj_add_flag(time_label, LV_OBJ_FLAG_HIDDEN);
-    if (saver_clock) {
+    if (saver_shown == SAVER_CLOCK) {
         clear_canvas();
         lv_obj_invalidate(canvas);
-        lv_obj_clear_flag(clock_label, LV_OBJ_FLAG_HIDDEN);
-        lv_obj_clear_flag(date_label, LV_OBJ_FLAG_HIDDEN);
-        clock_second_shown = -1;
     }
+    /* clock_tick shows the time and date on its first pass. */
+    clock_second_shown = -1;
     if (lvgl_mutex) xSemaphoreGive(lvgl_mutex);
     /* Each time the screensaver starts it picks up with the next item. */
-    if (!saver_clock) begin_saver_item(saver_item + 1, now);
+    if (saver_shown != SAVER_CLOCK) begin_saver_item(saver_item + 1, now);
     printf("SAVER,ON\n");
 }
 
@@ -3086,7 +3126,8 @@ static void stop_saver(void)
     printf("SAVER,OFF\n");
 }
 
-/* Whether the chosen screensaver has something to show. */
+/* Whether the chosen screensaver has something to show. Pictures with the
+   time run without the clock until the app has set it. */
 static bool saver_ready(void)
 {
     if (saver_kind == SAVER_CLOCK) return clock_valid;
@@ -3097,7 +3138,7 @@ static bool saver_ready(void)
 static void saver_tick(int64_t now)
 {
     if (saver_active && (!saver_enabled || !saver_ready() ||
-                         saver_clock != (saver_kind == SAVER_CLOCK))) {
+                         saver_shown != saver_kind)) {
         stop_saver();
         return;
     }
@@ -3109,10 +3150,8 @@ static void saver_tick(int64_t now)
             return;
         }
     }
-    if (saver_clock) {
-        clock_tick(now);
-        return;
-    }
+    if (saver_shown != SAVER_PICTURES && clock_valid) clock_tick(now);
+    if (saver_shown == SAVER_CLOCK) return;
     if (now < saver_next_frame) return;
 
     const int64_t interval = (int64_t)saver_interval_s * 1000000;

@@ -200,13 +200,16 @@ in the left sidebar.
   the knob while the timer is stopped), then **Start**, **Pause** or
   **Reset**. The timer runs in the app, so keep Revo1 running (it can sit
   in the notification area).
-- **Screensaver:** one page, top to bottom. Switch it on, turn **Dim the
-  screen when idle** on or off and pick **Start after** (idle minutes). Under
-  **What the knob shows**, pick one of two cards: **Pictures** or **Date and
-  time** (the PC's time with a preview; pick **24-hour** or **AM/PM** next
-  to it, 24-hour by default). With **Pictures** chosen, the page below shows **Each picture**
-  (how long each one stays) and your pictures and clips; click **Add
-  pictures or videos...** to add more. Hover a thumbnail
+- **Screensaver:** three tabs. **General** switches the screensaver and
+  **Dim the screen** on or off, with **At a glance** cards summing up the
+  settings (click one to change it). **Timing** has **Start after** (1, 2, 5,
+  10 or 30 minutes idle) and **Each picture** (10 s, 30 s, 1, 3 or 5
+  minutes). **Display** picks what the knob shows: **Pictures**, **Date and
+  time**, or **Pictures and time** (the time and date over your pictures,
+  with the middle of each picture darkened so the time stays readable). A
+  preview of the knob sits beside that choice's settings: **24-hour** (the
+  default) or **AM/PM** for the clock, and your pictures and clips; click
+  **Add pictures or videos...** to add more. Hover a thumbnail
   and click the cross to remove it. **Send to knob** copies the collection
   to the device (about 110 KB/s, so a full collection takes about two
   minutes); the line under the buttons says whether the knob is up to date.
@@ -337,7 +340,7 @@ USB serial: 115200 baud, ASCII lines terminated by `\n`.
 | PC to device | `MUTE,<0\|1 speakers>,<0\|1 microphone>` | Mute state, sent on connect and on every change |
 | Device to PC | `MUTE,TOGGLE` | Centre of the Volume or Mic dial tapped |
 | Device to PC | `GAME,WHACK,<score>,<best>` | Whack-a-Mole round finished |
-| PC to device | `SAVER,<0\|1>,<idle s>,<seconds per item>,<0 pictures\|1 clock>` | Screensaver settings; answered by `SAVER_OK` |
+| PC to device | `SAVER,<0\|1>,<idle s>,<seconds per item>,<0 pictures\|1 clock\|2 both>` | Screensaver settings; answered by `SAVER_OK` |
 | PC to device | `TIME,<local seconds>,<1 for 24-hour\|0>` | Sets the knob's clock (local time counted as if it were UTC); answered by `TIME_OK` |
 | PC to device | `DIM,0` or `DIM,1` | Idle dimming off or on; answered by `DIM_OK,<0 or 1>` |
 | Device to PC | `SAVER,ON` or `SAVER,OFF` | Screensaver started or stopped |

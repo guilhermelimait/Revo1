@@ -183,6 +183,12 @@ the date below it and, when the app is set to AM/PM, AM or PM above it, both in 
 comes from `TIME,<local seconds>,<24h>`, sent by the app on connect and every
 hour; until then the clock screensaver doesn't start.
 
+With the last field set to 2 the screensaver shows the pictures with the time,
+date and AM/PM on top, without the second marks. `shade_for_clock` darkens each
+decoded frame towards the middle (about 45% brightness within 110 px of the
+centre, easing back to full at 180 px) so the white text stays readable. Until
+the clock is set it shows the pictures alone.
+
 ## Media transport screen
 
 `draw_media_icons` draws a large play-pause at the centre of the cap for
