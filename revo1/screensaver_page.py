@@ -206,7 +206,7 @@ class ScreensaverPage:
         return image
 
     def paint_clock_preview(self):
-        """What the knob looks like with the clock, next to a short note."""
+        """What the knob looks like with the clock."""
         k = self.kit
         width, height = CARD_WIDTH, 132
         image = k.canvas(width, height, PANEL_BG)
@@ -228,15 +228,6 @@ class ScreensaverPage:
         k.text(image, cx, cy + 64 * f, f"{time.strftime('%a', now)} {now.tm_mday} "
                f"{time.strftime('%b', now)}", "device", 24 * f * 0.75, "#C8C8D2",
                anchor="mm")
-        x = cx + r + 22
-        lines = (("Big clock on the knob", "semibold", 10, ui.INK),
-                 ("The time and date, in your", "regular", 8.5, ui.SUBTLE_INK),
-                 ("accent colour.", "regular", 8.5, ui.SUBTLE_INK),
-                 ("Shown in " + ("24-hour time." if h24 else "AM/PM time."),
-                  "regular", 8.5, ui.MUTED_INK),)
-        for index, (text, weight, size, ink) in enumerate(lines):
-            line_y = cy - 36 + index * 16 + (6 if index >= 1 else 0) + (6 if index >= 3 else 0)
-            k.text(image, x, line_y, text, weight, size, ink, width=width - x)
         return image
 
     def capacity(self):
