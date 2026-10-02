@@ -244,8 +244,10 @@ in the left sidebar.
   also has **Background**, the clock face colour; **Pictures and time** has
   **Shade**, which darkens the picture behind the time (on by default). If
   the time and background are too close, the preview warns **Hard to read**.
-  **Pictures** holds your pictures and clips; click **Add pictures or
-  videos...** to add more. Hover a thumbnail
+  **Pictures** holds your pictures and clips. It starts with a built-in
+  **Moon**, centred to fill the round screen (remove it and it stays
+  removed); click **Add pictures or videos...** to add more. Pictures are
+  cropped around their centre. Hover a thumbnail
   and click the cross to remove it. **Send to knob** copies the collection
   to the device (about 110 KB/s, so a full collection takes about two
   minutes); the line under the buttons says whether the knob is up to date.

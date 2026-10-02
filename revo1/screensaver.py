@@ -36,6 +36,11 @@ VIDEO_FPS = 10
 MAX_CLIP_SECONDS = 20
 THUMB_SIZE = 96
 
+# Pictures that come with Revo1, already centred on the round screen. Each is
+# offered once: a new library starts with them, and one that is removed stays
+# removed.
+STARTER_PICTURES = (("Moon", Path(__file__).with_name("assets") / "moon.jpg"),)
+
 IMAGE_TYPES = (".jpg", ".jpeg", ".png", ".bmp", ".webp", ".gif", ".tif", ".tiff")
 VIDEO_TYPES = (".mp4", ".mov", ".avi", ".mkv", ".webm", ".m4v", ".wmv")
 FILE_TYPES = [("Pictures and videos", " ".join(f"*{ext}" for ext in IMAGE_TYPES + VIDEO_TYPES)),
@@ -246,14 +251,37 @@ def pack_library(items):
 class Library:
     """The pictures chosen on the PC, kept converted and ready to upload."""
 
-    def __init__(self, folder=None):
+    def __init__(self, folder=None, starters=()):
         self.folder = Path(folder) if folder else library_folder()
         self.items = []
         self._load()
+        self._add_starters(starters)
 
     @property
     def _index(self):
         return self.folder / "library.json"
+
+    def _add_starters(self, starters):
+        """Adds each built-in picture the first time this library sees it."""
+        record = self.folder / "starters.json"
+        try:
+            offered = json.loads(record.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            offered = []
+        if not isinstance(offered, list):
+            offered = []
+        added = False
+        for name, path in starters:
+            if name in offered:
+                continue
+            try:
+                self.add(path, name=name)
+            except (MediaError, OSError):
+                continue
+            offered.append(name)
+            added = True
+        if added:
+            record.write_text(json.dumps(offered), encoding="utf-8")
 
     def _load(self):
         try:
@@ -279,7 +307,7 @@ class Library:
     def packed_size(self):
         return HEADER_BYTES + self.total_bytes()
 
-    def add(self, path, capacity=DEFAULT_CAPACITY):
+    def add(self, path, capacity=DEFAULT_CAPACITY, name=None):
         """Converts `path` and keeps it; raises MediaError if it cannot be
         read or would not fit in `capacity` bytes on the knob."""
         if len(self.items) >= MAX_ITEMS:
@@ -295,7 +323,7 @@ class Library:
         with Image.open(io.BytesIO(frames[0])) as first:
             thumb = first.resize((THUMB_SIZE, THUMB_SIZE), Image.LANCZOS)
             thumb.save(self.folder / f"{item_id}.png")
-        item = {"id": item_id, "name": path.name, "frames": len(frames),
+        item = {"id": item_id, "name": name or path.name, "frames": len(frames),
                 "frame_ms": frame_ms, "bytes": len(blob)}
         self.items.append(item)
         self._save()

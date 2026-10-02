@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- The screensaver library now starts with a built-in **Moon** picture,
+  centred to fill the round screen. Existing libraries get it once; removing
+  it keeps it removed.
 - The knob no longer jumps to Volume whenever the app connects or reconnects
   (starting Revo1, a reinstall, a cable, Wi-Fi or Bluetooth link): it opens
   its main menu instead. Value updates no longer close a menu opened on the

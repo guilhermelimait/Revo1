@@ -23,7 +23,7 @@ from revo1.dial import DialRenderer
 from revo1.layout import (BUTTON_MIN, CARD_WIDTH, FORM_WIDTH, DIAL_GAP, MAIN_WIDTH, NAV_HEIGHT, NAV_WIDTH,
                           PANEL_BG, SIDE_WIDTH, SIDEBAR_WIDTH, WINDOW_HEIGHT)
 from revo1.media import MediaSession
-from revo1.screensaver import Library
+from revo1.screensaver import STARTER_PICTURES, Library
 from revo1.screensaver_page import TIME_RESEND_S, ScreensaverPage
 from revo1.wireless_page import WirelessTab, link_kind
 
@@ -91,7 +91,7 @@ class App(DashboardPage, ScreensaverPage, GamesPage, WirelessTab):
         self.pomodoro_sent = 0.0
         self.pomodoro_shown = None
         self.chime_folder = config.config_path().parent
-        self.library = Library()
+        self.library = Library(starters=STARTER_PICTURES)
         # What the knob reports holding: None until it answers LIBRARY, which
         # firmware without screensaver support never does.
         self.device_library = None
