@@ -22,6 +22,20 @@ backups/
 tests/
 install.ps1
 
+# Secrets and local settings: never commit these
+.env
+.env.*
+*.pem
+*.key
+*.pfx
+*.p12
+*.cer
+*.crt
+*secret*
+*credential*
+settings.json
+*.log
+
 # Editors and OS
 .vscode/
 .idea/
