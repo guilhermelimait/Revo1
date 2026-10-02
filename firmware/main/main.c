@@ -84,6 +84,7 @@
    the upper face, between the cap and the ring. */
 #define GAUGE_START 768
 #define GAUGE_SPAN ARC_SEGMENTS
+#define GAUGE_BLEND_FROM (GAUGE_SPAN * 85 / 100)
 #define FOOTER_Y (-118)
 /* Tapping the back button goes back to the menu. */
 #define FOOTER_HIT_W 30
@@ -1093,12 +1094,17 @@ static void build_level_arc(int fill_q8)
     int filled = (GAUGE_SPAN * fill_q8) >> 8;
     if (filled < 0) filled = 0;
     if (filled > GAUGE_SPAN) filled = GAUGE_SPAN;
+    /* Past GAUGE_BLEND_FROM the deep tail eases into the full accent, so a
+       full ring closes on one even colour instead of dark meeting bright. */
+    const int blend = filled > GAUGE_BLEND_FROM
+        ? ((filled - GAUGE_BLEND_FROM) * 255) / (GAUGE_SPAN - GAUGE_BLEND_FROM) : 0;
     for (int d = 0; d <= filled && d <= ARC_MASK; ++d) {
         const int i = (GAUGE_START - d) & ARC_MASK;
+        const int shade = filled > 0 ? (d * 255) / filled : 255;
         arc_level[i] = 255;
-        arc_ramp[i] = (uint8_t)(filled > 0 ? (d * 255) / filled : 255);
+        arc_ramp[i] = (uint8_t)(shade + ((255 - shade) * blend) / 255);
     }
-    arc_head = filled > 0 ? ((GAUGE_START - filled) & ARC_MASK) : -1;
+    arc_head = filled > 0 && filled < GAUGE_SPAN ? ((GAUGE_START - filled) & ARC_MASK) : -1;
 }
 
 /* Scroll and zoom have no absolute value, so their arc is a comet carrying the

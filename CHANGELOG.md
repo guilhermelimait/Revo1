@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- The level ring's dark-to-bright gradient now eases into one even colour
+  from 85% up, so a full ring closes without a seam where the dark start met
+  the bright end. At 100% the white end mark is hidden too.
+
 - Pomodoro: once a timer has started, turning the knob adds or removes a
   minute per click.
 - Dashboard tiles are more compact, and the Screensaver tile has its own

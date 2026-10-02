@@ -21,6 +21,7 @@ MASK = SEGMENTS - 1
 # upper face instead of in a gap.
 GAUGE_START = 768
 GAUGE_SPAN = SEGMENTS
+BLEND_FROM = GAUGE_SPAN * 85 // 100
 FOOTER_Y = -118
 # Tapping the back button on the upper face goes back to the menu.
 FOOTER_HIT_W = 30
@@ -240,7 +241,12 @@ class DialRenderer:
         on = (swept <= filled) & _in_gauge(self._segment)
         level = np.where(on, 255, 0)
         shade = np.where(on, (swept * 255) // max(filled, 1), 0)
-        head = (GAUGE_START - filled) & MASK if filled > 0 else None
+        # Near full the deep tail eases into the full accent, so a full ring
+        # closes on one even colour (GAUGE_BLEND_FROM in the firmware).
+        if filled > BLEND_FROM:
+            blend = ((filled - BLEND_FROM) * 255) // (GAUGE_SPAN - BLEND_FROM)
+            shade = shade + ((255 - shade) * blend) // 255
+        head = (GAUGE_START - filled) & MASK if 0 < filled < GAUGE_SPAN else None
         return self._composite(self._chrome["gauge"], accent, level, shade, head)
 
     def comet(self, accent, position, direction):

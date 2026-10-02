@@ -267,7 +267,8 @@ cap and the ring; a tap within 30 px of it opens the menu.
 - **Level modes** fill the gauge clockwise from 6 o'clock all the way round, so
   at 100% the colour meets itself as a full ring.
   The colour runs from a deep tail to the full accent at the head, and a bright
-  tick marks the live end.
+  tick marks the live end. Past `GAUGE_BLEND_FROM` (85%) the tail eases into the
+  full accent, so 100% is one even ring with no seam and no tick.
 - **Scroll and zoom** show the mode's icon in the middle of the cap, its name
   below (`MODE_ICON_*`, `MODE_LABEL_Y`, both in the accent), and a comet that
   follows the knob. Each detent moves `arc_target` by `COMET_STEP_Q8` (32 segments),
