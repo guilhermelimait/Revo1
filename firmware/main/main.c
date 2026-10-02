@@ -1370,7 +1370,7 @@ static void draw_media_icons(const uint8_t *accent)
                    MEDIA_SKIP_SIZE, dim, dim, dim + 14);
 }
 
-/* Thin chevrons flanking the value, hinting that the knob moves it. */
+/* Thin chevrons either side of the game card: more cards to swipe to. */
 static void draw_chevrons(void)
 {
     const uint16_t colour = pack_pixel(150, 150, 164);
@@ -1619,7 +1619,6 @@ static void render_canvas(void)
             if (selected_mode == MEDIA_MODE) {
                 draw_media_icons(accent_of(MEDIA_MODE));
             } else if (mode_is_level(selected_mode)) {
-                draw_chevrons();
                 if (mode_can_mute(selected_mode)) {
                     const bool muted = mode_muted(selected_mode);
                     const menu_icon_t *icon =

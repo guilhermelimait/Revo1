@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- The level screens (Volume, Scroll, Brightness, Mic, Zoom) no longer show
+  arrows either side of the value, on the knob or in the app.
 - Wireless: pair the knob once over USB in the new **Settings > Wireless**
   tab, then use it over Wi-Fi (2.4 GHz) or Bluetooth LE whenever the cable is
   unplugged. USB always takes over when it's plugged in. The tab shows which

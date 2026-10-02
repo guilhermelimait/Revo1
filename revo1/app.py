@@ -1358,9 +1358,6 @@ class App(DashboardPage, ScreensaverPage, GamesPage, WirelessTab):
                           16, dial.VALUE_INK)
         elif self.mode in LEVEL_MODES:
             pixels = np.array(self.dial.level(accent, self.value / 100))
-            for side, name in ((-1, "ChevronLeft"), (1, "ChevronRight")):
-                self.draw_icon(pixels, name, c + side * dial.CHEVRON_X, c,
-                               dial.CHEVRON_INK, size=1.0)
             muted = self.muted.get(self.mode, False)
             if self.mode in MUTE_MODES:
                 self.draw_icon(pixels, self.mode + "Muted" if muted else self.mode,

@@ -80,8 +80,6 @@ SHAPES = {
         ("poly", -9, -13, -3, -13, -3, 13, -9, 13),
         ("poly", 3, -13, 9, -13, 9, 13, 3, 13),
     ],
-    "ChevronLeft": [("seg", 3, -8, -3, 0, 2), ("seg", -3, 0, 3, 8, 2)],
-    "ChevronRight": [("seg", -3, -8, 3, 0, 2), ("seg", 3, 0, -3, 8, 2)],
     "Settings": [("arc", 0, 0, 7, 4.2, -180, 180)] + [
         ("seg", 8 * math.cos(a), 8 * math.sin(a), 11.5 * math.cos(a), 11.5 * math.sin(a), 4)
         for a in (i * math.pi / 4 + math.pi / 8 for i in range(8))

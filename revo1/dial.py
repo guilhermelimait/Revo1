@@ -45,7 +45,6 @@ MEDIA_TITLE_Y = 98
 MEDIA_ARTIST_Y = 120
 MEDIA_TIME_Y = 52
 MENU_LABEL_R = 120
-CHEVRON_X = 124
 # Tail of the arc as a fraction of the accent per channel, halo strength, and
 # the colour of the tick at the live end.
 TAIL = (150, 90, 70)
@@ -81,7 +80,6 @@ MUTE_LABEL_Y = -46
 FOOTER_INK = "#8A8A98"
 MENU_INK = "#8A8A9A"
 ICON_INK = "#5A5A68"
-CHEVRON_INK = "#9696A4"
 
 _BAYER = np.array([-8, 0, -6, 2, 4, -4, 6, -2, -5, 3, -7, 1, 7, -1, 5, -3],
                   dtype=np.float32).reshape(4, 4)
