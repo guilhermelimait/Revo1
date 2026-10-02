@@ -8,6 +8,14 @@
   are worth +3 and bombs cost -3. The knob keeps the best score, and the
   app's Games cards show your last and best scores.
 - The app window is taller so the sidebar fits all eight screens.
+- Whack-a-Mole is aimed with the knob only; touching a hole no longer picks it.
+- Mute for the PC's sound and microphone: a button under the Volume and Mic
+  dials in the app, or a tap on the centre of the knob. Muted controls show
+  **MUTED** on both, and muting from Windows is picked up.
+- The Screensaver page is one page instead of two tabs: when it starts, two
+  cards for what it shows (Pictures or Date and time), then that choice's
+  settings: the picture timing and library, or a clock preview.
+- Settings sits with the other screens in the sidebar.
 
 ## 1.0.1 - 2026-09-30
 

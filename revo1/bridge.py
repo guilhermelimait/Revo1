@@ -92,6 +92,9 @@ class DeviceBridge:
         self.outbound.put(f"POMO,{int(phase)},{int(remaining)},{int(total)},"
                           f"{int(bool(running))}\n".encode("ascii"))
 
+    def send_mute(self, volume, mic):
+        self.outbound.put(f"MUTE,{int(bool(volume))},{int(bool(mic))}\n".encode("ascii"))
+
     def send_swipes(self, enabled):
         self.outbound.put(f"SWIPES,{int(bool(enabled))}\n".encode("ascii"))
 
@@ -214,6 +217,8 @@ class DeviceBridge:
                 self.events.put(("game", (score, best)))
         elif line == "POMO,TOGGLE":
             self.events.put(("pomodoro_toggle", None))
+        elif line == "MUTE,TOGGLE":
+            self.events.put(("mute_toggle", None))
         elif line in ("SAVER,ON", "SAVER,OFF"):
             self.events.put(("saver", line == "SAVER,ON"))
         elif line.startswith("MEDIA,"):

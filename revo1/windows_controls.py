@@ -53,6 +53,22 @@ def change_microphone(steps):
     return level
 
 
+def microphone_muted():
+    return bool(_microphone().GetMute())
+
+
+def set_microphone_muted(muted):
+    _microphone().SetMute(int(bool(muted)), None)
+
+
+def volume_muted():
+    return bool(_volume().GetMute())
+
+
+def set_volume_muted(muted):
+    _volume().SetMute(int(bool(muted)), None)
+
+
 def volume_level():
     return round(_volume().GetMasterVolumeLevelScalar() * 100)
 

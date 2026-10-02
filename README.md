@@ -164,11 +164,14 @@ once the knob answers.
   turn this off in **Settings > Controls**).
 - **Tap the back icon** at the top (or the centre) to open the menu. Turn to
   move the highlight, then tap to confirm, or tap an icon directly.
+- On the **Volume** and **Mic** screens, tap the centre to mute or unmute the
+  PC's sound or microphone; the dial greys the number and shows **MUTED**.
+  The back icon still opens the menu.
 - On the **Pomodoro** screen, tap the dial to start or pause the timer.
 - The **Games** screen opens on the game cards. Turn the knob to pick a
   card (once there is more than one game) and tap it to play. In
   Whack-a-Mole, turn the knob to move the ring between the holes and touch
-  anywhere to whack the hole under the ring, or touch a hole directly. The
+  anywhere to whack the hole under the ring (only the knob aims). The
   ring around the edge shows the time left. After a round, tap the centre to
   play again, or tap the back icon to return to the cards.
 - The app's **Games** screen shows every game as a card in a grid, with your
@@ -187,16 +190,20 @@ The app opens on the **Dashboard**: click a tile to open that screen, or its
 switch to show or hide it on the knob (at least one stays on). Pick a control
 in the left sidebar.
 
+- **Volume and Mic:** the **Mute sound** / **Mute microphone** button under
+  the dial (or a click on its centre) mutes the PC; it turns red with
+  **Unmute** while muted. Muting from Windows shows up here and on the knob.
 - **Pomodoro:** set the focus and break minutes with **-** / **+** (or turn
   the knob while the timer is stopped), then **Start**, **Pause** or
   **Reset**. The timer runs in the app, so keep Revo1 running (it can sit
   in the notification area).
-- **Screensaver:** on the **General** tab, switch it on, choose what to
-  **Show** (**Pictures and videos**, or **Date and time**, which follows the
-  PC's clock and its 12/24-hour format) and **Start after** (idle minutes),
-  and turn **Dim the screen when idle** on or off. On the **Pictures and
-  videos** tab choose **Show each picture for**, then **Add pictures or
-  videos...**. Hover a thumbnail
+- **Screensaver:** one page, top to bottom. Switch it on, turn **Dim the
+  screen when idle** on or off and pick **Start after** (idle minutes). Under
+  **What the knob shows**, pick one of two cards: **Pictures** or **Date and
+  time** (which follows the PC's clock and its 12/24-hour format, with a
+  preview). With **Pictures** chosen, the page below shows **Each picture**
+  (how long each one stays) and your pictures and clips; click **Add
+  pictures or videos...** to add more. Hover a thumbnail
   and click the cross to remove it. **Send to knob** copies the collection
   to the device (about 110 KB/s, so a full collection takes about two
   minutes); the line under the buttons says whether the knob is up to date.
@@ -307,7 +314,7 @@ USB serial: 115200 baud, ASCII lines terminated by `\n`.
 | Device to PC | `VERSION,<x.y.z>` | Firmware version, right after each `HELLO` |
 | Device to PC | `SYNC` | Sent with `HELLO` until the first `STATE` after a restart; the app resends style and state |
 | Device to PC | `ROT,<signed steps>` | Knob movement |
-| Device to PC | `MENU` | Centre or back-icon tap opens the menu |
+| Device to PC | `MENU` | Centre (except on Volume, Mic and Pomodoro) or back-icon tap opens the menu |
 | Device to PC | `TAP,<0..7>` | Menu choice confirmed (mode index) |
 | Device to PC | `CURSOR,<0..7>` | Knob moved the menu highlight (mode index) |
 | Device to PC | `SWIPE,LEFT` or `SWIPE,RIGHT` | Change control |
@@ -324,6 +331,8 @@ USB serial: 115200 baud, ASCII lines terminated by `\n`.
 | PC to device | `SWIPES,0` or `SWIPES,1` | Turn swiping between screens off or on; answered by `SWIPES_OK,<0 or 1>` |
 | PC to device | `POMO,<0 focus\|1 break>,<remaining s>,<total s>,<0\|1 running>` | Pomodoro state |
 | Device to PC | `POMO,TOGGLE` | Pomodoro dial tapped |
+| PC to device | `MUTE,<0\|1 speakers>,<0\|1 microphone>` | Mute state, sent on connect and on every change |
+| Device to PC | `MUTE,TOGGLE` | Centre of the Volume or Mic dial tapped |
 | Device to PC | `GAME,WHACK,<score>,<best>` | Whack-a-Mole round finished |
 | PC to device | `SAVER,<0\|1>,<idle s>,<seconds per item>,<0 pictures\|1 clock>` | Screensaver settings; answered by `SAVER_OK` |
 | PC to device | `TIME,<local seconds>,<1 for 24-hour\|0>` | Sets the knob's clock (local time counted as if it were UTC); answered by `TIME_OK` |

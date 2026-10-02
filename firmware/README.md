@@ -84,6 +84,15 @@ arrives on every change and once a minute; the firmware counts the seconds
 down locally in between so the ring and the `M:SS` number move smoothly, and
 a tap on the dial sends `POMO,TOGGLE` back. The chime plays on the PC.
 
+## Mute
+
+On Volume (mode 0) and Mic (mode 3) a tap on the centre cap sends
+`MUTE,TOGGLE` instead of opening the menu; the back icon still opens it. The
+PC owns the state: it mutes the speakers or microphone and answers with
+`MUTE,<speakers>,<microphone>`, which it also sends on connect and whenever
+Windows changes either one. While the shown control is muted, `apply_labels`
+greys the number and puts a red `MUTED` in the cap (`time_label`).
+
 ## Games
 
 The Games screen (mode 7) opens on a card per game (`GAME_COUNT`). Each card is
@@ -102,8 +111,8 @@ bomb is drawn around the hole's own centre, so the aim ring is concentric with
 it. A tap on the card starts a 30-second round. While a round runs:
 
 - The knob moves the aim ring between holes, and no `ROT` is sent.
-- A touch anywhere except the back icon whacks the aimed hole. Touching a hole
-  moves the aim there first.
+- A touch anywhere except the back icon whacks the aimed hole. Only the knob
+  moves the aim, so touching a hole doesn't pick it.
 - A plain mole scores 1. Gold moles appear after 15% of the round and score 3.
   Bombs appear after 25% and cost 3.
 - Up to 1, then 2, then 3 moles are up at once as the round goes on. A mole

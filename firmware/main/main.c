@@ -184,6 +184,9 @@ static int pomo_phase;
 static int pomo_remaining = 25 * 60;
 static int pomo_total = 25 * 60;
 static bool pomo_running;
+/* Mute state of the PC's speakers (Volume) and microphone (Mic), from MUTE. */
+static bool volume_muted;
+static bool mic_muted;
 static int64_t pomo_stamp;
 static int pomo_shown = -1;
 
@@ -196,7 +199,6 @@ static int pomo_shown = -1;
 #define WHACK_ICON_SIZE 1.75f
 /* Half the square repainted for one hole; it stays inside the arc's band. */
 #define WHACK_BOX 30
-#define WHACK_HIT_R 34
 #define GAME_TITLE_Y (-40)
 /* The Games screen opens on a round card per game, centred on the dial; a tap
    on the card plays it. */
@@ -737,6 +739,16 @@ static inline bool segment_on_track(int segment)
 static inline bool mode_is_level(int mode)
 {
     return mode == 0 || mode == 2 || mode == 3;
+}
+
+static inline bool mode_can_mute(int mode)
+{
+    return mode == 0 || mode == 3;
+}
+
+static inline bool mode_muted(int mode)
+{
+    return (mode == 0 && volume_muted) || (mode == 3 && mic_muted);
 }
 
 static void mark_dirty(int x1, int y1, int x2, int y2)
@@ -1644,6 +1656,7 @@ static void apply_labels(void)
     }
 
     lv_obj_set_style_text_color(value_label, lv_color_hex(0x2A2A34), 0);
+    lv_obj_set_style_text_color(time_label, lv_color_hex(0x3C3C4A), 0);
 
     if (selected_mode == MEDIA_MODE) {
         lv_label_set_text(title_label,
@@ -1728,7 +1741,15 @@ static void apply_labels(void)
     lv_obj_clear_flag(value_label, LV_OBJ_FLAG_HIDDEN);
     lv_obj_add_flag(title_label, LV_OBJ_FLAG_HIDDEN);
     lv_obj_add_flag(artist_label, LV_OBJ_FLAG_HIDDEN);
-    lv_obj_add_flag(time_label, LV_OBJ_FLAG_HIDDEN);
+    if (mode_muted(selected_mode)) {
+        /* Muted: the level greys out and the cap says so; a tap unmutes. */
+        lv_obj_set_style_text_color(value_label, lv_color_hex(0xA4A4B0), 0);
+        lv_obj_set_style_text_color(time_label, lv_color_hex(0xE5484D), 0);
+        lv_label_set_text(time_label, "MUTED");
+        lv_obj_clear_flag(time_label, LV_OBJ_FLAG_HIDDEN);
+    } else {
+        lv_obj_add_flag(time_label, LV_OBJ_FLAG_HIDDEN);
+    }
 }
 
 /* Text changed but the dial did not, so the chrome is left alone. */
@@ -1863,21 +1884,10 @@ static unsigned whack_hit(int hole, int64_t now)
     return 1u << hole;
 }
 
-static int whack_hole_at(int x, int y)
-{
-    for (int hole = 0; hole < WHACK_HOLES; ++hole) {
-        float cx, cy;
-        whack_hole_centre(hole, &cx, &cy);
-        const float dx = x - cx;
-        const float dy = y - cy;
-        if (dx * dx + dy * dy <= WHACK_HIT_R * WHACK_HIT_R) return hole;
-    }
-    return -1;
-}
-
-/* During a round a touch lands as it goes down, not on release: on a hole it
-   hits that hole, anywhere else the one the knob aims at. The back button
-   still works as usual. Returns true when the touch was used. */
+/* During a round a touch lands as it goes down, not on release, and always
+   whacks the hole the knob aims at: aiming is the knob's job, so touching a
+   hole directly does not move the aim. The back button still works as usual.
+   Returns true when the touch was used. */
 static bool whack_press(int x, int y)
 {
     if (game_state != GAME_PLAYING || show_menu || selected_mode != GAMES_MODE) return false;
@@ -1885,15 +1895,7 @@ static bool whack_press(int x, int y)
         abs(y - SCREEN_CENTER - FOOTER_Y) <= FOOTER_HIT_H) {
         return false;
     }
-    const int64_t now = esp_timer_get_time();
-    unsigned mask = 0;
-    const int hole = whack_hole_at(x, y);
-    if (hole >= 0 && hole != whack_cursor) {
-        mask |= (1u << whack_cursor) | (1u << hole);
-        whack_cursor = hole;
-    }
-    mask |= whack_hit(whack_cursor, now);
-    whack_redraw(mask);
+    whack_redraw(whack_hit(whack_cursor, esp_timer_get_time()));
     return true;
 }
 
@@ -2344,6 +2346,23 @@ static void handle_command(char *line)
         return;
     }
 
+    if (strncmp(line, "MUTE,", 5) == 0) {
+        char *save = NULL;
+        const char *volume_text = strtok_r(line + 5, ",", &save);
+        const char *mic_text = strtok_r(NULL, ",", &save);
+        int volume, mic;
+        if (!volume_text || !mic_text || !parse_integer(volume_text, 0, 1, &volume) ||
+            !parse_integer(mic_text, 0, 1, &mic)) {
+            return;
+        }
+        if (volume_muted != (bool)volume || mic_muted != (bool)mic) {
+            volume_muted = volume;
+            mic_muted = mic;
+            if (!show_menu && mode_can_mute(selected_mode)) refresh_text();
+        }
+        return;
+    }
+
     if (strncmp(line, "POMO,", 5) == 0) {
         char *save = NULL;
         const char *phase_text = strtok_r(line + 5, ",", &save);
@@ -2518,6 +2537,12 @@ static void send_touch_event(void)
     if (!show_menu && selected_mode == POMODORO_MODE &&
         dx * dx + dy * dy < DIAL_CAP_R * DIAL_CAP_R) {
         printf("POMO,TOGGLE\n");
+        return;
+    }
+    /* On Volume and Mic the cap mutes; the name below it still opens the menu. */
+    if (!show_menu && mode_can_mute(selected_mode) &&
+        dx * dx + dy * dy < DIAL_CAP_R * DIAL_CAP_R) {
+        printf("MUTE,TOGGLE\n");
         return;
     }
     const int centre_r = show_menu ? 50 : DIAL_CAP_R;

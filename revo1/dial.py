@@ -71,6 +71,9 @@ PRESET_ACCENTS = ("#00B0FF", "#7C68FF", "#FFA828", "#FF4074",
 VALUE_INK = "#2A2A34"
 ARTIST_INK = "#76768A"
 TIME_INK = "#3C3C4A"
+# Volume and Mic while muted, as the knob draws them.
+MUTED_VALUE_INK = "#A4A4B0"
+MUTED_INK = "#E5484D"
 FOOTER_INK = "#8A8A98"
 MENU_INK = "#8A8A9A"
 ICON_INK = "#5A5A68"

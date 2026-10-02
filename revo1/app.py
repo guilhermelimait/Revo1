@@ -27,6 +27,8 @@ from revo1.screensaver import Library
 from revo1.screensaver_page import TIME_RESEND_S, ScreensaverPage
 
 LEVEL_MODES = ("Volume", "Mic", "Brightness")
+MUTE_MODES = ("Volume", "Mic")
+MUTED_RED = "#E5484D"
 KOFI_RED = "#FF5E5B"
 DEVICE_ROW_HEIGHT = 36
 DEVICE_SCAN_MS = 2000
@@ -71,6 +73,7 @@ class App(DashboardPage, ScreensaverPage, GamesPage):
         self.device_library = None
         self.upload_state = None
         self.levels = {}
+        self.muted = self.read_mute()
         self.backlight_sent = 0.0
         self.media = MediaSession()
         self.media_state = None
@@ -219,6 +222,13 @@ class App(DashboardPage, ScreensaverPage, GamesPage):
             self.pomodoro_buttons += buttons
         if self.mode == "Pomodoro":
             self.pomodoro_bar.pack(pady=(k.px(12), 0))
+        # Mute for the speakers or the microphone, under the Volume and Mic dials.
+        self.mute_bar = tk.Frame(page, bg=ui.MAIN_BG)
+        self.mute_button = ui.Button(self.mute_bar, ui.MAIN_BG, self.paint_mute_button,
+                                     self.toggle_mute)
+        self.mute_button.pack()
+        if self.mode in MUTE_MODES:
+            self.mute_bar.pack(pady=(k.px(12), 0))
         self.build_games_panel(page)
         self.control_page = page
 
@@ -629,6 +639,28 @@ class App(DashboardPage, ScreensaverPage, GamesPage):
             k.text(image, left + 16, height / 2, label, "semibold", 9.5, ink)
         else:
             k.text(image, width / 2, height / 2, label, "semibold", 9.5, ink, anchor="mm")
+        return image
+
+    def paint_mute_button(self, hover):
+        """Mute or Unmute, with the speaker or microphone icon; red while muted."""
+        k = self.kit
+        mode = self.mode if self.mode in MUTE_MODES else "Volume"
+        muted = self.muted.get(mode, False)
+        width, height = 180, 34
+        image = k.canvas(width, height, ui.MAIN_BG)
+        if muted:
+            k.rounded(image, (0, 0, width, height), 17, "#D93F45" if hover else MUTED_RED)
+            ink = "#FFFFFF"
+        else:
+            k.rounded(image, (0, 0, width, height), 17, "#FFFFFF" if hover else ui.CARD_BG,
+                      ui.CARD_EDGE)
+            ink = ui.INK
+        label = "Unmute" if muted else "Mute"
+        label += " microphone" if mode == "Mic" else " sound"
+        text = k.font("semibold", 9.5).getlength(label) / k.scale
+        left = (width - text - 24) / 2
+        k.icon(image, mode + "Muted" if not muted else mode, left + 8, height / 2, ink, 0.55)
+        k.text(image, left + 24, height / 2, label, "semibold", 9.5, ink)
         return image
 
     def paint_heart(self, image, x, y, colour):
@@ -1128,7 +1160,40 @@ class App(DashboardPage, ScreensaverPage, GamesPage):
             self.actions.put(("__mediapoll__", 0))
         self.root.after(1000, self.refresh_media)
 
+    def read_mute(self):
+        """Mute state of both devices; False for one Windows can't reach."""
+        state = {}
+        for mode, read in (("Volume", controls.volume_muted),
+                           ("Mic", controls.microphone_muted)):
+            try:
+                state[mode] = read()
+            except (COMError, OSError, RuntimeError, ValueError):
+                state[mode] = False
+        return state
+
+    def refresh_mute(self):
+        """Picks up mute changes, from the button or from Windows itself."""
+        state = self.read_mute()
+        if state != self.muted:
+            self.muted = state
+            if self.connected:
+                self.bridge.send_mute(state["Volume"], state["Mic"])
+            if self.page == "control" and not self.menu and self.mode in MUTE_MODES:
+                self.render()
+
+    def toggle_mute(self):
+        mode = self.mode if self.mode in MUTE_MODES else "Volume"
+        try:
+            if mode == "Mic":
+                controls.set_microphone_muted(not self.muted["Mic"])
+            else:
+                controls.set_volume_muted(not self.muted["Volume"])
+        except (COMError, OSError, RuntimeError, ValueError) as exc:
+            self.status.set(f"{mode} mute failed: {exc}")
+        self.refresh_mute()
+
     def refresh_external_volume(self):
+        self.refresh_mute()
         if self.mode == "Volume":
             try:
                 actual = controls.volume_level()
@@ -1199,8 +1264,10 @@ class App(DashboardPage, ScreensaverPage, GamesPage):
         if self.games_panel.winfo_manager():
             self.games_panel.pack_forget()
         if not self.dial_box.winfo_manager():
-            if self.pomodoro_bar.winfo_manager():
-                self.dial_box.pack(before=self.pomodoro_bar)
+            bar = next((bar for bar in (self.pomodoro_bar, self.mute_bar)
+                        if bar.winfo_manager()), None)
+            if bar:
+                self.dial_box.pack(before=bar)
             else:
                 self.dial_box.pack()
 
@@ -1261,8 +1328,11 @@ class App(DashboardPage, ScreensaverPage, GamesPage):
                                dial.CHEVRON_INK, size=1.0)
             image = Image.fromarray(pixels)
             draw = ImageDraw.Draw(image)
+            muted = self.muted.get(self.mode, False)
             self.put_text(draw, c, c, str(self.value), self.settings["number_size"],
-                          dial.VALUE_INK)
+                          dial.MUTED_VALUE_INK if muted else dial.VALUE_INK)
+            if muted:
+                self.put_text(draw, c, c + dial.MEDIA_TIME_Y, "MUTED", 12, dial.MUTED_INK)
         else:
             image = self.dial.comet(accent, (self.comet_q8 >> 8) & dial.MASK,
                                     self.comet_direction)
@@ -1275,6 +1345,8 @@ class App(DashboardPage, ScreensaverPage, GamesPage):
         if self.mode == "Pomodoro":
             for button in self.pomodoro_buttons:
                 button.refresh()
+        if self.mode in MUTE_MODES:
+            self.mute_button.refresh()
 
     def show_dial(self, image):
         # Tk only keeps a weak reference, so the PhotoImage must be held here.
@@ -1324,6 +1396,8 @@ class App(DashboardPage, ScreensaverPage, GamesPage):
                 self.choose(config.MODES[self.menu_cursor])
         elif self.mode == "Pomodoro" and distance < dial.CAP_R and not on_footer:
             self.pomodoro_action("start")
+        elif self.mode in MUTE_MODES and distance < dial.CAP_R and not on_footer:
+            self.toggle_mute()
         elif distance < dial.CAP_R or on_footer:
             self.open_menu()
             if self.connected:
@@ -1374,6 +1448,10 @@ class App(DashboardPage, ScreensaverPage, GamesPage):
             self.pomodoro_bar.pack(pady=(self.kit.px(12), 0))
         else:
             self.pomodoro_bar.pack_forget()
+        if mode in MUTE_MODES:
+            self.mute_bar.pack(pady=(self.kit.px(12), 0))
+        else:
+            self.mute_bar.pack_forget()
         self.reset_comet()
         try:
             self.refresh_value()
@@ -1505,6 +1583,7 @@ class App(DashboardPage, ScreensaverPage, GamesPage):
         self.push_time()
         self.push_saver()
         self.push_pomodoro()
+        self.bridge.send_mute(self.muted["Volume"], self.muted["Mic"])
         self.bridge.request_library()
         try:
             self.refresh_value()
@@ -1582,6 +1661,9 @@ class App(DashboardPage, ScreensaverPage, GamesPage):
                     self.render()
                 elif kind == "pomodoro_toggle":
                     self.pomodoro_action("start")
+                elif kind == "mute_toggle":
+                    if self.mode in MUTE_MODES:
+                        self.toggle_mute()
                 elif kind == "game":
                     self.game_result = payload
                     if self.mode == "Games" and not self.menu:
