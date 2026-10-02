@@ -168,7 +168,7 @@ class App(DashboardPage, ScreensaverPage, GamesPage):
 
     def build_nav(self):
         """The sidebar lists the screens that are on the knob, between the
-        dashboard and the screensaver, with settings right after them."""
+        dashboard and the screensaver, with settings last, all evenly spaced."""
         k = self.kit
         for child in self.nav_list.winfo_children():
             child.destroy()
@@ -178,8 +178,7 @@ class App(DashboardPage, ScreensaverPage, GamesPage):
             button = ui.Button(self.nav_list, ui.SIDEBAR_BG,
                                lambda hover, key=key: self.paint_nav(key, hover),
                                lambda key=key: self.navigate(key))
-            gap = k.px(10) if key == "Screensaver" else k.px(1)
-            button.pack(padx=k.px(12), pady=(gap, k.px(1)), anchor="w")
+            button.pack(padx=k.px(12), pady=k.px(1), anchor="w")
             self.nav[key] = button
 
     def build_control_page(self):
