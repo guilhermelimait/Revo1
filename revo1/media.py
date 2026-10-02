@@ -1,7 +1,11 @@
 """Read and control whatever is playing through the Windows media transport."""
 
 import asyncio
+import ctypes
+from ctypes import wintypes
+import os
 import threading
+import time
 import unicodedata
 
 try:
@@ -12,6 +16,11 @@ try:
 except ImportError:  # pragma: no cover - the WinRT projection is Windows only
     SessionManager = None
     PlaybackStatus = None
+
+try:
+    from pycaw.pycaw import AudioUtilities, IAudioMeterInformation
+except ImportError:  # pragma: no cover - Windows only
+    AudioUtilities = None
 
 TEXT_MAX = 58
 # Letters that do not decompose into a base letter plus accents.
@@ -24,6 +33,14 @@ FOLD = str.maketrans({"\u00df": "ss", "\u00e6": "ae", "\u00c6": "AE", "\u00f8": 
 STOPPED = 0
 PLAYING = 1
 PAUSED = 2
+
+# An app counts as playing while its output peaks above this level.
+SOUND_PEAK = 0.0005
+# A player that went quiet is shown as paused for this long, so the knob can
+# resume it, unless a registered player has played since.
+PAUSED_HOLD_S = 30 * 60
+WM_APPCOMMAND = 0x0319
+APPCOMMANDS = {"PLAYPAUSE": 14, "NEXT": 11, "PREV": 12}
 
 
 def clean(text):
@@ -40,6 +57,48 @@ def clean(text):
     return ascii_text
 
 
+def _sounding_apps():
+    """(pid, peak) for every app with an active audio session, loudest first.
+    Needs COM initialised on the calling thread."""
+    if AudioUtilities is None:
+        return []
+    found = []
+    for session in AudioUtilities.GetAllSessions():
+        process = session.Process
+        if process is None or process.pid == os.getpid():
+            continue
+        try:
+            peak = session._ctl.QueryInterface(IAudioMeterInformation).GetPeakValue()
+        except (OSError, ValueError):
+            continue
+        found.append((process.pid, peak))
+    return sorted(found, key=lambda item: -item[1])
+
+
+def _main_window(pid):
+    """The app's visible top-level window and its title, or (None, "")."""
+    if os.name != "nt":
+        return None, ""
+    user32 = ctypes.windll.user32
+    found = []
+
+    @ctypes.WINFUNCTYPE(wintypes.BOOL, wintypes.HWND, wintypes.LPARAM)
+    def visit(window, _):
+        owner = wintypes.DWORD()
+        user32.GetWindowThreadProcessId(window, ctypes.byref(owner))
+        if (owner.value == pid and user32.IsWindowVisible(window)
+                and not user32.GetWindow(window, 4)):
+            text = ctypes.create_unicode_buffer(256)
+            user32.GetWindowTextW(window, text, 256)
+            if text.value:
+                found.append((window, text.value))
+                return False
+        return True
+
+    user32.EnumWindows(visit, 0)
+    return found[0] if found else (None, "")
+
+
 class MediaSession:
     """Serialises WinRT calls onto one private event loop.
 
@@ -52,6 +111,10 @@ class MediaSession:
         self._loop = None
         self._thread = None
         self._lock = threading.Lock()
+        # The last app found playing without a media session: (pid, seen at).
+        self._sound_app = None
+        self._registered_at = 0.0
+        self._source = None
 
     def _run(self, coroutine):
         if not self.available:
@@ -69,7 +132,13 @@ class MediaSession:
             return None
 
     async def _session(self):
+        """The playing session if there is one, otherwise Windows' current
+        one. Windows can keep a paused player as current while another plays."""
         manager = await SessionManager.request_async()
+        for session in manager.get_sessions():
+            playback = session.get_playback_info()
+            if playback is not None and playback.playback_status == PlaybackStatus.PLAYING:
+                return session
         return manager.get_current_session()
 
     async def _snapshot(self):
@@ -104,7 +173,57 @@ class MediaSession:
         }
 
     def snapshot(self):
-        return self._run(self._snapshot())
+        """What is playing. Players that register with Windows' media controls
+        come first; otherwise any app making sound (Stremio, for example)
+        is shown by its window title."""
+        registered = self._run(self._snapshot())
+        now = time.monotonic()
+        if registered and registered["status"] == PLAYING:
+            self._registered_at = now
+            self._source = "registered"
+            return registered
+        sound = self._sound_snapshot(now)
+        if sound is not None:
+            self._source = "sound"
+            return sound
+        self._source = "registered" if registered else None
+        return registered
+
+    def _sound_snapshot(self, now):
+        try:
+            apps = _sounding_apps()
+        except (OSError, ValueError, RuntimeError):
+            return None
+        playing = [pid for pid, peak in apps if peak > SOUND_PEAK]
+        status = PLAYING
+        if playing:
+            pid = playing[0]
+            self._sound_app = (pid, now)
+        elif (self._sound_app and now - self._sound_app[1] < PAUSED_HOLD_S
+              and self._sound_app[1] > self._registered_at
+              and any(pid == self._sound_app[0] for pid, _ in apps)):
+            pid = self._sound_app[0]
+            status = PAUSED
+        else:
+            return None
+        window, title = _main_window(pid)
+        if window is None:
+            return None
+        return {"title": clean(title), "artist": "", "status": status,
+                "position": 0, "duration": 0}
+
+    def _sound_command(self, name):
+        """Sends a media command straight to the sounding app's window, so a
+        paused registered player such as Spotify isn't woken instead."""
+        if self._source != "sound" or not self._sound_app:
+            return None
+        window, _ = _main_window(self._sound_app[0])
+        if window is None:
+            return False
+        ctypes.windll.user32.SendMessageW(window, WM_APPCOMMAND, window,
+                                          APPCOMMANDS[name] << 16)
+        self._sound_app = (self._sound_app[0], time.monotonic())
+        return True
 
     async def _command(self, name):
         session = await self._session()
@@ -113,12 +232,21 @@ class MediaSession:
         return bool(await getattr(session, name)())
 
     def play_pause(self):
+        sent = self._sound_command("PLAYPAUSE")
+        if sent is not None:
+            return sent
         return bool(self._run(self._command("try_toggle_play_pause_async")))
 
     def next_track(self):
+        sent = self._sound_command("NEXT")
+        if sent is not None:
+            return sent
         return bool(self._run(self._command("try_skip_next_async")))
 
     def previous_track(self):
+        sent = self._sound_command("PREV")
+        if sent is not None:
+            return sent
         return bool(self._run(self._command("try_skip_previous_async")))
 
     async def _seek(self, delta_seconds):
@@ -137,4 +265,6 @@ class MediaSession:
             int(target * 10_000_000)))
 
     def seek(self, delta_seconds):
+        if self._source == "sound":
+            return False
         return bool(self._run(self._seek(delta_seconds)))

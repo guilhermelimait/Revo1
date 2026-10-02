@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+- The Media screen now also follows players that don't report to Windows'
+  media controls, such as Stremio: any app making sound is shown by its
+  window title, as playing or paused, and play/pause, previous and next are
+  sent straight to it. When several players are open, the one playing wins
+  over Windows' "current" one (which could stay on a paused Spotify).
+- The Mic screen is now called **Microphone** on the knob and in the app.
+  Saved settings and the protocol still use `Mic`/`MIC`.
 - Screensaver clock colours: on **Screensaver > Display**, choose the time
   colour (presets or any colour) and, for **Date and time**, the background;
   the date, AM/PM and ring track follow. **Pictures and time** can turn the

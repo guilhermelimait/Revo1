@@ -499,7 +499,7 @@ class App(DashboardPage, ScreensaverPage, GamesPage, WirelessTab):
         else:
             ink = ui.SUBTLE_INK
         k.icon(image, key, 31, NAV_HEIGHT / 2, ink, 0.8)
-        k.text(image, 56, NAV_HEIGHT / 2, key, "semibold" if selected else "regular", 10.5,
+        k.text(image, 56, NAV_HEIGHT / 2, config.title(key), "semibold" if selected else "regular", 10.5,
                ui.INK if selected else ui.SUBTLE_INK)
         return image
 
@@ -1319,12 +1319,12 @@ class App(DashboardPage, ScreensaverPage, GamesPage, WirelessTab):
                                c - dial.MENU_LABEL_R * math.sin(radians), ink)
             self.set_heading("Menu", ui.INK, MENU_HELP)
             image = Image.fromarray(pixels)
-            self.put_text(ImageDraw.Draw(image), c, c, chosen.upper(),
+            self.put_text(ImageDraw.Draw(image), c, c, config.title(chosen).upper(),
                           16, dial.label_ink(accent))
             self.show_dial(image)
             return
 
-        self.set_heading(self.mode, dial.label_ink(accent), SCREEN_HELP.get(self.mode, ()))
+        self.set_heading(config.title(self.mode), dial.label_ink(accent), SCREEN_HELP.get(self.mode, ()))
         if self.mode == "Media":
             state = self.media_state or {}
             duration = state.get("duration", 0)
@@ -1374,7 +1374,7 @@ class App(DashboardPage, ScreensaverPage, GamesPage, WirelessTab):
             image = self.dial.comet(accent, (self.comet_q8 >> 8) & dial.MASK,
                                     self.comet_direction)
             draw = ImageDraw.Draw(image)
-            self.put_text(draw, c, c, self.mode.upper(), 16, dial.VALUE_INK)
+            self.put_text(draw, c, c, config.title(self.mode).upper(), 16, dial.VALUE_INK)
         pixels = np.array(image.convert("RGB"))
         self.draw_icon(pixels, "Back", c, c + dial.FOOTER_Y, dial.FOOTER_INK,
                        size=dial.BACK_ICON_SIZE)

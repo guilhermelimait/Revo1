@@ -6,6 +6,12 @@ from tempfile import NamedTemporaryFile
 
 
 MODES = ("Volume", "Scroll", "Brightness", "Mic", "Zoom", "Media", "Pomodoro", "Games")
+# Names shown to the user where they differ from the saved and protocol name.
+TITLES = {"Mic": "Microphone"}
+
+
+def title(mode):
+    return TITLES.get(mode, mode)
 # The screens before Games existed. A file written then lists only these as
 # known, so screens added since start switched on rather than missing.
 LEGACY_SCREENS = MODES[:7]

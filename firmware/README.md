@@ -86,7 +86,7 @@ a tap on the dial sends `POMO,TOGGLE` back. The chime plays on the PC.
 
 ## Mute
 
-On Volume (mode 0) and Mic (mode 3) a tap on the centre cap sends
+On Volume (mode 0) and Microphone (mode 3) a tap on the centre cap sends
 `MUTE,TOGGLE` instead of opening the menu; the back icon still opens it. The
 PC owns the state: it mutes the speakers or microphone and answers with
 `MUTE,<speakers>,<microphone>`, which it also sends on connect and whenever

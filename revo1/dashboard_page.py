@@ -94,7 +94,7 @@ class DashboardPage:
         accent = self.accent(key) if key in config.MODES else ui.rgb(ui.SUBTLE_INK)
         ink = dial.label_ink(accent) if on else ui.MUTED_INK
         k.icon(image, key, 24, 24, ink, 0.72)
-        k.text(image, 42, 24, key, "semibold", 10, ui.INK if on else ui.SUBTLE_INK,
+        k.text(image, 42, 24, config.title(key), "semibold", 10, ui.INK if on else ui.SUBTLE_INK,
                width=width - 42 - SWITCH_W - 16)
         self.paint_switch(image, width - 12 - SWITCH_W, 24 - SWITCH_H / 2, on, hover)
         headline, detail, level = self.tile_text(key)

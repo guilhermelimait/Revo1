@@ -82,7 +82,10 @@ sync as you turn the knob.
   next touch or turn.
 - **Media screen** for whatever is playing (Spotify, a browser tab, ...):
   title, artist, progress ring, and big play/pause, previous and next buttons.
-  Turning the knob seeks 5 seconds per click.
+  Turning the knob seeks 5 seconds per click. Players that don't report to
+  Windows' media controls (Stremio, for example) are picked up from their
+  sound: the knob shows the app's window title, and play/pause, previous and
+  next go straight to that app (no title, progress or seeking for these).
 - **Radial menu:** tap the centre or the back icon, turn to choose, tap to
   confirm. It opens on the control you used last.
 - **Always in sync:** the knob, the screen and the app window show the same
@@ -171,7 +174,7 @@ once the knob answers.
   turn this off in **Settings > Controls**).
 - **Tap the back icon** at the top (or the centre) to open the menu. Turn to
   move the highlight, then tap to confirm, or tap an icon directly.
-- On the **Volume** and **Mic** screens, tap the centre to mute or unmute the
+- On the **Volume** and **Microphone** screens, tap the centre to mute or unmute the
   PC's sound or microphone. A speaker or microphone icon under the number
   marks the spot; while muted it turns into a red crossed-out icon, the
   number greys and **MUTED** shows above it.
@@ -200,7 +203,7 @@ The app opens on the **Dashboard**, a 3 by 3 grid of tiles: click a tile to
 open that screen, or its switch to show or hide it on the knob (at least one stays on). Pick a control
 in the left sidebar.
 
-- **Volume and Mic:** the **Mute sound** / **Mute microphone** button beside
+- **Volume and Microphone:** the **Mute sound** / **Mute microphone** button beside
   the dial (or a click on its centre) mutes the PC; it turns red with
   **Unmute** while muted. Muting from Windows shows up here and on the knob.
 - **Pomodoro:** set the focus and break minutes with **-** / **+** (or turn
@@ -362,7 +365,7 @@ framing.
 | Device to PC | `VERSION,<x.y.z>` | Firmware version, right after each `HELLO` |
 | Device to PC | `SYNC` | Sent with `HELLO` until the first `STATE` after a restart; the app resends style and state |
 | Device to PC | `ROT,<signed steps>` | Knob movement |
-| Device to PC | `MENU` | Centre (except on Volume, Mic and Pomodoro) or back-icon tap opens the menu |
+| Device to PC | `MENU` | Centre (except on Volume, Microphone and Pomodoro) or back-icon tap opens the menu |
 | Device to PC | `TAP,<0..7>` | Menu choice confirmed (mode index) |
 | Device to PC | `CURSOR,<0..7>` | Knob moved the menu highlight (mode index) |
 | Device to PC | `SWIPE,LEFT` or `SWIPE,RIGHT` | Change control |
@@ -380,7 +383,7 @@ framing.
 | PC to device | `POMO,<0 focus\|1 break>,<remaining s>,<total s>,<0\|1 running>` | Pomodoro state |
 | Device to PC | `POMO,TOGGLE` | Pomodoro dial tapped |
 | PC to device | `MUTE,<0\|1 speakers>,<0\|1 microphone>` | Mute state, sent on connect and on every change |
-| Device to PC | `MUTE,TOGGLE` | Centre of the Volume or Mic dial tapped |
+| Device to PC | `MUTE,TOGGLE` | Centre of the Volume or Microphone dial tapped |
 | Device to PC | `GAME,WHACK,<score>,<best>` | Whack-a-Mole round finished |
 | PC to device | `SAVER,<0\|1>,<idle s>,<seconds per item>,<0 pictures\|1 clock\|2 both>[,<ring 0-5>]` | Screensaver settings; answered by `SAVER_OK` |
 | PC to device | `SAVERLOOK,<shade 0\|1>,<time RRGGBB>,<background RRGGBB>` | Screensaver clock colours and picture shade; answered by `SAVERLOOK_OK` |
@@ -394,7 +397,7 @@ framing.
 | Device to PC | `NET,<key id\|->,<wifi 0-4>,<IP\|->,<name>,<links>` | Every second: pairing, Wi-Fi state (off, connecting, connected, wrong password, not found), address and active links (bit 0 Wi-Fi, bit 1 Bluetooth) |
 
 Mode names, in sector order: `VOLUME`, `SCROLL`, `BRIGHTNESS`, `MIC`, `ZOOM`,
-`MEDIA`, `POMODORO`, `GAMES`. The preview uses a neutral midpoint for non-percentage controls.
+`MEDIA`, `POMODORO`, `GAMES` (the Microphone screen keeps `MIC` on the wire). The preview uses a neutral midpoint for non-percentage controls.
 
 Each knob detent sends exactly one step. The encoder is not a quadrature
 encoder and emits two pulses per detent, which the firmware divides down; see

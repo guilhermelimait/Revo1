@@ -131,6 +131,10 @@
 static const char *mode_names[MODE_COUNT] = {
     "VOLUME", "SCROLL", "BRIGHTNESS", "MIC", "ZOOM", "MEDIA", "POMODORO", "GAMES"
 };
+/* What the dial shows; mode_names stay the protocol's words. */
+static const char *mode_titles[MODE_COUNT] = {
+    "VOLUME", "SCROLL", "BRIGHTNESS", "MICROPHONE", "ZOOM", "MEDIA", "POMODORO", "GAMES"
+};
 
 /* Saturated accents; on an AMOLED the unlit pixels stay truly black, so
    additive glow over them reads as emitted light rather than grey haze. */
@@ -1796,7 +1800,7 @@ static void apply_labels(void)
         lv_obj_set_style_text_color(value_label,
                                     lv_color_make(accent[0] * 3 / 4, accent[1] * 3 / 4,
                                                   accent[2] * 3 / 4), 0);
-        lv_label_set_text(value_label, mode_names[menu_cursor]);
+        lv_label_set_text(value_label, mode_titles[menu_cursor]);
         lv_obj_clear_flag(value_label, LV_OBJ_FLAG_HIDDEN);
         lv_obj_add_flag(title_label, LV_OBJ_FLAG_HIDDEN);
         lv_obj_add_flag(artist_label, LV_OBJ_FLAG_HIDDEN);
@@ -1883,7 +1887,7 @@ static void apply_labels(void)
         snprintf(value, sizeof(value), "%d", selected_value);
         lv_obj_set_style_text_font(value_label, number_font, 0);
     } else {
-        snprintf(value, sizeof(value), "%s", mode_names[selected_mode]);
+        snprintf(value, sizeof(value), "%s", mode_titles[selected_mode]);
         lv_obj_set_style_text_font(value_label, &lv_font_montserrat_16, 0);
     }
     lv_label_set_text(value_label, value);
@@ -2828,7 +2832,7 @@ static void send_touch_event(void)
         host_printf("POMO,TOGGLE\n");
         return;
     }
-    /* On Volume and Mic the cap mutes; the name below it still opens the menu. */
+    /* On Volume and Microphone the cap mutes; the name below it still opens the menu. */
     if (!show_menu && mode_can_mute(selected_mode) &&
         dx * dx + dy * dy < DIAL_CAP_R * DIAL_CAP_R) {
         host_printf("MUTE,TOGGLE\n");
