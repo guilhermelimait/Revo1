@@ -21,6 +21,9 @@ THUMB_ROW = THUMB + 10
 IDLE_LABELS = {1: "1 min", 2: "2 min", 5: "5 min", 10: "10 min", 30: "30 min"}
 INTERVAL_LABELS = {10: "10 s", 30: "30 s", 60: "1 min", 300: "5 min"}
 CLOCK_LABELS = {"24h": "24-hour", "12h": "AM/PM"}
+CLOCK_PREVIEW = 132
+CLOCK_GAP = 24
+CLOCK_BUTTON_W = 150
 SHOW_LABELS = {"pictures": "Pictures and videos", "clock": "Date and time"}
 SHOW_DETAILS = {"pictures": "Your photos and videos",
                 "clock": "Big clock and the date"}
@@ -128,10 +131,20 @@ class ScreensaverPage:
         self.pack_row(self.saver_buttons)
         self.saver_status = ui.Picture(box, PANEL_BG)
         self.saver_status.pack(anchor="w", pady=(k.px(6), 0))
-        self.saver_choice_row(self.saver_clock_box, "Time", "clock_format",
-                              CLOCK_LABELS).pack(anchor="w")
         self.saver_clock_preview = ui.Picture(self.saver_clock_box, PANEL_BG)
-        self.saver_clock_preview.pack(anchor="w", pady=(k.px(12), 0))
+        self.saver_clock_preview.pack(side="left")
+        column = tk.Frame(self.saver_clock_box, bg=PANEL_BG)
+        column.pack(side="left", padx=(k.px(CLOCK_GAP), 0))
+        buttons = [ui.Button(
+            column, PANEL_BG,
+            lambda hover, value=value: self.paint_choice(
+                self.settings["clock_format"] == value, CLOCK_LABELS[value], hover,
+                CLOCK_BUTTON_W),
+            lambda value=value: self.set_saver_choice("clock_format", value))
+            for value in CLOCK_LABELS]
+        for index, button in enumerate(buttons):
+            button.pack(anchor="w", pady=(0 if index == 0 else k.px(ROW_GAP), 0))
+        self.saver_choices += buttons
         self.library_crc = self.library.checksum()
         self.screensaver_page = page
         self.refresh_screensaver()
@@ -208,7 +221,7 @@ class ScreensaverPage:
     def paint_clock_preview(self):
         """What the knob looks like with the clock."""
         k = self.kit
-        width, height = CARD_WIDTH, 132
+        width = height = CLOCK_PREVIEW
         image = k.canvas(width, height, PANEL_BG)
         accent = self.accent(self.mode)
         cx, cy, r = 66, height / 2, 62
