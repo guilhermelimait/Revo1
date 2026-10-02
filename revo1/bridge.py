@@ -124,6 +124,9 @@ class DeviceBridge:
         self.outbound.put(f"POMO,{int(phase)},{int(remaining)},{int(total)},"
                           f"{int(bool(running))}\n".encode("ascii"))
 
+    def send_game_best(self, best):
+        self.outbound.put(f"GAMEBEST,{int(best)}\n".encode("ascii"))
+
     def send_mute(self, volume, mic):
         self.outbound.put(f"MUTE,{int(bool(volume))},{int(bool(mic))}\n".encode("ascii"))
 
@@ -381,6 +384,13 @@ class DeviceBridge:
                 return line
             if 0 <= score <= 65535 and 0 <= best <= 65535:
                 self.events.put(("game", (score, best)))
+        elif line.startswith("GAME,BEST,"):
+            try:
+                best = int(line[10:])
+            except ValueError:
+                return line
+            if 0 <= best <= 65535:
+                self.events.put(("game_best", best))
         elif line == "POMO,TOGGLE":
             self.events.put(("pomodoro_toggle", None))
         elif line == "MUTE,TOGGLE":

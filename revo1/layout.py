@@ -12,5 +12,10 @@ CARD_WIDTH = MAIN_WIDTH - 56
 DIAL_SIZE = 360
 DIAL_GAP = 40
 SIDE_WIDTH = CARD_WIDTH - DIAL_SIZE - DIAL_GAP
+# Switches, sliders and lists stop here rather than running to the far edge,
+# so a switch stays close to the words it belongs to.
+FORM_WIDTH = 440
+# Buttons are as wide as their label, but never narrower than this.
+BUTTON_MIN = 96
 # Settings sit straight on the page, lined up with the tabs, not in boxes.
 PANEL_BG = ui.MAIN_BG

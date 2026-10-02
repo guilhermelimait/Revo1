@@ -41,6 +41,11 @@ SOUND_PEAK = 0.0005
 PAUSED_HOLD_S = 30 * 60
 WM_APPCOMMAND = 0x0319
 APPCOMMANDS = {"PLAYPAUSE": 14, "NEXT": 11, "PREV": 12}
+VK_LEFT, VK_RIGHT, VK_MENU = 0x25, 0x27, 0x12
+KEYEVENTF_KEYUP = 0x0002
+# Players without media controls (Stremio, mpv, VLC...) seek this far per
+# arrow key press, so one knob click moves the estimated clock by as much.
+ARROW_SEEK_S = 10
 
 
 def clean(text):
@@ -115,6 +120,9 @@ class MediaSession:
         self._sound_app = None
         self._registered_at = 0.0
         self._source = None
+        # Estimated play time of that app, which reports none of its own:
+        # [pid, seconds counted, when last counted, playing then].
+        self._sound_clock = None
 
     def _run(self, coroutine):
         if not self.available:
@@ -210,7 +218,19 @@ class MediaSession:
         if window is None:
             return None
         return {"title": clean(title), "artist": "", "status": status,
-                "position": 0, "duration": 0}
+                "position": self._count(pid, status == PLAYING, now),
+                "duration": 0}
+
+    def _count(self, pid, playing, now):
+        """Seconds the app has been heard playing since Revo1 noticed it,
+        frozen while it is paused."""
+        clock = self._sound_clock
+        if clock is None or clock[0] != pid:
+            clock = self._sound_clock = [pid, 0.0, now, False]
+        if clock[3]:
+            clock[1] += now - clock[2]
+        clock[2], clock[3] = now, playing
+        return int(clock[1])
 
     def _sound_command(self, name):
         """Sends a media command straight to the sounding app's window, so a
@@ -266,5 +286,46 @@ class MediaSession:
 
     def seek(self, delta_seconds):
         if self._source == "sound":
-            return False
+            return self._sound_seek(delta_seconds)
         return bool(self._run(self._seek(delta_seconds)))
+
+    def seek_clicks(self, clicks, seconds=5):
+        """Knob seek: `seconds` per click with media controls, otherwise one
+        arrow key press (the player's own step) per click."""
+        if self._source == "sound":
+            return self._sound_seek(clicks * ARROW_SEEK_S)
+        return bool(self._run(self._seek(clicks * seconds)))
+
+    def _sound_seek(self, delta_seconds):
+        """Players without media controls only seek from the keyboard, so the
+        arrow keys are pressed in the player's window, briefly brought to the
+        front if needed, and the previous window gets the focus back."""
+        if not self._sound_app or os.name != "nt":
+            return False
+        window, _ = _main_window(self._sound_app[0])
+        if window is None:
+            return False
+        presses = max(1, round(abs(delta_seconds) / ARROW_SEEK_S))
+        key = VK_RIGHT if delta_seconds > 0 else VK_LEFT
+        user32 = ctypes.windll.user32
+        previous = user32.GetForegroundWindow()
+        if previous != window:
+            # Windows only lets the foreground app hand over the focus; a
+            # tapped Alt key counts as the user's input and lifts that lock.
+            user32.keybd_event(VK_MENU, 0, 0, 0)
+            user32.keybd_event(VK_MENU, 0, KEYEVENTF_KEYUP, 0)
+            user32.SetForegroundWindow(window)
+            time.sleep(0.05)
+            if user32.GetForegroundWindow() != window:
+                return False
+        for _ in range(presses):
+            user32.keybd_event(key, 0, 0, 0)
+            user32.keybd_event(key, 0, KEYEVENTF_KEYUP, 0)
+        if previous and previous != window:
+            time.sleep(0.05)
+            user32.SetForegroundWindow(previous)
+        clock = self._sound_clock
+        if clock and clock[0] == self._sound_app[0]:
+            clock[1] = max(0.0, clock[1] + presses * ARROW_SEEK_S *
+                           (1 if delta_seconds > 0 else -1))
+        return True

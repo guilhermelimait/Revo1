@@ -22,6 +22,7 @@ class PomodoroTimer:
         self.running = False
         self._remaining = self.total
         self._stamp = 0.0
+        self._started = False
 
     @property
     def total(self):
@@ -39,6 +40,7 @@ class PomodoroTimer:
         if not self.running:
             self._stamp = self.clock()
             self.running = True
+            self._started = True
 
     def pause(self):
         if self.running:
@@ -51,6 +53,7 @@ class PomodoroTimer:
     def reset(self):
         """Back to the start of a focus session, stopped."""
         self.running = False
+        self._started = False
         self.phase = FOCUS
         self._remaining = self.total
 
@@ -58,7 +61,7 @@ class PomodoroTimer:
         """Changes a phase's length; a stopped timer at the start of that
         phase follows the new length."""
         minutes = max(1, min(180, int(minutes)))
-        untouched = not self.running and self._remaining == self.total
+        untouched = self.untouched
         self.minutes[phase] = minutes
         if phase != self.phase:
             return
@@ -68,6 +71,19 @@ class PomodoroTimer:
             # A shorter phase never leaves more time than its new length.
             self._remaining = self.total
             self._stamp = self.clock()
+
+    @property
+    def untouched(self):
+        """Stopped at the very start of its phase."""
+        return not self._started
+
+    def adjust(self, seconds):
+        """Adds time to (or takes it from) the countdown, running or paused.
+        It never drops below a minute, unless less than that was left."""
+        left = self.remaining()
+        self._remaining = max(min(left, 60), min(180 * 60, left + int(seconds)))
+        self._stamp = self.clock()
+        self._started = True
 
     def tick(self):
         """Moves on to the next phase when the current one has run out.

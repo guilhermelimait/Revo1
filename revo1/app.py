@@ -20,7 +20,7 @@ from revo1.bridge import DeviceBridge, find_devices
 from revo1.dashboard_page import DashboardPage
 from revo1.games_page import GamesPage
 from revo1.dial import DialRenderer
-from revo1.layout import (CARD_WIDTH, DIAL_GAP, MAIN_WIDTH, NAV_HEIGHT, NAV_WIDTH,
+from revo1.layout import (BUTTON_MIN, CARD_WIDTH, FORM_WIDTH, DIAL_GAP, MAIN_WIDTH, NAV_HEIGHT, NAV_WIDTH,
                           PANEL_BG, SIDE_WIDTH, SIDEBAR_WIDTH, WINDOW_HEIGHT)
 from revo1.media import MediaSession
 from revo1.screensaver import Library
@@ -87,8 +87,6 @@ class App(DashboardPage, ScreensaverPage, GamesPage, WirelessTab):
         self.pomodoro = pomodoro.PomodoroTimer(self.settings["focus_minutes"],
                                                self.settings["break_minutes"])
         self.pomodoro_sent = 0.0
-        # (last score, best) from the knob's most recent Whack-a-Mole round.
-        self.game_result = None
         self.pomodoro_shown = None
         self.chime_folder = config.config_path().parent
         self.library = Library()
@@ -307,12 +305,13 @@ class App(DashboardPage, ScreensaverPage, GamesPage, WirelessTab):
         self.name_entry.insert(0, self.settings["name"])
         self.name_entry.bind("<Return>", self.save_name)
         self.name_entry.bind("<FocusOut>", self.save_name)
-        self.name_entry.pack(fill="x", pady=(k.px(6), k.px(12)), ipady=k.px(4), ipadx=k.px(6))
+        self.name_entry.config(width=24)
+        self.name_entry.pack(anchor="w", pady=(k.px(6), k.px(12)), ipady=k.px(4), ipadx=k.px(6))
         self.caption(body, "DEVICES").pack(anchor="w")
         self.connection_text = ui.Picture(body, PANEL_BG)
         self.connection_text.pack(anchor="w", pady=(k.px(2), 0))
         self.device_list = tk.Frame(body, bg=PANEL_BG)
-        self.device_list.pack(fill="x")
+        self.device_list.pack(anchor="w")
 
     def build_controls_tab(self, tab):
         k = self.kit
@@ -321,7 +320,7 @@ class App(DashboardPage, ScreensaverPage, GamesPage, WirelessTab):
         row = tk.Frame(body, bg=PANEL_BG)
         row.pack(anchor="w", pady=(k.px(6), 0))
         self.orientation_buttons = []
-        widths = self.fill_widths([0] * len(config.ORIENTATIONS))
+        widths = [72] * len(config.ORIENTATIONS)
         for value, width in zip(config.ORIENTATIONS, widths):
             button = ui.Button(row, PANEL_BG,
                                lambda hover, value=value, width=width:
@@ -362,7 +361,7 @@ class App(DashboardPage, ScreensaverPage, GamesPage, WirelessTab):
         self.accent_buttons = []
         row = tk.Frame(body, bg=PANEL_BG)
         row.pack(anchor="w", pady=(k.px(6), 0))
-        for key, width in zip(("standard", "custom"), self.fill_widths([0, 0])):
+        for key, width in zip(("standard", "custom"), (150, 150)):
             button = ui.Button(row, PANEL_BG,
                                lambda hover, key=key, width=width:
                                    self.paint_accent_choice(key, hover, width),
@@ -376,7 +375,7 @@ class App(DashboardPage, ScreensaverPage, GamesPage, WirelessTab):
             swatches.append(ui.Button(row, PANEL_BG,
                                       lambda hover, colour=colour: self.paint_swatch(colour, hover),
                                       lambda colour=colour: self.set_accent(colour)))
-        self.spread_row(swatches)
+        self.pack_row(swatches, 6)
         self.accent_buttons += swatches
 
         body = self.section(tab)
@@ -384,7 +383,7 @@ class App(DashboardPage, ScreensaverPage, GamesPage, WirelessTab):
         row = tk.Frame(body, bg=PANEL_BG)
         row.pack(anchor="w", pady=(k.px(6), 0))
         self.size_buttons = []
-        widths = self.fill_widths([0] * len(config.NUMBER_SIZES))
+        widths = [80] * len(config.NUMBER_SIZES)
         for size, width in zip(config.NUMBER_SIZES, widths):
             button = ui.Button(row, PANEL_BG,
                                lambda hover, size=size, width=width:
@@ -411,7 +410,7 @@ class App(DashboardPage, ScreensaverPage, GamesPage, WirelessTab):
                  ("Releases", updater.RELEASES_URL, False),
                  ("Licence", updater.PROJECT_URL + "/blob/main/LICENSE", False),
                  ("Ko-fi", updater.KOFI_URL, True))
-        widths = self.fill_widths([self.pill_width(label, kofi) for label, _, kofi in links])
+        widths = self.button_widths([self.pill_width(label, kofi) for label, _, kofi in links])
         buttons = []
         for (label, url, kofi), width in zip(links, widths):
             buttons.append(ui.Button(
@@ -453,19 +452,17 @@ class App(DashboardPage, ScreensaverPage, GamesPage, WirelessTab):
         widths[-1] = total - gap * (len(naturals) - 1) - sum(widths[:-1])
         return widths
 
+    @staticmethod
+    def button_widths(naturals):
+        """Content-sized buttons, with a floor so short labels still make a
+        comfortable target."""
+        return [max(BUTTON_MIN, round(width)) for width in naturals]
+
     def pack_row(self, buttons, gap=8):
         """Packs buttons side by side, gap between them and none at the end."""
         for index, button in enumerate(buttons):
             button.pack(side="left",
                         padx=(0, 0 if index == len(buttons) - 1 else self.kit.px(gap)))
-
-    def spread_row(self, buttons):
-        """Fixed-size buttons spaced evenly from edge to edge of the row."""
-        room = self.kit.px(CARD_WIDTH) - sum(button.winfo_reqwidth() for button in buttons)
-        gaps = len(buttons) - 1
-        for index, button in enumerate(buttons):
-            gap = room // gaps + (1 if index < room % gaps else 0) if index < gaps else 0
-            button.pack(side="left", padx=(0, gap))
 
     def caption(self, parent, text):
         picture = ui.Picture(parent, PANEL_BG)
@@ -490,7 +487,7 @@ class App(DashboardPage, ScreensaverPage, GamesPage, WirelessTab):
             selected = self.page == "screensaver"
         else:
             selected = self.page == "control" and key == self.mode
-        accent = self.accent(key) if key in config.MODES else None
+        accent = self.accent(key) if key in dial.ACCENTS else None
         if selected:
             k.rounded(image, (0, 0, NAV_WIDTH, NAV_HEIGHT), 12, ui.CARD_BG, ui.CARD_EDGE)
             if accent:
@@ -508,7 +505,7 @@ class App(DashboardPage, ScreensaverPage, GamesPage, WirelessTab):
 
     def paint_device(self, port, description, hover):
         k = self.kit
-        width, height = CARD_WIDTH, DEVICE_ROW_HEIGHT
+        width, height = FORM_WIDTH, DEVICE_ROW_HEIGHT
         image = k.canvas(width, height, PANEL_BG)
         chosen = self.settings["port"].upper() == port.upper()
         k.rounded(image, (0, 0, width, height), 9,
@@ -634,7 +631,7 @@ class App(DashboardPage, ScreensaverPage, GamesPage, WirelessTab):
 
     def paint_toggle(self, on, title, detail, hover):
         k = self.kit
-        width, height = CARD_WIDTH, 40
+        width, height = FORM_WIDTH, 40
         image = k.canvas(width, height, PANEL_BG)
         k.text(image, 0, 12, title, "semibold", 10, ui.INK)
         k.text(image, 0, 30, detail, "regular", 8.5, ui.MUTED_INK, width=width - 60)
@@ -1099,8 +1096,7 @@ class App(DashboardPage, ScreensaverPage, GamesPage, WirelessTab):
         if self.app_update_available():
             actions.insert(0, ("Update app", lambda: webbrowser.open(self.release["url"]),
                                True, True))
-        # Wraps onto a second line when the buttons don't fit side by side;
-        # each line is stretched to span the full width.
+        # Wraps onto a second line when the buttons don't fit side by side.
         lines, used = [], CARD_WIDTH + 1
         for action in actions:
             width = self.pill_width(action[0])
@@ -1112,7 +1108,7 @@ class App(DashboardPage, ScreensaverPage, GamesPage, WirelessTab):
         for number, line_actions in enumerate(lines):
             line = tk.Frame(self.about_actions, bg=PANEL_BG)
             line.pack(anchor="w", pady=(self.kit.px(8) if number else 0, 0))
-            widths = self.fill_widths([self.pill_width(action[0]) for action in line_actions])
+            widths = self.button_widths([self.pill_width(action[0]) for action in line_actions])
             buttons = []
             for (label, command, primary, enabled), width in zip(line_actions, widths):
                 button = ui.Button(
@@ -1379,9 +1375,12 @@ class App(DashboardPage, ScreensaverPage, GamesPage, WirelessTab):
                           16, dial.VALUE_INK, max_width=200)
             self.put_text(draw, c, c + dial.MEDIA_ARTIST_Y, state.get("artist", ""),
                           12, dial.ARTIST_INK, max_width=160)
+            # Players without media controls report no length, only the time
+            # Revo1 has counted, so that is shown on its own.
+            clock = f"{position // 60}:{position % 60:02d}"
             if duration:
-                clock = (f"{position // 60}:{position % 60:02d} / "
-                         f"{duration // 60}:{duration % 60:02d}")
+                clock += f" / {duration // 60}:{duration % 60:02d}"
+            if duration or state.get("status"):
                 self.put_text(draw, c, c + dial.MEDIA_TIME_Y, clock, 12, dial.TIME_INK)
         elif self.mode == "Pomodoro":
             timer = self.pomodoro
@@ -1405,6 +1404,9 @@ class App(DashboardPage, ScreensaverPage, GamesPage, WirelessTab):
                                c, c + dial.MUTE_ICON_Y,
                                dial.MUTED_INK if muted else dial.FOOTER_INK,
                                size=dial.MUTE_ICON_SIZE)
+            else:
+                self.draw_icon(pixels, self.mode, c, c + dial.MUTE_ICON_Y,
+                               dial.FOOTER_INK, size=dial.MUTE_ICON_SIZE)
             image = Image.fromarray(pixels)
             draw = ImageDraw.Draw(image)
             self.put_text(draw, c, c, str(self.value), self.settings["number_size"],
@@ -1552,10 +1554,14 @@ class App(DashboardPage, ScreensaverPage, GamesPage, WirelessTab):
         if self.mode == "Games":
             return
         if self.mode == "Pomodoro":
-            # The knob sets the length of the phase shown while it is stopped.
-            if not self.pomodoro.running:
-                self.set_pomodoro_minutes(self.pomodoro.phase,
-                                          self.pomodoro.minutes[self.pomodoro.phase] + steps)
+            # Before a phase starts the knob sets its length; once it has
+            # started, a minute per click is added to or taken from what is left.
+            timer = self.pomodoro
+            if timer.untouched:
+                self.set_pomodoro_minutes(timer.phase, timer.minutes[timer.phase] + steps)
+            else:
+                timer.adjust(steps * 60)
+                self.after_pomodoro_change()
             return
         if self.mode in ("Scroll", "Zoom") and steps:
             # Segment indices run anticlockwise, so a clockwise turn decreases them.
@@ -1633,7 +1639,7 @@ class App(DashboardPage, ScreensaverPage, GamesPage, WirelessTab):
                         controls.zoom(steps)
                         value = 50
                     else:
-                        self.media.seek(steps * 5)
+                        self.media.seek_clicks(steps)
                         self.events.put(("media", self.media.snapshot()))
                         value = 50
                     self.events.put(("value", (mode, value)))
@@ -1659,6 +1665,7 @@ class App(DashboardPage, ScreensaverPage, GamesPage, WirelessTab):
         self.push_saver()
         self.push_pomodoro()
         self.bridge.send_mute(self.muted["Volume"], self.muted["Mic"])
+        self.bridge.send_game_best(self.settings["whack_best"])
         self.bridge.request_library()
         try:
             self.refresh_value()
@@ -1745,9 +1752,9 @@ class App(DashboardPage, ScreensaverPage, GamesPage, WirelessTab):
                     if self.mode in MUTE_MODES:
                         self.toggle_mute()
                 elif kind == "game":
-                    self.game_result = payload
-                    if self.mode == "Games" and not self.menu:
-                        self.render()
+                    self.record_score(payload[0], payload[1])
+                elif kind == "game_best":
+                    self.record_score(None, payload)
                 elif kind == "levels":
                     self.levels_pending = False
                     self.levels = payload
@@ -1837,7 +1844,9 @@ class App(DashboardPage, ScreensaverPage, GamesPage, WirelessTab):
     def push_pomodoro(self):
         if self.connected:
             timer = self.pomodoro
-            self.bridge.send_pomodoro(timer.phase, timer.remaining(), timer.total,
+            remaining = timer.remaining()
+            # Time added with the knob can outgrow the phase; the ring stays full.
+            self.bridge.send_pomodoro(timer.phase, remaining, max(timer.total, remaining),
                                       timer.running)
             self.pomodoro_sent = time.monotonic()
 
@@ -1863,7 +1872,7 @@ class App(DashboardPage, ScreensaverPage, GamesPage, WirelessTab):
 
     def paint_backlight(self, hover):
         k = self.kit
-        width, height = CARD_WIDTH, 34
+        width, height = FORM_WIDTH, 34
         image = k.canvas(width, height, PANEL_BG)
         value = self.settings["backlight"]
         track = width - 56
@@ -1881,7 +1890,7 @@ class App(DashboardPage, ScreensaverPage, GamesPage, WirelessTab):
 
     def drag_backlight(self, event):
         left = self.kit.px(30)
-        right = self.kit.px(30 + CARD_WIDTH - 56 - 30)
+        right = self.kit.px(30 + FORM_WIDTH - 56 - 30)
         fraction = min(1.0, max(0.0, (event.x - left) / max(right - left, 1)))
         value = round(5 + fraction * 95)
         if value != self.settings["backlight"]:

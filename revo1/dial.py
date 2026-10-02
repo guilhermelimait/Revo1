@@ -61,6 +61,8 @@ ACCENTS = {
     "Media": (255, 116, 56),
     "Pomodoro": (232, 58, 58),
     "Games": (150, 200, 30),
+    # Not a knob screen, but it has a tile and a sidebar entry of its own.
+    "Screensaver": (186, 92, 230),
 }
 
 # Swatches offered for a single custom bar colour.

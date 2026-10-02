@@ -41,10 +41,10 @@ ROW_GAP = 14
 SWATCH = 32
 SWATCH_GAP = 8
 RADIO_GAP = 24
-# Every button on the page is one size; five of them fill a row exactly.
-CHOICE_W = 140
-CHOICE_H = 36
-CHOICE_GAP = (CARD_WIDTH - 5 * CHOICE_W) // 4
+# Every choice button on the page is one size, just roomy enough for "30 min".
+CHOICE_W = 84
+CHOICE_H = 34
+CHOICE_GAP = 8
 SHOW_TITLES = {"pictures": "Pictures", "clock": "Date and time", "both": "Pictures and time"}
 SHOW_DETAILS = {"pictures": "Your photos and videos", "clock": "Big clock and the date",
                 "both": "The time over your photos"}
@@ -363,7 +363,8 @@ class ScreensaverPage:
         self.thumb_canvas.bind("<MouseWheel>", self.scroll_thumbs)
         row = tk.Frame(body, bg=PANEL_BG)
         row.pack(anchor="w", pady=(k.px(14), 0))
-        widths = self.fill_widths([0, 0], CHOICE_GAP)
+        widths = self.button_widths([self.pill_width("Add pictures or videos\u2026"),
+                                     self.pill_width("Send to knob")])
         self.saver_buttons = [
             ui.Button(row, PANEL_BG,
                       lambda hover, width=widths[0]: self.paint_pill(

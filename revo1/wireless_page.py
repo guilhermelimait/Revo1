@@ -14,11 +14,10 @@ from revo1.layout import CARD_WIDTH, PANEL_BG
 LINKS = (("usb", "Usb", "USB cable"), ("wifi", "Wifi", "Wi-Fi"),
          ("ble", "Bluetooth", "Bluetooth"))
 LINK_GAP = 12
-LINK_W = (CARD_WIDTH - 2 * LINK_GAP) // 3
-LINK_H = 72
+LINK_W = 236
+LINK_H = 64
 FIELD_GAP = 12
-# One short of half, so rounding at any display scale keeps both borders.
-FIELD_W = (CARD_WIDTH - FIELD_GAP) // 2 - 1
+FIELD_W = 214
 WIFI_TEXT = {"off": "Off", "connecting": "Joining {ssid}\u2026",
              "connected": "On {ssid}", "bad_password": "Wrong password",
              "not_found": "Can't find {ssid}"}
@@ -182,12 +181,12 @@ class WirelessTab:
             k.rounded(image, (0, 0, LINK_W, LINK_H), 12, ui.CARD_BG, ui.CARD_EDGE)
             ink, sub = ui.INK, ui.MUTED_INK
         k.icon(image, icon, 30, LINK_H / 2, ink if active or ready else ui.IDLE_GREY, 0.7)
-        k.text(image, 54, 27, title, "semibold", 10, ink, width=LINK_W - 64)
+        k.text(image, 54, 23, title, "semibold", 10, ink, width=LINK_W - 64)
         warn = detail in ("Wrong password",) or detail.startswith("Can't find")
         if not active:
-            k.dot(image, 58, 47, 3, ui.OK_GREEN if ready else
+            k.dot(image, 58, 43, 3, ui.OK_GREEN if ready else
                   (ERROR_RED if warn else ui.IDLE_GREY))
-        k.text(image, 54 if active else 66, 47, detail, "regular", 8.5,
+        k.text(image, 54 if active else 66, 43, detail, "regular", 8.5,
                ERROR_RED if warn and not active else sub,
                width=LINK_W - (64 if active else 76))
         return image
@@ -244,7 +243,7 @@ class WirelessTab:
         actions = [(label, self.pair_knob, True, usb and not busy)]
         if self.link_key or self.knob_key_id():
             actions.append(("Forget pairing", self.forget_pairing, False, not busy))
-        widths = self.fill_widths([self.pill_width(action[0]) for action in actions])
+        widths = self.button_widths([self.pill_width(action[0]) for action in actions])
         buttons = []
         for (text, command, primary, enabled), width in zip(actions, widths):
             button = ui.Button(

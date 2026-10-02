@@ -1740,6 +1740,11 @@ static void render_canvas(void)
                         draw_menu_icon(icon, SCREEN_CENTER, SCREEN_CENTER + MUTE_ICON_Y,
                                        MUTE_ICON_SIZE, 0x8A, 0x8A, 0x98);
                     }
+                } else {
+                    /* Brightness: its icon in the same place, as a label. */
+                    draw_menu_icon(&menu_icons[selected_mode], SCREEN_CENTER,
+                                   SCREEN_CENTER + MUTE_ICON_Y, MUTE_ICON_SIZE,
+                                   0x8A, 0x8A, 0x98);
                 }
             } else if (selected_mode == GAMES_MODE) {
                 if (game_state == GAME_LOBBY) {
@@ -1879,10 +1884,18 @@ static void apply_labels(void)
         lv_label_set_text(artist_label, media_artist);
         const int elapsed = media_elapsed();
         char clock[48];
-        snprintf(clock, sizeof(clock), "%d:%02d / %d:%02d",
-                 elapsed / 60, elapsed % 60,
-                 media_duration / 60, media_duration % 60);
-        lv_label_set_text(time_label, media_duration > 0 ? clock : "");
+        if (media_duration > 0) {
+            snprintf(clock, sizeof(clock), "%d:%02d / %d:%02d",
+                     elapsed / 60, elapsed % 60,
+                     media_duration / 60, media_duration % 60);
+        } else if (media_status != 0) {
+            /* Players without media controls have no length; the app counts
+               how long they have played, so show just that. */
+            snprintf(clock, sizeof(clock), "%d:%02d", elapsed / 60, elapsed % 60);
+        } else {
+            clock[0] = '\0';
+        }
+        lv_label_set_text(time_label, clock);
         lv_obj_clear_flag(title_label, LV_OBJ_FLAG_HIDDEN);
         lv_obj_clear_flag(artist_label, LV_OBJ_FLAG_HIDDEN);
         lv_obj_clear_flag(time_label, LV_OBJ_FLAG_HIDDEN);
@@ -2731,6 +2744,22 @@ static void handle_command(char *line)
             /* The icon is part of the chrome, so the whole dial is redrawn. */
             if (!show_menu && mode_can_mute(selected_mode)) refresh_screen();
         }
+        return;
+    }
+
+    if (strncmp(line, "GAMEBEST,", 9) == 0) {
+        /* The app keeps a copy of the best score; the higher one wins, so a
+           reflashed knob gets its record back. */
+        int best;
+        if (!parse_integer(line + 9, 0, 0xFFFF, &best)) return;
+        if (best > whack_best) {
+            whack_best = best;
+            whack_save_best();
+            if (!show_menu && selected_mode == GAMES_MODE && game_state == GAME_LOBBY) {
+                refresh_screen();
+            }
+        }
+        host_printf("GAME,BEST,%d\n", whack_best);
         return;
     }
 

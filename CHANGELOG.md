@@ -2,6 +2,25 @@
 
 ## Unreleased
 
+- Pomodoro: once a timer has started, turning the knob adds or removes a
+  minute per click.
+- Dashboard tiles are more compact, and the Screensaver tile has its own
+  colour like the others. The Brightness screen shows its icon on the knob
+  and in the preview.
+- Media players without Windows media controls (Stremio, for example) now
+  work with the knob: the time counts up from when Revo1 noticed playback,
+  and turning the knob seeks 10 seconds per click by sending the arrow keys
+  to the player (which is briefly brought to the front). With no known length
+  the knob shows the elapsed time alone. Next and previous do what the player
+  does with them: Stremio only skips between episodes.
+- Whack-a-Mole: the app saves your last and best scores and shows them on the
+  Games page. On connecting it sends its best to the knob (`GAMEBEST`), so a
+  reflashed knob gets its record back.
+- The Settings and Screensaver pages are tighter: forms, switches and sliders
+  use a comfortable width instead of the whole page, buttons fit their text,
+  choice buttons are smaller and closer together, and the Wireless cards are
+  shorter.
+
 - Dashboard tiles are taller and show only what matters: the value, plus
   **Muted**, **Paused** or **Break** when that applies. Gone: the screensaver
   picture count, Pomodoro's "Focus · ready", and Media's "Playing".

@@ -3,7 +3,7 @@ The games themselves are played on the knob."""
 
 import tkinter as tk
 
-from revo1 import dial, ui
+from revo1 import config, dial, ui
 from revo1.layout import CARD_WIDTH
 
 CARD_GAP = 10
@@ -20,7 +20,7 @@ GAMES = (("Whack-a-Mole", WHACK_ART), (None, None), (None, None))
 
 
 class GamesPage:
-    """Mixed into App; uses its kit, settings and game_result."""
+    """Mixed into App; uses its kit and settings (which keep the scores)."""
 
     def build_games_panel(self, page):
         k = self.kit
@@ -44,6 +44,18 @@ class GamesPage:
             self.game_cards.append(card)
         self.games_panel = panel
 
+    def record_score(self, last, best):
+        """Keeps the knob's Whack-a-Mole scores; `last` is None when the knob
+        only reports its best (on connecting)."""
+        best = max(best, self.settings["whack_best"])
+        last = self.settings["whack_last"] if last is None else last
+        if (best, last) == (self.settings["whack_best"], self.settings["whack_last"]):
+            return
+        self.settings["whack_best"], self.settings["whack_last"] = best, last
+        config.save(self.settings)
+        self.refresh_games()
+        self.refresh_dashboard_tile("Games")
+
     def refresh_games(self):
         for card, (name, art) in zip(self.game_cards, GAMES):
             card.show(self.paint_game_card(name, art))
@@ -65,10 +77,13 @@ class GamesPage:
             k.icon(image, shape, centre, ART_Y, colour, ART_SIZE)
         k.text(image, centre, 100, name, "semibold", 12, ui.INK, anchor="mm",
                width=CARD_W - 24)
-        if self.game_result is None:
-            score = "No score yet"
+        best, last = self.settings["whack_best"], self.settings["whack_last"]
+        if last >= 0:
+            score = f"Best {best} \u00b7 Last {last}"
+        elif best:
+            score = f"Best {best}"
         else:
-            score = f"Best {self.game_result[1]} \u00b7 Last {self.game_result[0]}"
+            score = "No score yet"
         k.text(image, centre, 122, score, "regular", 8.5, ui.MUTED_INK, anchor="mm",
                width=CARD_W - 24)
         ink = dial.label_ink(self.accent("Games"))

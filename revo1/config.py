@@ -29,7 +29,7 @@ DEFAULTS = {"mode": "Volume", "orientation": 0, "port": "", "name": DEFAULT_NAME
             "saver_show": "pictures", "clock_format": "24h", "saver_ring": "dots",
             "clock_ink": "#F2F2F5", "clock_face": "#000000", "clock_shade": True,
             "dim_idle": True, "link_key": "", "wifi_ssid": "",
-            "knob_ip": "", "knob_ble": ""}
+            "knob_ip": "", "knob_ble": "", "whack_best": 0, "whack_last": -1}
 FLAGS = ("minimize_to_tray", "invert_scroll", "invert_zoom", "swipe_screens",
          "saver_enabled", "dim_idle", "clock_shade")
 # The wireless pairing: the key (protected with Windows DPAPI, see
@@ -52,6 +52,8 @@ RING_STYLES = ("dots", "bar", "wave", "ticks", "comet", "none")
 CLOCK_COLOURS = ("clock_ink", "clock_face")
 POMODORO_MINUTES = range(1, 181)
 BACKLIGHT_RANGE = range(5, 101)
+# Whack-a-Mole scores, as the knob reports them; -1 is "no round played yet".
+SCORE_RANGE = range(0, 0x10000)
 
 
 def screen_mask(screens):
@@ -119,7 +121,9 @@ def load(path=None):
                "focus_minutes": pick("focus_minutes", number_in(POMODORO_MINUTES)),
                "break_minutes": pick("break_minutes", number_in(POMODORO_MINUTES)),
                "saver_idle": pick("saver_idle", number_in(SAVER_IDLE_CHOICES)),
-               "saver_interval": pick("saver_interval", number_in(SAVER_INTERVAL_CHOICES))}
+               "saver_interval": pick("saver_interval", number_in(SAVER_INTERVAL_CHOICES)),
+               "whack_best": pick("whack_best", number_in(SCORE_RANGE)),
+               "whack_last": pick("whack_last", number_in(range(-1, 0x10000)))}
     # Keep the menu order fixed whatever order the file lists them in.
     screens = [candidate for candidate in MODES
                if candidate in screens or candidate not in known]

@@ -9,7 +9,7 @@ from revo1.layout import CARD_WIDTH
 TILE_GAP = 10
 TILE_COLUMNS = 3
 TILE_WIDTH = (CARD_WIDTH - TILE_GAP * (TILE_COLUMNS - 1)) // TILE_COLUMNS
-TILE_HEIGHT = 156
+TILE_HEIGHT = 112
 # The switch in a tile's top-right corner, in layout units from that corner.
 SWITCH_W, SWITCH_H = 34, 20
 LEVEL_REFRESH_MS = 2000
@@ -72,7 +72,8 @@ class DashboardPage:
                     pomodoro.PHASE_NAMES[timer.phase] if timer.phase else "",
                     timer.fraction())
         if key == "Games":
-            return "Whack-a-mole", "", None
+            best = self.settings["whack_best"]
+            return (f"Best {best}" if best else "No score yet"), "", None
         if key == "Screensaver":
             if not self.settings["saver_enabled"]:
                 return "Off", "", None
@@ -84,31 +85,31 @@ class DashboardPage:
         width, height = TILE_WIDTH, TILE_HEIGHT
         image = k.canvas(width, height, ui.MAIN_BG)
         on = self.tile_on(key)
-        k.rounded(image, (0, 0, width, height), 16,
+        k.rounded(image, (0, 0, width, height), 14,
                   "#FFFFFF" if hover else ui.CARD_BG, ui.CARD_EDGE)
-        accent = self.accent(key) if key in config.MODES else ui.rgb(ui.SUBTLE_INK)
+        accent = self.accent(key)
         ink = dial.label_ink(accent) if on else ui.MUTED_INK
-        k.icon(image, key, 26, 28, ink, 0.78)
-        k.text(image, 46, 28, config.title(key), "semibold", 10.5,
-               ui.INK if on else ui.SUBTLE_INK, width=width - 46 - SWITCH_W - 18)
-        self.paint_switch(image, width - 14 - SWITCH_W, 28 - SWITCH_H / 2, on, hover)
+        k.icon(image, key, 24, 26, ink, 0.72)
+        k.text(image, 42, 26, config.title(key), "semibold", 10,
+               ui.INK if on else ui.SUBTLE_INK, width=width - 42 - SWITCH_W - 18)
+        self.paint_switch(image, width - 14 - SWITCH_W, 26 - SWITCH_H / 2, on, hover)
         headline, detail, level = self.tile_text(key)
         muted = detail == "Muted"
         value_ink = ui.INK if on and not muted else ui.SUBTLE_INK
         # A number reads large; a phrase sits smaller so it fits on one line.
         big = len(headline) <= 8 and not headline[0].isalpha()
-        k.text(image, 16, 92, headline, "semibold", 22 if big else 13, value_ink,
+        k.text(image, 16, 66, headline, "semibold", 17 if big else 11.5, value_ink,
                width=width - 32)
         if level is not None:
             bar = ui.MUTED_INK if muted or not on else dial.label_ink(accent)
-            k.rounded(image, (16, 130, width - 16, 135), 2.5, ui.CARD_EDGE)
+            k.rounded(image, (16, 90, width - 16, 94), 2, ui.CARD_EDGE)
             if level > 0:
-                k.rounded(image, (16, 130, max(21, 16 + (width - 32) * level), 135), 2.5, bar)
+                k.rounded(image, (16, 90, max(20, 16 + (width - 32) * level), 94), 2, bar)
             if detail:
-                k.text(image, width - 16, 92, detail, "semibold" if muted else "regular", 9,
+                k.text(image, width - 16, 66, detail, "semibold" if muted else "regular", 9,
                        dial.MUTED_INK if muted else ui.MUTED_INK, anchor="rm")
         elif detail:
-            k.text(image, 16, 124, detail, "regular", 9, ui.MUTED_INK, width=width - 32)
+            k.text(image, 16, 90, detail, "regular", 8.5, ui.MUTED_INK, width=width - 32)
         return image
 
     def paint_switch(self, image, x, y, on, hover):

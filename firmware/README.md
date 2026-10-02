@@ -83,6 +83,8 @@ The host owns the timer. `POMO,<phase>,<remaining s>,<total s>,<running>`
 arrives on every change and once a minute; the firmware counts the seconds
 down locally in between so the ring and the `M:SS` number move smoothly, and
 a tap on the dial sends `POMO,TOGGLE` back. The chime plays on the PC.
+Turning the knob on this screen sends `ROT` as usual; the app adds or removes
+a minute per click once the timer has started and answers with a new `POMO`.
 
 ## Mute
 
@@ -125,7 +127,9 @@ it. A tap on the card starts a 30-second round. While a round runs:
 
 At the end the knob shows the score and sends `GAME,WHACK,<score>,<best>`.
 A tap on the cap plays again.
-The best score is kept in NVS key `whack`. Taps in the first 800 ms after a
+The best score is kept in NVS key `whack`. On connecting, the app sends its
+saved best as `GAMEBEST,<best>`; the knob keeps the higher of the two and
+answers `GAME,BEST,<best>`, so a reflashed knob gets its record back. Taps in the first 800 ms after a
 round ends are ignored, so a late whack doesn't start a new round. Leaving the
 screen abandons the round.
 
@@ -237,6 +241,10 @@ title and artist sit in the band below the cap (`MEDIA_TITLE_Y`,
 `esp_timer_get_time()`. `media_elapsed` then interpolates locally while the
 status is playing, so the ring advances smoothly between the once-a-second host
 updates instead of stepping.
+
+A duration of 0 means the length is unknown (a player picked up from its sound):
+while it is not stopped, `apply_labels` shows the elapsed `m:ss` alone instead
+of `elapsed / length`.
 
 The transport touch zones are checked **before** the centre-tap menu circle,
 which covers the whole cap (`DIAL_CAP_R`) outside the menu, so tapping the cap

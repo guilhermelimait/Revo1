@@ -63,13 +63,15 @@ sync as you turn the knob.
 - **Pomodoro:** pick the focus and break lengths, then tap the dial (on the
   knob or in the app) to start or pause. The ring counts down on the knob,
   and the PC plays a chime when it's time for a break and when the break
-  ends.
+  ends. Once the timer has started, turning the knob adds or removes a
+  minute per click.
 - **Games:** a round card for each game, played on the knob; the app shows
   every game as a card in a grid, with your scores. The first is
   Whack-a-Mole: turn to aim at one of seven
   holes and touch to whack. Gold moles are worth 3 points and bombs cost 3.
   A round lasts 30 seconds and gets faster as it goes. The knob keeps your
-  best score, and the app shows your last and best scores.
+  best score, and the app saves your last and best scores (and gives the
+  best back to a reflashed knob).
 - **Screensaver:** add pictures (JPEG, PNG, BMP, WebP, ...), animated GIFs
   or short videos (MP4, MOV, AVI, MKV, WebM). Revo1 crops them to the round
   screen and stores them on the knob (up to about 12.9 MB), which shows them
@@ -84,8 +86,12 @@ sync as you turn the knob.
   title, artist, progress ring, and big play/pause, previous and next buttons.
   Turning the knob seeks 5 seconds per click. Players that don't report to
   Windows' media controls (Stremio, for example) are picked up from their
-  sound: the knob shows the app's window title, and play/pause, previous and
-  next go straight to that app (no title, progress or seeking for these).
+  sound: the knob shows the app's window title and how long it has been
+  playing (counted from when Revo1 noticed it), play/pause, previous and next
+  go straight to that app, and turning the knob seeks 10 seconds per click
+  by sending the arrow keys to the player, which briefly comes to the front.
+  Previous and next do what the player does with them: Stremio only skips
+  between episodes.
 - **Radial menu:** tap the centre or the back icon, turn to choose, tap to
   confirm. It opens on the control you used last.
 - **Always in sync:** the knob, the screen and the app window show the same
@@ -184,6 +190,7 @@ how the knob is linked: **On USB cable**, **On Wi-Fi** or **On Bluetooth**.
   number greys and **MUTED** shows above it.
   The back icon still opens the menu.
 - On the **Pomodoro** screen, tap the dial to start or pause the timer.
+  Once it has started, turn the knob to add or remove a minute per click.
 - The **Games** screen opens on the game cards. Turn the knob to pick a
   card (once there is more than one game) and tap it to play. In
   Whack-a-Mole, turn the knob to move the ring between the holes and touch
@@ -395,6 +402,7 @@ framing.
 | PC to device | `MUTE,<0\|1 speakers>,<0\|1 microphone>` | Mute state, sent on connect and on every change |
 | Device to PC | `MUTE,TOGGLE` | Centre of the Volume or Microphone dial tapped |
 | Device to PC | `GAME,WHACK,<score>,<best>` | Whack-a-Mole round finished |
+| PC to device | `GAMEBEST,<best>` | The app's saved Whack-a-Mole best, sent on connect; the knob keeps the higher one and answers `GAME,BEST,<best>` |
 | PC to device | `SAVER,<0\|1>,<idle s>,<seconds per item>,<0 pictures\|1 clock\|2 both>[,<ring 0-5>]` | Screensaver settings; answered by `SAVER_OK` |
 | PC to device | `SAVERLOOK,<shade 0\|1>,<time RRGGBB>,<background RRGGBB>` | Screensaver clock colours and picture shade; answered by `SAVERLOOK_OK` |
 | PC to device | `TIME,<local seconds>,<1 for 24-hour\|0>` | Sets the knob's clock (local time counted as if it were UTC); answered by `TIME_OK` |
