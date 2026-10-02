@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- The knob no longer jumps to Volume whenever the app connects or reconnects
+  (starting Revo1, a reinstall, a cable, Wi-Fi or Bluetooth link): it opens
+  its main menu instead. Value updates no longer close a menu opened on the
+  knob either. `STATE` gains an optional keep-view field for this.
 - The screensaver's seconds ring now follows the **Time colour**, on the knob
   and in the preview.
 - Five animated seconds ring styles, laid out in a second row: **Walker** (a

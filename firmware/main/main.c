@@ -2918,6 +2918,7 @@ static void handle_command(char *line)
     char *mode = strtok_r(line + 6, ",", &save);
     char *value_text = strtok_r(NULL, ",", &save);
     char *orientation_text = strtok_r(NULL, ",", &save);
+    char *keep_text = strtok_r(NULL, ",", &save);
     if (!mode || !value_text || !orientation_text || strtok_r(NULL, ",", &save)) {
         return;
     }
@@ -2932,17 +2933,25 @@ static void handle_command(char *line)
          parsed_orientation != 180 && parsed_orientation != 270)) {
         return;
     }
+    int keep = 0;
+    if (keep_text && !parse_integer(keep_text, 0, 1, &keep)) return;
+    /* With keep set (value updates and a fresh connection) an open menu
+       stays open; only picking a screen in the app leaves it. */
+    const bool stay_in_menu = keep && show_menu;
+    const bool turned = parsed_orientation != orientation;
     /* Only a change of view needs the static chrome composed again; a new
        value just retargets the arc, which the animation tick sweeps to. */
-    const bool view_changed = show_menu || parsed_mode != selected_mode ||
-                              parsed_orientation != orientation;
+    const bool view_changed = (show_menu && !stay_in_menu) || parsed_mode != selected_mode ||
+                              turned;
     selected_mode = parsed_mode;
     selected_value = parsed_value;
     orientation = parsed_orientation;
-    show_menu = false;
+    if (!stay_in_menu) show_menu = false;
     state_received = true;
     save_settings();
-    if (view_changed) {
+    if (stay_in_menu) {
+        if (turned) refresh_screen();
+    } else if (view_changed) {
         /* Entering a view sweeps the arc up from nothing. */
         dial_value_q8 = 0;
         reset_comet();
@@ -4488,8 +4497,11 @@ void app_main(void)
                     memset(whack_holes, 0, sizeof(whack_holes));
                     game_state = GAME_LOBBY;
                     stop_saver();
+                } else {
+                    /* The app (re)connected: start from the main menu. */
+                    open_menu();
+                    host_printf("MENU\n");
                 }
-                /* Coming back shows whichever screen was open before. */
                 refresh_screen();
             }
         }

@@ -98,7 +98,7 @@ sync as you turn the knob.
   value, and volume changes made elsewhere in Windows show up on the knob.
 - **Knows when the app is gone:** if Revo1 isn't running, or isn't reached
   over USB, Wi-Fi or Bluetooth, the knob shows **Not connected** instead of
-  any screen, and comes back to where it was as soon as the app answers.
+  any screen, and opens its main menu as soon as the app answers.
 - **Personalise it:** one colour per control or a single colour of your
   choice, four sizes for the big number, and screen orientation in 90 degree
   steps.
@@ -393,7 +393,7 @@ framing.
 | Device to PC | `TAP,<0..7>` | Menu choice confirmed (mode index) |
 | Device to PC | `CURSOR,<0..7>` | Knob moved the menu highlight (mode index) |
 | Device to PC | `SWIPE,LEFT` or `SWIPE,RIGHT` | Change control |
-| PC to device | `STATE,<MODE>,<0..100>,<0\|90\|180\|270>` | Set screen state |
+| PC to device | `STATE,<MODE>,<0..100>,<0\|90\|180\|270>[,<1 keep>]` | Set screen state; with keep an open menu stays open (value updates and connecting), without it the knob opens `MODE` |
 | PC to device | `SHOWMENU` | Show radial menu |
 | PC to device | `COMETRESET` | Put the scroll/zoom comet back at its start (sent on connect) |
 | PC to device | `STYLE,<STANDARD\|RRGGBB>,<24\|32\|40\|48>[,<bar style 0-3>]` | Bar colour, number size and bar style (0 glowing tip, 1 fade to solid, 2 soft gradient, 3 solid) |

@@ -1283,13 +1283,14 @@ class App(DashboardPage, ScreensaverPage, GamesPage, WirelessTab):
                 if actual != self.value:
                     self.value = actual
                     self.render()
-                    if not self.menu:
-                        self.sync()
+                    self.sync()
             except (COMError, OSError, RuntimeError, ValueError) as exc:
                 self.status.set(f"Volume update failed: {exc}")
         self.root.after(1000, self.refresh_external_volume)
 
-    def refresh_value(self):
+    def refresh_value(self, show=False):
+        """Reads the current level and sends it to the knob; `show` also
+        opens that screen there, otherwise an open menu stays open."""
         if self.mode == "Volume":
             self.value = controls.volume_level()
         elif self.mode == "Mic":
@@ -1299,7 +1300,7 @@ class App(DashboardPage, ScreensaverPage, GamesPage, WirelessTab):
         else:
             self.value = 50
         self.render()
-        self.sync()
+        self.sync(show)
 
     def put_text(self, draw, x, y, text, pixels, fill, max_width=None, tracking=0):
         """Centres `text` on (x, y) exactly as an LVGL label would: the same
@@ -1519,9 +1520,10 @@ class App(DashboardPage, ScreensaverPage, GamesPage, WirelessTab):
         self.menu = False
         self.select_mode(mode)
 
-    def sync(self):
+    def sync(self, show=False):
         if self.connected:
-            self.bridge.send_state(self.mode, self.value, self.settings["orientation"])
+            self.bridge.send_state(self.mode, self.value, self.settings["orientation"],
+                                   keep=not show)
             if self.mode == "Media":
                 self.push_media(force=True)
 
@@ -1553,9 +1555,10 @@ class App(DashboardPage, ScreensaverPage, GamesPage, WirelessTab):
         self.place_side_bars()
         self.reset_comet()
         try:
-            self.refresh_value()
+            self.refresh_value(show=True)
         except (COMError, OSError, RuntimeError, ValueError, subprocess.SubprocessError) as exc:
             self.status.set(f"{self.mode}: {exc}")
+            self.sync(show=True)
 
     def set_orientation(self, value):
         self.reset_comet()
@@ -1696,6 +1699,9 @@ class App(DashboardPage, ScreensaverPage, GamesPage, WirelessTab):
                 subprocess.SubprocessError) as exc:
             self.status.set(f"{self.mode}: {exc}")
             self.sync()
+        # A fresh connection starts from the knob's main menu.
+        self.open_menu()
+        self.bridge.send_menu()
 
     def poll(self):
         try:

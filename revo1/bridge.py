@@ -94,8 +94,12 @@ class DeviceBridge:
         self.pause_event.clear()
         self.reconnect_event.set()
 
-    def send_state(self, mode, value, orientation):
-        self.outbound.put(f"STATE,{mode.upper()},{value},{orientation}\n".encode("ascii"))
+    def send_state(self, mode, value, orientation, keep=False):
+        """With keep set the knob takes the new value but stays in its menu
+        if that is open; without it the knob opens `mode`."""
+        flag = ",1" if keep else ""
+        self.outbound.put(f"STATE,{mode.upper()},{value},{orientation}{flag}\n"
+                          .encode("ascii"))
 
     def send_style(self, accent, number_size, bar_style="glow"):
         """accent is "standard" or "#RRGGBB"; number_size is the font in pixels;

@@ -345,7 +345,14 @@ from the app, over USB, Wi-Fi or Bluetooth, counts as a sign of life; after
 knob replaces every screen with **Not connected** and "Open Revo1 on your
 PC". Meanwhile the screensaver stays off, a game round is abandoned, and a
 touch or turn only wakes the screen. When the app is heard again the knob
-returns to the screen it was on.
+opens its main menu and sends `MENU`, and the app sends `SHOWMENU` on every
+connection too, so a fresh session always starts from the menu.
+
+`STATE` takes an optional fifth field, `1` to keep the view: the knob takes
+the mode, value and orientation but an open menu stays open. The app sets it
+on connecting and on every value update (a knob turn, a volume change made
+elsewhere in Windows), so none of them can close the menu; only picking a
+screen in the app sends `STATE` without it and opens that screen.
 
 Until the first `STATE` after boot, the firmware sends `SYNC` with every
 `HELLO`, and a connected app answers with its style and state. The merged
