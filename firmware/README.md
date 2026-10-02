@@ -196,11 +196,13 @@ a flat line after it), 3 ticks (watch-style marks), 4 comet (a head on the
 current second with a fading tail) or 5 none. `draw_seconds_ring` repaints the
 whole ring every second over the black face or the current picture (kept in
 `frame_pixels`), and again after each new frame, so it never leaves traces.
-It is saved as `ring`; a new style restarts a running screensaver.
+It is saved as `ring`; a new style is drawn in place on a running screensaver,
+with the band wiped once so the old style leaves nothing behind.
 
 The wiggly ring grows: `saver_tick` redraws it every 40 ms, the tip creeping
 on through each second. Only the last `WAVE_HEAD_S` (3) seconds behind the
-tip ripple, one wavelength a second, easing to still along the body. `draw_wave_ring` does this in integer
+tip ripple: they sway back and forth once a second (a periodic sway, so
+nothing jumps when the second turns over), easing to still along the body. `draw_wave_ring` does this in integer
 arithmetic over a packed list of the pixels within 8 px of the groove (built
 in internal RAM when the screensaver starts, freed when it ends), with the
 per-segment sine, slope and fill worked out once per frame by rotation, and

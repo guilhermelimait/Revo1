@@ -33,7 +33,8 @@
 - The seconds ring round the screensaver clock now also shows over pictures,
   and has six styles: Bullets, Bar, Wiggly, Ticks, Comet or None (an
   optional sixth `SAVER` field). The wiggly ring grows smoothly at about 25
-  frames a second: only its tip ripples, and the body behind it stays still.
+  frames a second: only its tip sways, and the body behind it stays still.
+  Picking a ring style while the screensaver is on changes it in place.
 - Removing every picture and sending the empty collection takes the knob back
   to its menu instead of the last screen.
 - The screensaver preview in the app no longer draws a coloured bezel inside

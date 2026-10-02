@@ -304,6 +304,8 @@ static int ring_second = -1;
    redrawn. */
 static int64_t ring_now_us;
 static int64_t ring_next_us;
+/* Set when the ring style changes, so the next draw clears the old one. */
+static bool ring_wipe;
 /* How many seconds behind the tip still ripple; the body before that is still. */
 #define WAVE_HEAD_S 3.0f
 /* What the running screensaver shows (one of the SAVER_ kinds). */
@@ -2416,9 +2418,13 @@ static void handle_command(char *line)
         saver_idle_s = idle;
         saver_interval_s = interval;
         saver_kind = kind;
-        /* A new ring style starts the screensaver afresh rather than drawing
-           over what is left of the old one. */
-        if (ring != saver_ring && saver_active) stop_saver();
+        /* A new ring style is drawn in place: the band is wiped once so the
+           old style leaves nothing behind, and the clock redraws at once. */
+        if (ring != saver_ring && saver_active) {
+            ring_wipe = true;
+            clock_second_shown = -1;
+            ring_next_us = 0;
+        }
         saver_ring = ring;
         save_settings();
         printf("SAVER_OK\n");
@@ -3133,7 +3139,9 @@ static void draw_wave_ring(int second, float step, const uint16_t *under,
        body, which keeps the shape it was drawn with. */
     const float fraction = (float)(ring_now_us % 1000000) * 1e-6f;
     const float tip = (float)second + fraction;
-    const float drift = fraction * 6.28318531f;
+    /* The tip sways back and forth once a second. A sway is periodic, so
+       unlike a travelling phase it has no jump when the second turns over. */
+    const float sway = 1.4f * sinf(fraction * 6.28318531f);
     /* The still phase falls by the same angle from one segment to the next,
        so its sine and cosine are carried along by rotation rather than
        computed 1024 times. The wave repeats every two seconds, so the jump
@@ -3152,7 +3160,7 @@ static void draw_wave_ring(int second, float step, const uint16_t *under,
             /* Full ripple at the tip, easing to none WAVE_HEAD_S behind it. */
             float weight = behind <= 0.0f ? 1.0f : 1.0f - behind / WAVE_HEAD_S;
             weight = weight * weight * (3.0f - 2.0f * weight);
-            const float phase = at * 3.14159265f - drift * weight;
+            const float phase = at * 3.14159265f - sway * weight;
             sine = sinf(phase);
             cosine = cosf(phase);
         }
@@ -3218,6 +3226,13 @@ static void draw_seconds_ring(int second, const uint16_t *under)
     const uint8_t *accent = accent_of(selected_mode);
     static const uint8_t track[3] = {0x34, 0x34, 0x3E};
     uint16_t *pixels = (uint16_t *)canvas_pixels;
+    if (ring_wipe) {
+        ring_wipe = false;
+        for (int i = 0; i < band_count; ++i) {
+            const uint32_t index = band_pixel[i];
+            pixels[index] = under ? under[index] : 0;
+        }
+    }
     if (saver_ring == RING_WAVE) {
         draw_wave_ring(second, step, under, accent, track);
         return;
