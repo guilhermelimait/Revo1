@@ -209,12 +209,15 @@ in the left sidebar.
   with the middle of each picture darkened so the time stays readable). A
   preview of the knob sits beside that choice's settings: **24-hour** (the
   default) or **AM/PM** for the clock and the **Seconds ring** round the edge
-  (**Bullets**, **Bar**, **Wiggly**, **Ticks**, **Comet** or **None**).
+  (**Bullets**, **Bar**, **Wiggly**, **Ticks**, **Comet** or **None**;
+  **Wiggly** flows round continuously on the knob).
   **Pictures** holds your pictures and clips; click **Add pictures or
   videos...** to add more. Hover a thumbnail
   and click the cross to remove it. **Send to knob** copies the collection
   to the device (about 110 KB/s, so a full collection takes about two
   minutes); the line under the buttons says whether the knob is up to date.
+  Sending an empty collection clears the knob, which then goes back to its
+  menu.
   Videos keep their first 20 seconds at 10 frames per second. The first time
   you add a video, Revo1 asks to download FFmpeg (an LGPL build, about
   80 MB, into `%LOCALAPPDATA%\Revo1\tools`) to read it; if `ffmpeg` is

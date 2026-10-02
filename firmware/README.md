@@ -162,7 +162,8 @@ Upload: `MEDIA_BEGIN,<total bytes>` erases what is needed and answers
 `MD_ERR` with the offset; the app keeps four in flight and writes the header
 last, so an interrupted upload never looks valid. `MEDIA_END` checks the
 header and CRC and answers `MEDIA_OK,<items>` or `MEDIA_ERR,CHECK`.
-`MEDIA_CLEAR` erases the header. After each change, and on `LIBRARY`, the
+`MEDIA_CLEAR` erases the header, ends the screensaver and opens the menu,
+since there is nothing left to show. After each change, and on `LIBRARY`, the
 knob reports `LIBRARY,<capacity>,<items>,<bytes>,<CRC hex>`, which the app
 compares with its own collection.
 
@@ -195,7 +196,14 @@ a flat line after it), 3 ticks (watch-style marks), 4 comet (a head on the
 current second with a fading tail) or 5 none. `draw_seconds_ring` repaints the
 whole ring every second over the black face or the current picture (kept in
 `frame_pixels`), and again after each new frame, so it never leaves traces.
-It is saved as `ring`.
+It is saved as `ring`; a new style restarts a running screensaver.
+
+The wiggly ring flows: `saver_tick` redraws it every 40 ms with the wave's
+phase moving one wavelength a second. `draw_wave_ring` does this in integer
+arithmetic over a packed list of the pixels within 8 px of the groove (built
+in internal RAM when the screensaver starts, freed when it ends), with the
+per-segment sine, slope and fill worked out once per frame by rotation, and
+invalidates only that narrow ring. A frame costs about 8 ms.
 
 ## Media transport screen
 

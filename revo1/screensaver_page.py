@@ -487,10 +487,10 @@ class ScreensaverPage:
         accent = self.accent(self.mode)
         c = size / 2
         r = c - 1
-        k.dot(image, c, c, r, "#101014")
-        k.dot(image, c, c, r - 3, accent)
-        k.dot(image, c, c, r - 6, "#101014")
-        inner = r - 6
+        # A thin neutral bezel only: the seconds ring is the knob's one accent.
+        k.dot(image, c, c, r, "#2A2A32")
+        k.dot(image, c, c, r - 3, "#101014")
+        inner = r - 3
         if show != "clock":
             picture = self.preview_picture()
             if picture is not None:
