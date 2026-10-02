@@ -8,7 +8,7 @@ import threading
 import time
 import tkinter as tk
 from pathlib import Path
-from tkinter import filedialog, messagebox
+from tkinter import colorchooser, filedialog, messagebox
 
 import numpy as np
 from PIL import Image, ImageDraw, ImageTk
@@ -25,9 +25,22 @@ CLOCK_LABELS = {"24h": "24-hour", "12h": "AM/PM"}
 RING_LABELS = {"dots": "Bullets", "bar": "Bar", "wave": "Wiggly", "ticks": "Ticks",
                "comet": "Comet", "none": "None"}
 RING_GAP = 8
-RING_SWATCH_H = 88
+RING_SWATCH_H = 72
 # The knob's faint track for the seconds still to come.
 RING_TRACK = (0x34, 0x34, 0x3E)
+# Colours offered for the screensaver clock; a last swatch picks any other.
+CLOCK_INKS = ("#F2F2F5", "#FFE2B0", "#8ED8FF", "#9BEBB8", "#FFB3C6", "#FFD54F", "#16161A")
+CLOCK_FACES = ("#000000", "#0B1A33", "#0D2A1E", "#2A1235", "#3A2A20", "#2C2C33", "#F4F4F6")
+WARNING_INK = "#B54708"
+# Below this contrast between the time and its background the preview warns.
+MIN_CONTRAST = 3.0
+# The Display tab's settings are rows: a label on the left, controls after it.
+ROW_LABEL_W = 112
+ROW_H = 32
+ROW_GAP = 14
+SWATCH = 32
+SWATCH_GAP = 8
+RADIO_GAP = 24
 # Every button on the page is one size; five of them fill a row exactly.
 CHOICE_W = 140
 CHOICE_H = 36
@@ -127,7 +140,28 @@ def ring_cover(size, radius, unit, marks, filled, style):
     return lit, dim
 
 
-def paint_ring(image, centre, radius, unit, marks, filled, style, accent, over_picture):
+def clock_tones(ink, face):
+    """The softer colour of the date and AM/PM and the ring's track, mixed
+    from the time's colour and the face exactly as the knob mixes them."""
+    ink, face = ui.rgb(ink), ui.rgb(face)
+    soft = tuple(f + (((i - f) * 210) >> 8) for i, f in zip(ink, face))
+    track = tuple(f + (((i - f) * 52) >> 8) for i, f in zip(ink, face))
+    return soft, track
+
+
+def contrast(first, second):
+    """The WCAG contrast ratio between two colours."""
+    def luminance(colour):
+        channels = [value / 255 for value in ui.rgb(colour)]
+        linear = [c / 12.92 if c <= 0.04045 else ((c + 0.055) / 1.055) ** 2.4
+                  for c in channels]
+        return 0.2126 * linear[0] + 0.7152 * linear[1] + 0.0722 * linear[2]
+    light, dark = sorted((luminance(first), luminance(second)), reverse=True)
+    return (light + 0.05) / (dark + 0.05)
+
+
+def paint_ring(image, centre, radius, unit, marks, filled, style, accent, over_picture,
+               track=RING_TRACK):
     """Draws the seconds ring onto an RGB image around `centre` (pixels)."""
     if style == "none":
         return
@@ -139,7 +173,7 @@ def paint_ring(image, centre, radius, unit, marks, filled, style, accent, over_p
     if over_picture:
         pixels *= (1 - 0.55 * dim)[..., None]
     else:
-        pixels += (np.array(RING_TRACK, np.float32) - pixels) * dim[..., None]
+        pixels += (np.array(track, np.float32) - pixels) * dim[..., None]
     pixels += (np.array(ui.rgb(accent), np.float32) - pixels) * lit[..., None]
     image.paste(Image.fromarray(np.clip(pixels, 0, 255).astype(np.uint8), "RGB"), box)
 
@@ -261,29 +295,44 @@ class ScreensaverPage:
         column.pack(side="left", anchor="n", padx=(k.px(PREVIEW_GAP), 0))
 
         self.saver_clock_box = box = tk.Frame(column, bg=PANEL_BG)
-        self.saver_heading(box, "Clock", "How the time is written on the knob.", COLUMN_W)
-        row = tk.Frame(box, bg=PANEL_BG)
-        row.pack(anchor="w", pady=(k.px(14), 0))
+        row, controls = self.display_row(box, "Clock")
+        row.pack(anchor="w")
         buttons = [ui.Button(
-            row, PANEL_BG,
-            lambda hover, value=value: self.paint_choice(
+            controls, PANEL_BG,
+            lambda hover, value=value: self.paint_radio(
                 self.settings["clock_format"] == value, CLOCK_LABELS[value], hover),
             lambda value=value: self.set_saver_choice("clock_format", value))
             for value in CLOCK_LABELS]
-        self.pack_row(buttons, CHOICE_GAP)
+        self.pack_row(buttons, RADIO_GAP)
         self.saver_choices += buttons
-        self.saver_heading(box, "Seconds ring", "How the seconds go round the edge.",
-                           COLUMN_W).pack_configure(pady=(k.px(BLOCK_GAP), 0))
-        row = tk.Frame(box, bg=PANEL_BG)
-        row.pack(anchor="w", pady=(k.px(14), 0))
-        widths = self.fill_widths([0] * len(RING_LABELS), RING_GAP, COLUMN_W)
+
+        row, controls = self.display_row(box, "Seconds ring", RING_SWATCH_H)
+        row.pack(anchor="w", pady=(k.px(ROW_GAP), 0))
+        widths = self.fill_widths([0] * len(RING_LABELS), RING_GAP, COLUMN_W - ROW_LABEL_W)
         buttons = [ui.Button(
-            row, PANEL_BG,
+            controls, PANEL_BG,
             lambda hover, value=value, width=width: self.paint_ring_swatch(value, hover, width),
             lambda value=value: self.set_saver_choice("saver_ring", value))
             for value, width in zip(RING_LABELS, widths)]
         self.pack_row(buttons, RING_GAP)
         self.saver_choices += buttons
+
+        row, controls = self.display_row(box, "Time colour")
+        row.pack(anchor="w", pady=(k.px(ROW_GAP), 0))
+        self.saver_choices += self.colour_swatches(controls, "clock_ink", CLOCK_INKS)
+        # The last row depends on what shows: the face colour behind the clock
+        # alone, or whether a picture is darkened behind the time.
+        self.saver_face_row, controls = self.display_row(box, "Background")
+        self.saver_choices += self.colour_swatches(controls, "clock_face", CLOCK_FACES)
+        self.saver_shade_row, controls = self.display_row(box, "Shade")
+        button = ui.Button(
+            controls, PANEL_BG,
+            lambda hover: self.paint_shade_switch(self.settings["clock_shade"],
+                                            "Darken the picture behind the time", hover),
+            lambda: self.set_saver_choice("clock_shade", not self.settings["clock_shade"]))
+        button.pack(side="left")
+        self.saver_choices.append(button)
+        self.saver_look_row = None
 
         # With pictures only, the column points to the Pictures tab instead.
         self.saver_library_box = box = tk.Frame(column, bg=PANEL_BG)
@@ -342,6 +391,33 @@ class ScreensaverPage:
         picture.pack(anchor="w")
         return picture
 
+    def display_row(self, parent, label, height=ROW_H):
+        """A Display tab row: its label, and a frame for the controls."""
+        k = self.kit
+        row = tk.Frame(parent, bg=PANEL_BG)
+        picture = ui.Picture(row, PANEL_BG)
+        image = k.canvas(ROW_LABEL_W, height, PANEL_BG)
+        k.text(image, 0, height / 2, label, "semibold", 10, ui.INK)
+        picture.show(image)
+        picture.pack(side="left", anchor="n")
+        controls = tk.Frame(row, bg=PANEL_BG)
+        controls.pack(side="left", anchor="n")
+        return row, controls
+
+    def colour_swatches(self, parent, key, presets):
+        """A swatch per preset colour, then one that opens a colour picker."""
+        buttons = [ui.Button(
+            parent, PANEL_BG,
+            lambda hover, colour=colour: self.paint_clock_swatch(key, colour, presets, hover),
+            lambda colour=colour: self.set_saver_choice(key, colour))
+            for colour in presets]
+        buttons.append(ui.Button(
+            parent, PANEL_BG,
+            lambda hover: self.paint_clock_swatch(key, None, presets, hover),
+            lambda: self.pick_clock_colour(key)))
+        self.pack_row(buttons, SWATCH_GAP)
+        return buttons
+
     def saver_choice_row(self, parent, key, labels):
         row = tk.Frame(parent, bg=PANEL_BG)
         buttons = [ui.Button(
@@ -368,6 +444,53 @@ class ScreensaverPage:
                       ui.CARD_EDGE)
             ink = ui.SUBTLE_INK
         k.text(image, width / 2, height / 2, label, "semibold", 10, ink, anchor="mm")
+        return image
+
+    def paint_radio(self, chosen, label, hover):
+        k = self.kit
+        width = k.font("semibold", 10).getlength(label) / k.scale + 30
+        image = k.canvas(width, ROW_H, PANEL_BG)
+        cy = ROW_H / 2
+        k.dot(image, 9, cy, 9, ui.INK if chosen else (ui.SUBTLE_INK if hover else ui.CARD_EDGE))
+        k.dot(image, 9, cy, 7.5, "#FFFFFF")
+        if chosen:
+            k.dot(image, 9, cy, 4.5, ui.INK)
+        k.text(image, 26, cy, label, "semibold" if chosen else "regular", 10,
+               ui.INK if chosen else ui.SUBTLE_INK)
+        return image
+
+    def paint_clock_swatch(self, key, colour, presets, hover):
+        """One colour to pick, ringed when chosen. `colour` None is the custom
+        swatch: a plus, or the custom colour once one is picked."""
+        k = self.kit
+        image = k.canvas(SWATCH, ROW_H, PANEL_BG)
+        current = self.settings[key]
+        if colour is None:
+            chosen = current not in presets
+            fill = current if chosen else None
+        else:
+            chosen, fill = current == colour, colour
+        c, cy = SWATCH / 2, ROW_H / 2
+        if chosen or hover:
+            k.dot(image, c, cy, 15, ui.INK if chosen else ui.CARD_EDGE)
+            k.dot(image, c, cy, 13.5 if chosen else 14, PANEL_BG)
+        k.dot(image, c, cy, 11, ui.CARD_EDGE)
+        if fill:
+            k.dot(image, c, cy, 10, fill)
+        else:
+            k.dot(image, c, cy, 10, "#FFFFFF" if hover else ui.CARD_BG)
+            k.text(image, c, cy, "+", "semibold", 12, ui.SUBTLE_INK, anchor="mm")
+        return image
+
+    def paint_shade_switch(self, on, label, hover):
+        k = self.kit
+        width = COLUMN_W - ROW_LABEL_W
+        image = k.canvas(width, ROW_H, PANEL_BG)
+        y0 = ROW_H / 2 - 11
+        track = ui.INK if on else (ui.SUBTLE_INK if hover else ui.IDLE_GREY)
+        k.rounded(image, (0, y0, 40, y0 + 22), 11, track)
+        k.dot(image, 29 if on else 11, ROW_H / 2, 8, "#FFFFFF")
+        k.text(image, 54, ROW_H / 2, label, "regular", 10, ui.INK, width=width - 54)
         return image
 
     def glance_text(self, key):
@@ -452,13 +575,13 @@ class ScreensaverPage:
         else:
             k.rounded(image, (0, 0, width, height), 12, "#FFFFFF" if hover else ui.CARD_BG,
                       ui.CARD_EDGE)
-        cx, cy = width / 2, 36
-        k.dot(image, cx, cy, 26, "#101014")
+        cx, cy = width / 2, 30
+        k.dot(image, cx, cy, 21, "#101014")
         if value == "none":
             k.rounded(image, (cx - 6, cy - 1, cx + 6, cy + 1), 1, "#6E6E78")
-        paint_ring(image, (k.px(cx), k.px(cy)), k.scale * 20, k.scale * 0.75, 20, 13,
+        paint_ring(image, (k.px(cx), k.px(cy)), k.scale * 16, k.scale * 0.62, 20, 13,
                    value, accent, False)
-        k.text(image, cx, height - 15, RING_LABELS[value], "semibold" if chosen else "regular",
+        k.text(image, cx, height - 12, RING_LABELS[value], "semibold" if chosen else "regular",
                9, ui.INK if chosen else ui.SUBTLE_INK, anchor="mm")
         return image
 
@@ -488,15 +611,17 @@ class ScreensaverPage:
         c = size / 2
         r = c - 1
         # A thin neutral bezel only: the seconds ring is the knob's one accent.
+        ink, face = self.settings["clock_ink"], self.settings["clock_face"]
+        soft, track = clock_tones(ink, face)
         k.dot(image, c, c, r, "#2A2A32")
-        k.dot(image, c, c, r - 3, "#101014")
+        k.dot(image, c, c, r - 3, face if show == "clock" else "#101014")
         inner = r - 3
         if show != "clock":
             picture = self.preview_picture()
             if picture is not None:
                 pixels = k.px(inner * 2)
                 picture = picture.resize((pixels, pixels), Image.LANCZOS)
-                if show == "both":
+                if show == "both" and self.settings["clock_shade"]:
                     picture = shade_for_clock(picture)
                 mask = Image.new("L", (pixels * 4, pixels * 4), 0)
                 ImageDraw.Draw(mask).ellipse((0, 0, pixels * 4 - 1, pixels * 4 - 1), fill=255)
@@ -513,18 +638,22 @@ class ScreensaverPage:
             g = k.scale * f
             paint_ring(image, (k.px(c), k.px(c)), 164 * g, g, 60, now.tm_sec + 1,
                        self.settings["saver_ring"], accent,
-                       show == "both" and self.preview_picture() is not None)
+                       show == "both" and self.preview_picture() is not None, track)
             h24 = self.uses_24_hour_clock()
             hour = now.tm_hour if h24 else (now.tm_hour % 12 or 12)
             k.text(image, c, c - 8 * f, f"{hour}:{now.tm_min:02d}", "device",
-                   96 * f * 0.75, "#F2F2F5", anchor="mm")
+                   96 * f * 0.75, ink, anchor="mm")
             if not h24:
                 k.text(image, c, c - 76 * f, "AM" if now.tm_hour < 12 else "PM", "device",
-                       24 * f * 0.75, "#C8C8D2", anchor="mm")
+                       24 * f * 0.75, soft, anchor="mm")
             k.text(image, c, c + 64 * f, f"{time.strftime('%a', now)} {now.tm_mday} "
-                   f"{time.strftime('%b', now)}", "device", 24 * f * 0.75, "#C8C8D2",
+                   f"{time.strftime('%b', now)}", "device", 24 * f * 0.75, soft,
                    anchor="mm")
-        k.text(image, c, size + 18, "Preview", "regular", 8.5, ui.MUTED_INK, anchor="mm")
+        if show == "clock" and contrast(ink, face) < MIN_CONTRAST:
+            k.text(image, c, size + 18, "Hard to read: try other colours", "semibold", 8.5,
+                   WARNING_INK, anchor="mm")
+        else:
+            k.text(image, c, size + 18, "Preview", "regular", 8.5, ui.MUTED_INK, anchor="mm")
         return image
 
     def paint_library_note(self):
@@ -668,6 +797,12 @@ class ScreensaverPage:
             self.saver_library_box.pack_forget()
             box.pack(anchor="w")
             self.saver_boxes_shown = box
+        look = self.saver_face_row if show == "clock" else self.saver_shade_row
+        if look is not self.saver_look_row:
+            self.saver_face_row.pack_forget()
+            self.saver_shade_row.pack_forget()
+            look.pack(anchor="w", pady=(self.kit.px(ROW_GAP), 0))
+            self.saver_look_row = look
         self.saver_preview.show(self.paint_saver_preview())
         if show == "pictures":
             self.saver_library_note.show(self.paint_library_note())
@@ -735,6 +870,13 @@ class ScreensaverPage:
             self.push_time()
         self.push_saver()
 
+    def pick_clock_colour(self, key):
+        title = "Time colour" if key == "clock_ink" else "Background colour"
+        chosen = colorchooser.askcolor(color=self.settings[key], parent=self.root,
+                                       title=title)[1]
+        if chosen:
+            self.set_saver_choice(key, chosen.upper())
+
     def uses_24_hour_clock(self):
         return self.settings["clock_format"] == "24h"
 
@@ -749,6 +891,9 @@ class ScreensaverPage:
                                    self.settings["saver_interval"],
                                    config.SAVER_SHOW_CHOICES.index(self.settings["saver_show"]),
                                    config.RING_STYLES.index(self.settings["saver_ring"]))
+            self.bridge.send_saver_look(self.settings["clock_shade"],
+                                        self.settings["clock_ink"],
+                                        self.settings["clock_face"])
         self.refresh_screensaver()
 
     def add_saver_media(self):

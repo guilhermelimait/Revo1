@@ -1,5 +1,6 @@
 import json
 import os
+import string
 from pathlib import Path
 from tempfile import NamedTemporaryFile
 
@@ -20,10 +21,11 @@ DEFAULTS = {"mode": "Volume", "orientation": 0, "port": "", "name": DEFAULT_NAME
             "focus_minutes": 25, "break_minutes": 5,
             "saver_enabled": False, "saver_idle": 5, "saver_interval": 30,
             "saver_show": "pictures", "clock_format": "24h", "saver_ring": "dots",
+            "clock_ink": "#F2F2F5", "clock_face": "#000000", "clock_shade": True,
             "dim_idle": True, "wireless": True, "link_key": "", "wifi_ssid": "",
             "knob_ip": "", "knob_ble": ""}
 FLAGS = ("minimize_to_tray", "invert_scroll", "invert_zoom", "swipe_screens",
-         "saver_enabled", "dim_idle", "wireless")
+         "saver_enabled", "dim_idle", "wireless", "clock_shade")
 # The wireless pairing: the key (protected with Windows DPAPI, see
 # secure.protect_key), the network the knob joins, and where it was last seen.
 # The Wi-Fi password is only ever sent to the knob, never stored here.
@@ -39,6 +41,9 @@ CLOCK_FORMATS = ("24h", "12h")
 # The seconds ring around the screensaver clock; the order is the number sent
 # to the knob.
 RING_STYLES = ("dots", "bar", "wave", "ticks", "comet", "none")
+# The screensaver clock's colours ("#RRGGBB"): the time, and the face behind
+# it when only the date and time show.
+CLOCK_COLOURS = ("clock_ink", "clock_face")
 POMODORO_MINUTES = range(1, 181)
 BACKLIGHT_RANGE = range(5, 101)
 
@@ -54,15 +59,12 @@ def valid_screens(value):
 
 
 def valid_accent(value):
-    if value == STANDARD_ACCENT:
-        return True
-    if not isinstance(value, str) or len(value) != 7 or value[0] != "#":
-        return False
-    try:
-        int(value[1:], 16)
-    except ValueError:
-        return False
-    return True
+    return value == STANDARD_ACCENT or valid_colour(value)
+
+
+def valid_colour(value):
+    return (isinstance(value, str) and len(value) == 7 and value[0] == "#"
+            and all(digit in string.hexdigits for digit in value[1:]))
 
 
 def config_path():
@@ -89,6 +91,7 @@ def load(path=None):
     clock_format = data.get("clock_format", DEFAULTS["clock_format"])
     saver_ring = data.get("saver_ring", DEFAULTS["saver_ring"])
     wireless = {key: data.get(key, DEFAULTS[key]) for key in WIRELESS_TEXT}
+    colours = {key: data.get(key, DEFAULTS[key]) for key in CLOCK_COLOURS}
     numbers = {key: data.get(key, DEFAULTS[key])
                for key in ("backlight", "focus_minutes", "break_minutes",
                            "saver_idle", "saver_interval")}
@@ -103,6 +106,7 @@ def load(path=None):
             or saver_show not in SAVER_SHOW_CHOICES
             or clock_format not in CLOCK_FORMATS
             or saver_ring not in RING_STYLES
+            or not all(valid_colour(value) for value in colours.values())
             or not all(type(value) is int for value in numbers.values())
             or numbers["backlight"] not in BACKLIGHT_RANGE
             or numbers["focus_minutes"] not in POMODORO_MINUTES
@@ -121,6 +125,7 @@ def load(path=None):
             "number_size": number_size, "screens": screens,
             "known_screens": list(MODES), "saver_show": saver_show,
             "clock_format": clock_format, "saver_ring": saver_ring,
+            **{key: value.upper() for key, value in colours.items()},
             **numbers, **flags, **wireless}
 
 

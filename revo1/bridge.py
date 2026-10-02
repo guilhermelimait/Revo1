@@ -143,6 +143,12 @@ class DeviceBridge:
             line += f",{int(ring)}"
         self.outbound.put(f"{line}\n".encode("ascii"))
 
+    def send_saver_look(self, shade, ink, face):
+        """The screensaver clock's look: whether pictures are darkened behind
+        the time, the time's colour and the face behind it ("#RRGGBB")."""
+        self.outbound.put(f"SAVERLOOK,{int(bool(shade))},{ink[1:7]},{face[1:7]}\n"
+                          .encode("ascii"))
+
     def send_dim(self, enabled):
         self.outbound.put(f"DIM,{int(bool(enabled))}\n".encode("ascii"))
 

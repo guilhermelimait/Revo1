@@ -319,6 +319,13 @@ static lv_obj_t *ampm_label;
 /* Montserrat Medium at 96 px, digits and colon only (revo1_clock_96.c). */
 LV_FONT_DECLARE(revo1_clock_96);
 static lv_obj_t *date_label;
+/* The screensaver clock's look (SAVERLOOK): the colour of the time, the face
+   behind it when only the clock shows, and whether a picture is darkened
+   behind the time. The date, AM/PM and the ring's track are mixed from them. */
+static uint8_t clock_ink[3] = {0xF2, 0xF2, 0xF5};
+static uint8_t clock_bg[3] = {0, 0, 0};
+static uint8_t clock_track[3] = {0x30, 0x30, 0x31};
+static bool clock_shade = true;
 static int saver_idle_s = 300;
 static int saver_interval_s = 30;
 static bool saver_active;
@@ -435,7 +442,22 @@ typedef struct {
     uint8_t saver_kind;
     uint8_t dim;
     uint8_t ring;
+    uint8_t shade;
+    uint32_t ink;
+    uint32_t face;
 } stored_settings_t;
+
+static uint32_t rgb_word(const uint8_t rgb[3])
+{
+    return (uint32_t)rgb[0] << 16 | (uint32_t)rgb[1] << 8 | rgb[2];
+}
+
+static void set_rgb(uint8_t rgb[3], uint32_t word)
+{
+    rgb[0] = (uint8_t)(word >> 16);
+    rgb[1] = (uint8_t)(word >> 8);
+    rgb[2] = (uint8_t)word;
+}
 
 static bool settings_ready;
 static stored_settings_t saved_settings;
@@ -458,6 +480,9 @@ static stored_settings_t current_settings(void)
         .saver_kind = (uint8_t)saver_kind,
         .dim = dim_enabled,
         .ring = (uint8_t)saver_ring,
+        .shade = clock_shade,
+        .ink = rgb_word(clock_ink),
+        .face = rgb_word(clock_bg),
     };
     static const int sizes[] = {24, 32, 40, 48};
     for (size_t index = 0; index < sizeof(sizes) / sizeof(sizes[0]); index++) {
@@ -474,7 +499,8 @@ static bool same_settings(const stored_settings_t *a, const stored_settings_t *b
            a->saver == b->saver && a->idle_s == b->idle_s &&
            a->interval_s == b->interval_s && a->swipe == b->swipe &&
            a->saver_kind == b->saver_kind && a->dim == b->dim &&
-           a->ring == b->ring;
+           a->ring == b->ring && a->shade == b->shade && a->ink == b->ink &&
+           a->face == b->face;
 }
 
 static void load_settings(void)
@@ -522,6 +548,13 @@ static void load_settings(void)
         if (nvs_get_u8(handle, "show", &byte) == ESP_OK && byte <= SAVER_BOTH) saver_kind = byte;
         if (nvs_get_u8(handle, "dim", &byte) == ESP_OK) dim_enabled = byte != 0;
         if (nvs_get_u8(handle, "ring", &byte) == ESP_OK && byte <= RING_NONE) saver_ring = byte;
+        if (nvs_get_u8(handle, "shade", &byte) == ESP_OK) clock_shade = byte != 0;
+        if (nvs_get_u32(handle, "ink", &accent) == ESP_OK && accent <= 0xFFFFFF) {
+            set_rgb(clock_ink, accent);
+        }
+        if (nvs_get_u32(handle, "face", &accent) == ESP_OK && accent <= 0xFFFFFF) {
+            set_rgb(clock_bg, accent);
+        }
         if (nvs_get_u16(handle, "whack", &word) == ESP_OK) whack_best = word;
         nvs_close(handle);
     }
@@ -549,6 +582,9 @@ static void save_settings(void)
                     nvs_set_u8(handle, "show", settings.saver_kind) == ESP_OK &&
                     nvs_set_u8(handle, "dim", settings.dim) == ESP_OK &&
                     nvs_set_u8(handle, "ring", settings.ring) == ESP_OK &&
+                    nvs_set_u8(handle, "shade", settings.shade) == ESP_OK &&
+                    nvs_set_u32(handle, "ink", settings.ink) == ESP_OK &&
+                    nvs_set_u32(handle, "face", settings.face) == ESP_OK &&
                     nvs_commit(handle) == ESP_OK;
     nvs_close(handle);
     if (ok) saved_settings = settings;
@@ -1090,6 +1126,34 @@ static void build_menu_arc(void)
 static void clear_canvas(void)
 {
     memset(canvas_pixels, 0, (size_t)LCD_WIDTH * LCD_HEIGHT * sizeof(uint16_t));
+}
+
+static inline int mix_channel(int from, int to, int amount)
+{
+    return from + (((to - from) * amount) >> 8);
+}
+
+/* The face behind the screensaver clock, in the chosen colour. */
+static void fill_clock_face(void)
+{
+    const uint16_t face = pack_pixel(clock_bg[0], clock_bg[1], clock_bg[2]);
+    uint16_t *pixels = (uint16_t *)canvas_pixels;
+    for (size_t i = 0; i < (size_t)LCD_WIDTH * LCD_HEIGHT; ++i) pixels[i] = face;
+}
+
+/* Colours the clock labels and mixes the ring's track from the chosen ink
+   and face: the date and AM/PM a little softer than the time, the track a
+   faint fifth of the way from the face to the ink. Call with lvgl_mutex held. */
+static void apply_clock_look(void)
+{
+    uint8_t soft[3];
+    for (int i = 0; i < 3; ++i) {
+        soft[i] = (uint8_t)mix_channel(clock_bg[i], clock_ink[i], 210);
+        clock_track[i] = (uint8_t)mix_channel(clock_bg[i], clock_ink[i], 52);
+    }
+    lv_obj_set_style_text_color(clock_label, lv_color_hex(rgb_word(clock_ink)), 0);
+    lv_obj_set_style_text_color(ampm_label, lv_color_hex(rgb_word(soft)), 0);
+    lv_obj_set_style_text_color(date_label, lv_color_hex(rgb_word(soft)), 0);
 }
 
 static void fill_span(int y, int x0, int x1, uint16_t colour)
@@ -2244,6 +2308,8 @@ static void handle_media_line(char *line)
 
 static void dispatch_unlocked(char *line, size_t length);
 
+static void begin_saver_item(int item, int64_t now);
+
 static void dispatch_line(char *line, size_t length)
 {
     xSemaphoreTake(dispatch_lock, portMAX_DELAY);
@@ -2492,6 +2558,46 @@ static void handle_command(char *line)
         clock_valid = true;
         clock_second_shown = -1;
         host_printf("TIME_OK\n");
+        return;
+    }
+
+    if (strncmp(line, "SAVERLOOK,", 10) == 0) {
+        char *save = NULL;
+        const char *shade_text = strtok_r(line + 10, ",", &save);
+        const char *ink_text = strtok_r(NULL, ",", &save);
+        const char *face_text = strtok_r(NULL, ",", &save);
+        int shade;
+        char *ink_end = NULL, *face_end = NULL;
+        if (!shade_text || !ink_text || !face_text || strlen(ink_text) != 6 ||
+            strlen(face_text) != 6 || !parse_integer(shade_text, 0, 1, &shade)) {
+            return;
+        }
+        const uint32_t ink = (uint32_t)strtoul(ink_text, &ink_end, 16);
+        const uint32_t face = (uint32_t)strtoul(face_text, &face_end, 16);
+        if (*ink_end || *face_end) return;
+        const bool changed = shade != clock_shade || ink != rgb_word(clock_ink) ||
+                             face != rgb_word(clock_bg);
+        clock_shade = shade;
+        set_rgb(clock_ink, ink);
+        set_rgb(clock_bg, face);
+        if (lvgl_mutex) xSemaphoreTake(lvgl_mutex, portMAX_DELAY);
+        apply_clock_look();
+        /* A running screensaver takes the new look at once. */
+        if (changed && saver_active && saver_shown == SAVER_CLOCK) {
+            fill_clock_face();
+            lv_obj_invalidate(canvas);
+        }
+        if (lvgl_mutex) xSemaphoreGive(lvgl_mutex);
+        if (changed && saver_active) {
+            if (saver_shown == SAVER_BOTH && media_valid) {
+                begin_saver_item(saver_item, esp_timer_get_time());
+            }
+            ring_wipe = true;
+            clock_second_shown = -1;
+            ring_next_us = 0;
+        }
+        save_settings();
+        host_printf("SAVERLOOK_OK\n");
         return;
     }
 
@@ -3044,6 +3150,7 @@ static void initialize_lvgl(void)
     lv_obj_set_style_text_font(date_label, &lv_font_montserrat_24, 0);
     lv_obj_align(date_label, LV_ALIGN_CENTER, 0, CLOCK_DATE_Y);
     lv_obj_add_flag(date_label, LV_OBJ_FLAG_HIDDEN);
+    apply_clock_look();
     /* Sits on the upper face, between the cap and the ring. */
     refresh_screen();
 
@@ -3140,7 +3247,7 @@ static bool show_saver_frame(uint32_t offset, uint32_t length)
         jd_decomp(&decoder, jpeg_output, 0) != JDR_OK) {
         return false;
     }
-    if (saver_shown == SAVER_BOTH && clock_valid) shade_for_clock(frame_pixels);
+    if (saver_shown == SAVER_BOTH && clock_valid && clock_shade) shade_for_clock(frame_pixels);
     if (lvgl_mutex) xSemaphoreTake(lvgl_mutex, portMAX_DELAY);
     memcpy(canvas_pixels, frame_pixels, (size_t)LCD_WIDTH * LCD_HEIGHT * sizeof(uint16_t));
     if (saver_shown == SAVER_BOTH && clock_valid && ring_second >= 0) {
@@ -3269,11 +3376,10 @@ static bool build_ring_list(int style)
 }
 
 /* Paints one ring pixel: `lit` of the accent and `dim` of the track, out of
-   256, over the picture or the black clock face. */
+   256, over the picture or the clock face. */
 static inline uint16_t ring_pixel(const uint16_t *under, uint32_t index, int lit, int dim,
                                   const uint8_t *accent)
 {
-    static const uint8_t track[3] = {0x34, 0x34, 0x3E};
     int r, g, b;
     if (under) {
         const uint16_t value = (uint16_t)((under[index] >> 8) | (under[index] << 8));
@@ -3283,9 +3389,9 @@ static inline uint16_t ring_pixel(const uint16_t *under, uint32_t index, int lit
         g = ((((value >> 5) & 63) << 2) * keep) >> 8;
         b = (((value & 31) << 3) * keep) >> 8;
     } else {
-        r = (track[0] * dim) >> 8;
-        g = (track[1] * dim) >> 8;
-        b = (track[2] * dim) >> 8;
+        r = mix_channel(clock_bg[0], clock_track[0], dim);
+        g = mix_channel(clock_bg[1], clock_track[1], dim);
+        b = mix_channel(clock_bg[2], clock_track[2], dim);
     }
     r += ((accent[0] - r) * lit) >> 8;
     g += ((accent[1] - g) * lit) >> 8;
@@ -3314,7 +3420,7 @@ static void invalidate_ring(int reach)
    in, the bar and the wave grow, and the comet glides. In the last second
    of the minute the filled part fades back to the track, so the new minute
    starts without a jump. It is painted over `under` (the shaded picture) or,
-   without one, the black clock face, so a new frame simply paints it again.
+   without one, the clock face, so a new frame simply paints it again.
    Call with lvgl_mutex held. */
 static void draw_seconds_ring(int second, const uint16_t *under)
 {
@@ -3326,9 +3432,10 @@ static void draw_seconds_ring(int second, const uint16_t *under)
     if (ring_wipe) {
         /* A new style: clear the whole band once so the old one leaves nothing. */
         ring_wipe = false;
+        const uint16_t face = pack_pixel(clock_bg[0], clock_bg[1], clock_bg[2]);
         for (int i = 0; i < band_count; ++i) {
             const uint32_t index = band_pixel[i];
-            pixels[index] = under ? under[index] : 0;
+            pixels[index] = under ? under[index] : face;
         }
         reach = DIAL_ARC_BAND;
     }
@@ -3503,7 +3610,7 @@ static void start_saver(int64_t now)
     lv_obj_add_flag(artist_label, LV_OBJ_FLAG_HIDDEN);
     lv_obj_add_flag(time_label, LV_OBJ_FLAG_HIDDEN);
     if (saver_shown == SAVER_CLOCK) {
-        clear_canvas();
+        fill_clock_face();
         lv_obj_invalidate(canvas);
     }
     /* clock_tick shows the time and date on its first pass. */

@@ -214,11 +214,15 @@ in the left sidebar.
   minutes). **Display** picks what the knob shows: **Pictures**, **Date and
   time**, or **Pictures and time** (the time and date over your pictures,
   with the middle of each picture darkened so the time stays readable). A
-  preview of the knob sits beside that choice's settings: **24-hour** (the
-  default) or **AM/PM** for the clock and the **Seconds ring** round the edge
-  (**Bullets**, **Bar**, **Wiggly**, **Ticks**, **Comet** or **None**;
+  preview of the knob sits beside that choice's settings: **Clock**
+  (**24-hour**, the default, or **AM/PM**), the **Seconds ring** round the
+  edge (**Bullets**, **Bar**, **Wiggly**, **Ticks**, **Comet** or **None**;
   on the knob every style moves smoothly between seconds, and **Wiggly** has
-  a rippling tip).
+  a rippling tip) and **Time colour** (seven presets or **+** for any
+  colour; the date, AM/PM and the ring's track follow it). **Date and time**
+  also has **Background**, the clock face colour; **Pictures and time** has
+  **Shade**, which darkens the picture behind the time (on by default). If
+  the time and background are too close, the preview warns **Hard to read**.
   **Pictures** holds your pictures and clips; click **Add pictures or
   videos...** to add more. Hover a thumbnail
   and click the cross to remove it. **Send to knob** copies the collection
@@ -379,6 +383,7 @@ framing.
 | Device to PC | `MUTE,TOGGLE` | Centre of the Volume or Mic dial tapped |
 | Device to PC | `GAME,WHACK,<score>,<best>` | Whack-a-Mole round finished |
 | PC to device | `SAVER,<0\|1>,<idle s>,<seconds per item>,<0 pictures\|1 clock\|2 both>[,<ring 0-5>]` | Screensaver settings; answered by `SAVER_OK` |
+| PC to device | `SAVERLOOK,<shade 0\|1>,<time RRGGBB>,<background RRGGBB>` | Screensaver clock colours and picture shade; answered by `SAVERLOOK_OK` |
 | PC to device | `TIME,<local seconds>,<1 for 24-hour\|0>` | Sets the knob's clock (local time counted as if it were UTC); answered by `TIME_OK` |
 | PC to device | `DIM,0` or `DIM,1` | Idle dimming off or on; answered by `DIM_OK,<0 or 1>` |
 | Device to PC | `SAVER,ON` or `SAVER,OFF` | Screensaver started or stopped |

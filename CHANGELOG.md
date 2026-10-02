@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+- Screensaver clock colours: on **Screensaver > Display**, choose the time
+  colour (presets or any colour) and, for **Date and time**, the background;
+  the date, AM/PM and ring track follow. **Pictures and time** can turn the
+  dark shade behind the time off. The clock format is now a pair of radio
+  buttons, and the preview warns when the colours are hard to read. New
+  protocol line `SAVERLOOK`, saved on the knob.
 - The level screens (Volume, Scroll, Brightness, Mic, Zoom) no longer show
   arrows either side of the value, on the knob or in the app.
 - Wireless: pair the knob once over USB in the new **Settings > Wireless**

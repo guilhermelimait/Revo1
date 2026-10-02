@@ -190,6 +190,14 @@ decoded frame towards the middle (about 45% brightness within 110 px of the
 centre, easing back to full at 180 px) so the white text stays readable. Until
 the clock is set it shows the pictures alone.
 
+`SAVERLOOK,<shade 0|1>,<time RRGGBB>,<background RRGGBB>` sets the clock's
+look and answers `SAVERLOOK_OK`. The time is drawn in the time colour; the
+date and AM/PM mix 82% of it into the background, and the ring's empty track
+20%. The background fills the clock face (Date and time only; over pictures
+the track stays a shadow). With shade 0 `shade_for_clock` is skipped and the
+pictures show at full brightness. A running screensaver is redrawn in place.
+The defaults are shade on, F2F2F5 text and a black face.
+
 An optional sixth `SAVER` field picks the seconds ring drawn round the clock:
 0 bullets (the sixty dots), 1 bar, 2 wiggly (a wave up to the current second,
 a flat line after it), 3 ticks (watch-style marks), 4 comet (a head on the
@@ -288,7 +296,7 @@ The last mode, orientation, bar colour and number size are kept in NVS
 (namespace `revo1`: `mode`, `orient`, `numsize`, `accent`, with
 `0xFFFFFFFF` meaning standard colours), together with the enabled screens
 (`screens`), backlight (`light`), idle dimming (`dim`), swipe switch (`swipe`)
-screensaver settings (`saver`, `idle`, `every`, `show`, `ring`) and the Whack-a-Mole best score (`whack`). `load_settings` reads them before the
+screensaver settings (`saver`, `idle`, `every`, `show`, `ring`, and the clock look `shade`, `ink`, `face`) and the Whack-a-Mole best score (`whack`). `load_settings` reads them before the
 display starts, so a restarted knob comes back in the same view and the same
 orientation even when the PC app isn't running. `save_settings` runs after
 every command or touch that changes one of them, and only writes flash when a
