@@ -208,7 +208,9 @@ in the left sidebar.
   time**, or **Pictures and time** (the time and date over your pictures,
   with the middle of each picture darkened so the time stays readable). A
   preview of the knob sits beside that choice's settings: **24-hour** (the
-  default) or **AM/PM** for the clock, and your pictures and clips; click
+  default) or **AM/PM** for the clock, the **Seconds ring** round the edge
+  (**Bullets**, **Bar**, **Wiggly**, **Ticks**, **Comet** or **None**), and
+  your pictures and clips; click
   **Add pictures or videos...** to add more. Hover a thumbnail
   and click the cross to remove it. **Send to knob** copies the collection
   to the device (about 110 KB/s, so a full collection takes about two
@@ -340,7 +342,7 @@ USB serial: 115200 baud, ASCII lines terminated by `\n`.
 | PC to device | `MUTE,<0\|1 speakers>,<0\|1 microphone>` | Mute state, sent on connect and on every change |
 | Device to PC | `MUTE,TOGGLE` | Centre of the Volume or Mic dial tapped |
 | Device to PC | `GAME,WHACK,<score>,<best>` | Whack-a-Mole round finished |
-| PC to device | `SAVER,<0\|1>,<idle s>,<seconds per item>,<0 pictures\|1 clock\|2 both>` | Screensaver settings; answered by `SAVER_OK` |
+| PC to device | `SAVER,<0\|1>,<idle s>,<seconds per item>,<0 pictures\|1 clock\|2 both>[,<ring 0-5>]` | Screensaver settings; answered by `SAVER_OK` |
 | PC to device | `TIME,<local seconds>,<1 for 24-hour\|0>` | Sets the knob's clock (local time counted as if it were UTC); answered by `TIME_OK` |
 | PC to device | `DIM,0` or `DIM,1` | Idle dimming off or on; answered by `DIM_OK,<0 or 1>` |
 | Device to PC | `SAVER,ON` or `SAVER,OFF` | Screensaver started or stopped |

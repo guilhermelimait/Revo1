@@ -29,6 +29,9 @@
   (`SAVER` kind 2). Until the app has set the knob's clock it shows the
   pictures alone.
 - Pictures can stay on for **3 min** each.
+- The seconds ring round the screensaver clock now also shows over pictures,
+  and has six styles: Bullets, Bar, Wiggly, Ticks, Comet or None (an
+  optional sixth `SAVER` field).
 - Settings sits with the other screens in the sidebar.
 
 ## 1.0.1 - 2026-09-30

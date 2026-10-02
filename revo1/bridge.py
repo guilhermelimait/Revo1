@@ -101,10 +101,14 @@ class DeviceBridge:
     def send_backlight(self, percent):
         self.outbound.put(f"BACKLIGHT,{int(percent)}\n".encode("ascii"))
 
-    def send_saver(self, enabled, idle_seconds, interval_seconds, show=0):
-        """show: 0 pictures, 1 the date and time, 2 the time over the pictures."""
-        self.outbound.put(f"SAVER,{int(bool(enabled))},{int(idle_seconds)},"
-                          f"{int(interval_seconds)},{int(show)}\n".encode("ascii"))
+    def send_saver(self, enabled, idle_seconds, interval_seconds, show=0, ring=None):
+        """show: 0 pictures, 1 the date and time, 2 the time over the pictures.
+        ring: the seconds ring style (config.RING_STYLES index), if given."""
+        line = (f"SAVER,{int(bool(enabled))},{int(idle_seconds)},"
+                f"{int(interval_seconds)},{int(show)}")
+        if ring is not None:
+            line += f",{int(ring)}"
+        self.outbound.put(f"{line}\n".encode("ascii"))
 
     def send_dim(self, enabled):
         self.outbound.put(f"DIM,{int(bool(enabled))}\n".encode("ascii"))

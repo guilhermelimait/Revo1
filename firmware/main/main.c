@@ -294,6 +294,11 @@ static bool saver_enabled;
 /* What the screensaver shows: the stored pictures, or the date and time. */
 enum { SAVER_PICTURES, SAVER_CLOCK, SAVER_BOTH };
 static int saver_kind = SAVER_PICTURES;
+/* How the seconds ring around the screensaver clock is drawn. */
+enum { RING_DOTS, RING_BAR, RING_WAVE, RING_TICKS, RING_COMET, RING_NONE };
+static int saver_ring = RING_DOTS;
+/* The second the ring shows, or -1 before the clock has ticked. */
+static int ring_second = -1;
 /* What the running screensaver shows (one of the SAVER_ kinds). */
 static int saver_shown;
 static int64_t clock_second_shown = -1;
@@ -399,6 +404,7 @@ typedef struct {
     uint8_t swipe;
     uint8_t saver_kind;
     uint8_t dim;
+    uint8_t ring;
 } stored_settings_t;
 
 static bool settings_ready;
@@ -421,6 +427,7 @@ static stored_settings_t current_settings(void)
         .swipe = swipe_enabled,
         .saver_kind = (uint8_t)saver_kind,
         .dim = dim_enabled,
+        .ring = (uint8_t)saver_ring,
     };
     static const int sizes[] = {24, 32, 40, 48};
     for (size_t index = 0; index < sizeof(sizes) / sizeof(sizes[0]); index++) {
@@ -436,7 +443,8 @@ static bool same_settings(const stored_settings_t *a, const stored_settings_t *b
            a->screens == b->screens && a->backlight == b->backlight &&
            a->saver == b->saver && a->idle_s == b->idle_s &&
            a->interval_s == b->interval_s && a->swipe == b->swipe &&
-           a->saver_kind == b->saver_kind && a->dim == b->dim;
+           a->saver_kind == b->saver_kind && a->dim == b->dim &&
+           a->ring == b->ring;
 }
 
 static void load_settings(void)
@@ -483,6 +491,7 @@ static void load_settings(void)
         if (nvs_get_u8(handle, "swipe", &byte) == ESP_OK) swipe_enabled = byte != 0;
         if (nvs_get_u8(handle, "show", &byte) == ESP_OK && byte <= SAVER_BOTH) saver_kind = byte;
         if (nvs_get_u8(handle, "dim", &byte) == ESP_OK) dim_enabled = byte != 0;
+        if (nvs_get_u8(handle, "ring", &byte) == ESP_OK && byte <= RING_NONE) saver_ring = byte;
         if (nvs_get_u16(handle, "whack", &word) == ESP_OK) whack_best = word;
         nvs_close(handle);
     }
@@ -509,6 +518,7 @@ static void save_settings(void)
                     nvs_set_u8(handle, "swipe", settings.swipe) == ESP_OK &&
                     nvs_set_u8(handle, "show", settings.saver_kind) == ESP_OK &&
                     nvs_set_u8(handle, "dim", settings.dim) == ESP_OK &&
+                    nvs_set_u8(handle, "ring", settings.ring) == ESP_OK &&
                     nvs_commit(handle) == ESP_OK;
     nvs_close(handle);
     if (ok) saved_settings = settings;
@@ -2371,18 +2381,21 @@ static void handle_command(char *line)
         const char *idle_text = strtok_r(NULL, ",", &save);
         const char *interval_text = strtok_r(NULL, ",", &save);
         const char *kind_text = strtok_r(NULL, ",", &save);
-        int enabled, idle, interval, kind = SAVER_PICTURES;
+        const char *ring_text = strtok_r(NULL, ",", &save);
+        int enabled, idle, interval, kind = SAVER_PICTURES, ring = saver_ring;
         if (!enabled_text || !idle_text || !interval_text ||
             !parse_integer(enabled_text, 0, 1, &enabled) ||
             !parse_integer(idle_text, 10, 7200, &idle) ||
             !parse_integer(interval_text, 1, 3600, &interval) ||
-            (kind_text && !parse_integer(kind_text, SAVER_PICTURES, SAVER_BOTH, &kind))) {
+            (kind_text && !parse_integer(kind_text, SAVER_PICTURES, SAVER_BOTH, &kind)) ||
+            (ring_text && !parse_integer(ring_text, RING_DOTS, RING_NONE, &ring))) {
             return;
         }
         saver_enabled = enabled;
         saver_idle_s = idle;
         saver_interval_s = interval;
         saver_kind = kind;
+        saver_ring = ring;
         save_settings();
         printf("SAVER_OK\n");
         return;
@@ -2947,6 +2960,8 @@ static UINT jpeg_output(JDEC *decoder, void *bitmap, JRECT *rect)
     return 1;
 }
 
+static void draw_seconds_ring(int second, const uint16_t *under);
+
 /* Darkens the middle of a picture so the clock on top of it stays readable:
    about half brightness behind the time, easing back to full towards the rim. */
 static void shade_for_clock(uint16_t *pixels)
@@ -3000,6 +3015,9 @@ static bool show_saver_frame(uint32_t offset, uint32_t length)
     if (saver_shown == SAVER_BOTH && clock_valid) shade_for_clock(frame_pixels);
     if (lvgl_mutex) xSemaphoreTake(lvgl_mutex, portMAX_DELAY);
     memcpy(canvas_pixels, frame_pixels, (size_t)LCD_WIDTH * LCD_HEIGHT * sizeof(uint16_t));
+    if (saver_shown == SAVER_BOTH && clock_valid && ring_second >= 0) {
+        draw_seconds_ring(ring_second, frame_pixels);
+    }
     lv_obj_invalidate(canvas);
     if (lvgl_mutex) xSemaphoreGive(lvgl_mutex);
     return true;
@@ -3014,39 +3032,104 @@ static void begin_saver_item(int item, int64_t now)
     saver_next_frame = now;
 }
 
-/* Anti-aliased dot on the black clock face. */
-static void draw_clock_dot(float cx, float cy, float radius, const uint8_t *rgb)
+static inline float coverage(float value)
 {
-    const int x0 = (int)floorf(cx - radius - 1), x1 = (int)ceilf(cx + radius + 1);
-    const int y0 = (int)floorf(cy - radius - 1), y1 = (int)ceilf(cy + radius + 1);
-    for (int y = y0; y <= y1; ++y) {
-        if (y < 0 || y >= LCD_HEIGHT) continue;
-        uint16_t *row = (uint16_t *)canvas_pixels + (size_t)y * LCD_WIDTH;
-        for (int x = x0; x <= x1; ++x) {
-            if (x < 0 || x >= LCD_WIDTH) continue;
-            const float dx = x - cx, dy = y - cy;
-            float cover = radius + 0.5f - sqrtf(dx * dx + dy * dy);
-            if (cover <= 0) cover = 0;
-            if (cover > 1) cover = 1;
-            row[x] = pack_pixel((int)(rgb[0] * cover), (int)(rgb[1] * cover),
-                                (int)(rgb[2] * cover));
-        }
-    }
+    return value <= 0.0f ? 0.0f : (value >= 1.0f ? 1.0f : value);
 }
 
-/* One of the sixty second marks around the rim; the ones already passed this
-   minute are lit, so the ring fills like the dial's arc does. */
-static void draw_clock_tick(int second, bool lit)
+/* Redraws the seconds ring around the screensaver clock in the chosen style:
+   the seconds passed this minute in the accent, the rest as a faint track.
+   It is painted over `under` (the shaded picture) or, without one, the black
+   clock face, so a new frame or a new minute simply paints it again.
+   Call with lvgl_mutex held. */
+static void draw_seconds_ring(int second, const uint16_t *under)
 {
-    static const uint8_t unlit[3] = {0x34, 0x34, 0x3E};
-    const float angle = second * 6.0f * 0.0174532925f;
-    const float cx = SCREEN_CENTER + DIAL_ARC_R * sinf(angle);
-    const float cy = SCREEN_CENTER - DIAL_ARC_R * cosf(angle);
-    const float radius = second % 5 == 0 ? 3.2f : 2.0f;
-    draw_clock_dot(cx, cy, radius, lit ? accent_of(selected_mode) : unlit);
-    lv_area_t area = {(lv_coord_t)(cx - 6), (lv_coord_t)(cy - 6),
-                      (lv_coord_t)(cx + 6), (lv_coord_t)(cy + 6)};
-    lv_obj_invalidate_area(canvas, &area);
+    /* Pixels per second along the ring, and the ring's own radius. */
+    const float step = 6.28318531f * DIAL_ARC_R / 60.0f;
+    const float filled = (float)(second + 1);
+    const uint8_t *accent = accent_of(selected_mode);
+    static const uint8_t track[3] = {0x34, 0x34, 0x3E};
+    uint16_t *pixels = (uint16_t *)canvas_pixels;
+    for (int i = 0; i < band_count; ++i) {
+        const uint32_t index = band_pixel[i];
+        /* Seconds clockwise from 12 o'clock, 0 to 60. */
+        const float at = (float)((ARC_SEGMENTS / 4 - band_segment[i]) & ARC_MASK) *
+                         (60.0f / ARC_SEGMENTS);
+        const float dx = (float)((int)(index % LCD_WIDTH) - SCREEN_CENTER);
+        const float dy = (float)((int)(index / LCD_WIDTH) - SCREEN_CENTER);
+        const float off = sqrtf(dx * dx + dy * dy) - DIAL_ARC_R;
+        float lit = 0.0f, dim = 0.0f;
+        const int nearest = (int)lroundf(at) % 60;
+        const float along = (at - roundf(at)) * step;
+        switch (saver_ring) {
+        case RING_DOTS: {
+            const float radius = nearest % 5 == 0 ? 3.2f : 2.0f;
+            const float cover = coverage(radius + 0.5f - sqrtf(off * off + along * along));
+            if (nearest <= second) lit = cover; else dim = cover;
+            break;
+        }
+        case RING_TICKS: {
+            const float half = nearest % 5 == 0 ? 1.4f : 0.9f;
+            const float inner = nearest % 5 == 0 ? -10.0f : -4.0f;
+            const float cover = coverage(half + 0.5f - fabsf(along)) *
+                                coverage(fminf(off - inner, 8.0f - off) + 0.5f);
+            if (nearest <= second) lit = cover; else dim = cover;
+            break;
+        }
+        case RING_BAR: {
+            const float cover = coverage(3.5f - fabsf(off));
+            const float head = coverage((filled - at) * step + 0.5f);
+            lit = cover * head;
+            dim = cover * (1.0f - head);
+            break;
+        }
+        case RING_WAVE: {
+            /* A squiggle up to the current second, a flat line after it. */
+            const float phase = at * 3.14159265f;
+            const float slope = 4.0f * 3.14159265f / step * cosf(phase);
+            const float wave = coverage(2.5f - fabsf(off - 4.0f * sinf(phase)) /
+                                        sqrtf(1.0f + slope * slope));
+            const float head = coverage((filled - at) * step + 0.5f);
+            lit = wave * head;
+            dim = coverage(1.75f - fabsf(off)) * (1.0f - head);
+            break;
+        }
+        case RING_COMET: {
+            /* A bright head on the current second with a tail fading behind. */
+            const float behind = fmodf((float)second - at + 60.0f, 60.0f);
+            const float tail = behind < 20.0f ? 1.0f - behind / 20.0f : 0.0f;
+            const float head_along = fmodf(at - (float)second + 90.0f, 60.0f) - 30.0f;
+            const float head = coverage(4.5f - sqrtf(off * off + head_along * head_along *
+                                                     step * step));
+            lit = fmaxf(head, coverage(0.5f + 3.0f * tail - fabsf(off)) * tail);
+            dim = coverage(1.5f - fabsf(off)) * (1.0f - lit);
+            break;
+        }
+        default:
+            break;
+        }
+        int r = 0, g = 0, b = 0;
+        if (under) {
+            const uint16_t value = (uint16_t)((under[index] >> 8) | (under[index] << 8));
+            r = (value >> 11) << 3;
+            g = ((value >> 5) & 63) << 2;
+            b = (value & 31) << 3;
+            /* Over a picture the track is a shadow rather than a grey. */
+            const float keep = 1.0f - 0.55f * dim;
+            r = (int)(r * keep);
+            g = (int)(g * keep);
+            b = (int)(b * keep);
+        } else {
+            r = (int)(track[0] * dim);
+            g = (int)(track[1] * dim);
+            b = (int)(track[2] * dim);
+        }
+        r += (int)((accent[0] - r) * lit);
+        g += (int)((accent[1] - g) * lit);
+        b += (int)((accent[2] - b) * lit);
+        pixels[index] = pack_pixel(r, g, b);
+    }
+    lv_obj_invalidate(canvas);
 }
 
 static void clock_tick(int64_t now)
@@ -3080,15 +3163,9 @@ static void clock_tick(int64_t now)
         lv_label_set_text(date_label, text);
         lv_obj_clear_flag(clock_label, LV_OBJ_FLAG_HIDDEN);
         lv_obj_clear_flag(date_label, LV_OBJ_FLAG_HIDDEN);
-        /* Over pictures the second marks would be painted over each frame. */
-        if (saver_shown == SAVER_CLOCK) {
-            for (int second = 0; second < 60; ++second) {
-                draw_clock_tick(second, second <= fields.tm_sec);
-            }
-        }
-    } else if (saver_shown == SAVER_CLOCK) {
-        draw_clock_tick(fields.tm_sec, true);
     }
+    ring_second = fields.tm_sec;
+    draw_seconds_ring(ring_second, saver_shown == SAVER_BOTH && media_valid ? frame_pixels : NULL);
     if (lvgl_mutex) xSemaphoreGive(lvgl_mutex);
 }
 
@@ -3107,6 +3184,7 @@ static void start_saver(int64_t now)
     }
     /* clock_tick shows the time and date on its first pass. */
     clock_second_shown = -1;
+    ring_second = -1;
     if (lvgl_mutex) xSemaphoreGive(lvgl_mutex);
     /* Each time the screensaver starts it picks up with the next item. */
     if (saver_shown != SAVER_CLOCK) begin_saver_item(saver_item + 1, now);

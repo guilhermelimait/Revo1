@@ -21,6 +21,12 @@ SAVER_TABS = (("general", "General"), ("timing", "Timing"), ("display", "Display
 IDLE_LABELS = {1: "1 min", 2: "2 min", 5: "5 min", 10: "10 min", 30: "30 min"}
 INTERVAL_LABELS = {10: "10 s", 30: "30 s", 60: "1 min", 180: "3 min", 300: "5 min"}
 CLOCK_LABELS = {"24h": "24-hour", "12h": "AM/PM"}
+RING_LABELS = {"dots": "Bullets", "bar": "Bar", "wave": "Wiggly", "ticks": "Ticks",
+               "comet": "Comet", "none": "None"}
+RING_GAP = 8
+RING_SWATCH_H = 88
+# The knob's faint track for the seconds still to come.
+RING_TRACK = (0x34, 0x34, 0x3E)
 # Every button on the page is one size; five of them fill a row exactly.
 CHOICE_W = 140
 CHOICE_H = 36
@@ -61,6 +67,75 @@ def _size_text(size):
     if size >= 1024 * 1024:
         return f"{size / (1024 * 1024):.1f} MB"
     return f"{max(1, round(size / 1024))} KB"
+
+
+def ring_cover(size, radius, unit, marks, filled, style):
+    """Coverage (0..1) of the seconds ring on a size x size square centred on
+    the ring, as the knob draws it: `lit` for the accent part and `dim` for
+    the track. Lengths are in output pixels; `unit` is one knob pixel and
+    `marks` the number of seconds round the ring, `filled` how many are lit."""
+    centre = (size - 1) / 2
+    y, x = np.mgrid[:size, :size].astype(np.float32)
+    dx, dy = x - centre, y - centre
+    off = np.hypot(dx, dy) - radius
+    at = (np.arctan2(dx, -dy) % (2 * np.pi)) / (2 * np.pi) * marks
+    step = 2 * np.pi * radius / marks
+    nearest = np.rint(at) % marks
+    along = (at - np.rint(at)) * step
+    passed = nearest <= filled - 1
+    major = nearest % max(1, marks // 12) == 0
+    zero = np.zeros_like(off)
+    lit, dim = zero, zero
+
+    def clip(value):
+        return np.clip(value, 0, 1)
+
+    if style == "dots":
+        cover = clip(np.where(major, 3.2, 2.0) * unit + 0.5 - np.hypot(off, along))
+        lit, dim = np.where(passed, cover, 0), np.where(passed, 0, cover)
+    elif style == "ticks":
+        cover = (clip(np.where(major, 1.4, 0.9) * unit + 0.5 - np.abs(along)) *
+                 clip(np.minimum(off - np.where(major, -10, -4) * unit, 8 * unit - off) + 0.5))
+        lit, dim = np.where(passed, cover, 0), np.where(passed, 0, cover)
+    elif style in ("bar", "wave"):
+        head = clip((filled - at) * step + 0.5)
+        if style == "bar":
+            cover = clip(3 * unit + 0.5 - np.abs(off))
+            lit, dim = cover * head, cover * (1 - head)
+        else:
+            phase = at * np.pi
+            slope = 4 * unit * np.pi / step * np.cos(phase)
+            wave = clip(2 * unit + 0.5 - np.abs(off - 4 * unit * np.sin(phase)) /
+                        np.sqrt(1 + slope * slope))
+            lit = wave * head
+            dim = clip(1.25 * unit + 0.5 - np.abs(off)) * (1 - head)
+    elif style == "comet":
+        second = filled - 1
+        length = marks / 3
+        behind = (second - at) % marks
+        tail = np.where(behind < length, 1 - behind / length, 0)
+        head_along = ((at - second + 1.5 * marks) % marks - marks / 2) * step
+        head = clip(4 * unit + 0.5 - np.hypot(off, head_along))
+        lit = np.maximum(head, clip(0.5 + 3 * unit * tail - np.abs(off)) * tail)
+        dim = clip(unit + 0.5 - np.abs(off)) * (1 - lit)
+    return lit, dim
+
+
+def paint_ring(image, centre, radius, unit, marks, filled, style, accent, over_picture):
+    """Draws the seconds ring onto an RGB image around `centre` (pixels)."""
+    if style == "none":
+        return
+    size = int(2 * (radius + 12 * unit)) | 1
+    left, top = round(centre[0] - size / 2 + 0.5), round(centre[1] - size / 2 + 0.5)
+    box = (left, top, left + size, top + size)
+    lit, dim = ring_cover(size, radius, unit, marks, filled, style)
+    pixels = np.asarray(image.crop(box), dtype=np.float32)
+    if over_picture:
+        pixels *= (1 - 0.55 * dim)[..., None]
+    else:
+        pixels += (np.array(RING_TRACK, np.float32) - pixels) * dim[..., None]
+    pixels += (np.array(ui.rgb(accent), np.float32) - pixels) * lit[..., None]
+    image.paste(Image.fromarray(np.clip(pixels, 0, 255).astype(np.uint8), "RGB"), box)
 
 
 def shade_for_clock(picture):
@@ -189,6 +264,18 @@ class ScreensaverPage:
             lambda value=value: self.set_saver_choice("clock_format", value))
             for value in CLOCK_LABELS]
         self.pack_row(buttons, CHOICE_GAP)
+        self.saver_choices += buttons
+        self.saver_heading(box, "Seconds ring", "How the seconds go round the edge.",
+                           COLUMN_W).pack_configure(pady=(k.px(BLOCK_GAP), 0))
+        row = tk.Frame(box, bg=PANEL_BG)
+        row.pack(anchor="w", pady=(k.px(14), 0))
+        widths = self.fill_widths([0] * len(RING_LABELS), RING_GAP, COLUMN_W)
+        buttons = [ui.Button(
+            row, PANEL_BG,
+            lambda hover, value=value, width=width: self.paint_ring_swatch(value, hover, width),
+            lambda value=value: self.set_saver_choice("saver_ring", value))
+            for value, width in zip(RING_LABELS, widths)]
+        self.pack_row(buttons, RING_GAP)
         self.saver_choices += buttons
 
         self.saver_pictures_box = box = tk.Frame(column, bg=PANEL_BG)
@@ -332,6 +419,29 @@ class ScreensaverPage:
             k.icon(image, "Check", width - 14, 14, "#FFFFFF", 0.55)
         return image
 
+    def paint_ring_swatch(self, value, hover, width):
+        """A small knob face showing one ring style, about two thirds round."""
+        k = self.kit
+        height = RING_SWATCH_H
+        image = k.canvas(width, height, PANEL_BG)
+        accent = self.accent(self.mode)
+        chosen = self.settings["saver_ring"] == value
+        if chosen:
+            k.rounded(image, (0, 0, width, height), 12, accent)
+            k.rounded(image, (2, 2, width - 2, height - 2), 10, "#FFFFFF")
+        else:
+            k.rounded(image, (0, 0, width, height), 12, "#FFFFFF" if hover else ui.CARD_BG,
+                      ui.CARD_EDGE)
+        cx, cy = width / 2, 36
+        k.dot(image, cx, cy, 26, "#101014")
+        if value == "none":
+            k.rounded(image, (cx - 6, cy - 1, cx + 6, cy + 1), 1, "#6E6E78")
+        paint_ring(image, (k.px(cx), k.px(cy)), k.scale * 20, k.scale * 0.75, 20, 13,
+                   value, accent, False)
+        k.text(image, cx, height - 15, RING_LABELS[value], "semibold" if chosen else "regular",
+               9, ui.INK if chosen else ui.SUBTLE_INK, anchor="mm")
+        return image
+
     def preview_picture(self):
         """The first picture in the library at full size, kept between repaints."""
         items = self.library.items
@@ -380,6 +490,10 @@ class ScreensaverPage:
             # The knob's layout scaled down: 96 px time, 24 px AM/PM and date.
             f = inner / 180
             now = time.localtime()
+            g = k.scale * f
+            paint_ring(image, (k.px(c), k.px(c)), 164 * g, g, 60, now.tm_sec + 1,
+                       self.settings["saver_ring"], accent,
+                       show == "both" and self.preview_picture() is not None)
             h24 = self.uses_24_hour_clock()
             hour = now.tm_hour if h24 else (now.tm_hour % 12 or 12)
             k.text(image, c, c - 8 * f, f"{hour}:{now.tm_min:02d}", "device",
@@ -600,7 +714,8 @@ class ScreensaverPage:
             self.bridge.send_saver(self.settings["saver_enabled"],
                                    self.settings["saver_idle"] * 60,
                                    self.settings["saver_interval"],
-                                   config.SAVER_SHOW_CHOICES.index(self.settings["saver_show"]))
+                                   config.SAVER_SHOW_CHOICES.index(self.settings["saver_show"]),
+                                   config.RING_STYLES.index(self.settings["saver_ring"]))
         self.refresh_screensaver()
 
     def add_saver_media(self):

@@ -183,11 +183,19 @@ the date below it and, when the app is set to AM/PM, AM or PM above it, both in 
 comes from `TIME,<local seconds>,<24h>`, sent by the app on connect and every
 hour; until then the clock screensaver doesn't start.
 
-With the last field set to 2 the screensaver shows the pictures with the time,
-date and AM/PM on top, without the second marks. `shade_for_clock` darkens each
+With the fifth field set to 2 the screensaver shows the pictures with the time,
+date and AM/PM on top. `shade_for_clock` darkens each
 decoded frame towards the middle (about 45% brightness within 110 px of the
 centre, easing back to full at 180 px) so the white text stays readable. Until
 the clock is set it shows the pictures alone.
+
+An optional sixth `SAVER` field picks the seconds ring drawn round the clock:
+0 bullets (the sixty dots), 1 bar, 2 wiggly (a wave up to the current second,
+a flat line after it), 3 ticks (watch-style marks), 4 comet (a head on the
+current second with a fading tail) or 5 none. `draw_seconds_ring` repaints the
+whole ring every second over the black face or the current picture (kept in
+`frame_pixels`), and again after each new frame, so it never leaves traces.
+It is saved as `ring`.
 
 ## Media transport screen
 
@@ -262,7 +270,7 @@ The last mode, orientation, bar colour and number size are kept in NVS
 (namespace `revo1`: `mode`, `orient`, `numsize`, `accent`, with
 `0xFFFFFFFF` meaning standard colours), together with the enabled screens
 (`screens`), backlight (`light`), idle dimming (`dim`), swipe switch (`swipe`)
-screensaver settings (`saver`, `idle`, `every`, `show`) and the Whack-a-Mole best score (`whack`). `load_settings` reads them before the
+screensaver settings (`saver`, `idle`, `every`, `show`, `ring`) and the Whack-a-Mole best score (`whack`). `load_settings` reads them before the
 display starts, so a restarted knob comes back in the same view and the same
 orientation even when the PC app isn't running. `save_settings` runs after
 every command or touch that changes one of them, and only writes flash when a

@@ -19,7 +19,8 @@ DEFAULTS = {"mode": "Volume", "orientation": 0, "port": "", "name": DEFAULT_NAME
             "screens": list(MODES), "known_screens": list(MODES), "backlight": 100,
             "focus_minutes": 25, "break_minutes": 5,
             "saver_enabled": False, "saver_idle": 5, "saver_interval": 30,
-            "saver_show": "pictures", "clock_format": "24h", "dim_idle": True}
+            "saver_show": "pictures", "clock_format": "24h", "saver_ring": "dots",
+            "dim_idle": True}
 FLAGS = ("minimize_to_tray", "invert_scroll", "invert_zoom", "swipe_screens",
          "saver_enabled", "dim_idle")
 # Screensaver: minutes without touching the knob, and seconds per picture.
@@ -30,6 +31,9 @@ SAVER_INTERVAL_CHOICES = (10, 30, 60, 180, 300)
 SAVER_SHOW_CHOICES = ("pictures", "clock", "both")
 # The screensaver clock: 24-hour first (and the default), then AM/PM.
 CLOCK_FORMATS = ("24h", "12h")
+# The seconds ring around the screensaver clock; the order is the number sent
+# to the knob.
+RING_STYLES = ("dots", "bar", "wave", "ticks", "comet", "none")
 POMODORO_MINUTES = range(1, 181)
 BACKLIGHT_RANGE = range(5, 101)
 
@@ -78,6 +82,7 @@ def load(path=None):
     known = data.get("known_screens", list(LEGACY_SCREENS))
     saver_show = data.get("saver_show", DEFAULTS["saver_show"])
     clock_format = data.get("clock_format", DEFAULTS["clock_format"])
+    saver_ring = data.get("saver_ring", DEFAULTS["saver_ring"])
     numbers = {key: data.get(key, DEFAULTS[key])
                for key in ("backlight", "focus_minutes", "break_minutes",
                            "saver_idle", "saver_interval")}
@@ -90,6 +95,7 @@ def load(path=None):
             or not all(isinstance(item, str) for item in known)
             or saver_show not in SAVER_SHOW_CHOICES
             or clock_format not in CLOCK_FORMATS
+            or saver_ring not in RING_STYLES
             or not all(type(value) is int for value in numbers.values())
             or numbers["backlight"] not in BACKLIGHT_RANGE
             or numbers["focus_minutes"] not in POMODORO_MINUTES
@@ -107,7 +113,7 @@ def load(path=None):
             "accent": accent if accent == STANDARD_ACCENT else accent.upper(),
             "number_size": number_size, "screens": screens,
             "known_screens": list(MODES), "saver_show": saver_show,
-            "clock_format": clock_format,
+            "clock_format": clock_format, "saver_ring": saver_ring,
             **numbers, **flags}
 
 
