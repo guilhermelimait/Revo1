@@ -32,8 +32,8 @@
 - Pictures can stay on for **3 min** each.
 - The seconds ring round the screensaver clock now also shows over pictures,
   and has six styles: Bullets, Bar, Wiggly, Ticks, Comet or None (an
-  optional sixth `SAVER` field). The wiggly ring flows round continuously at
-  about 25 frames a second.
+  optional sixth `SAVER` field). The wiggly ring grows smoothly at about 25
+  frames a second: only its tip ripples, and the body behind it stays still.
 - Removing every picture and sending the empty collection takes the knob back
   to its menu instead of the last screen.
 - The screensaver preview in the app no longer draws a coloured bezel inside

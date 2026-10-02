@@ -299,10 +299,13 @@ enum { RING_DOTS, RING_BAR, RING_WAVE, RING_TICKS, RING_COMET, RING_NONE };
 static int saver_ring = RING_DOTS;
 /* The second the ring shows, or -1 before the clock has ticked. */
 static int ring_second = -1;
-/* The wiggly ring flows round continuously: its phase in radians, and when
-   it is next redrawn. */
-static float ring_drift;
+/* The wiggly ring grows smoothly with a rippling tip: the time it was last
+   drawn for (its fraction of a second places the tip), and when it is next
+   redrawn. */
+static int64_t ring_now_us;
 static int64_t ring_next_us;
+/* How many seconds behind the tip still ripple; the body before that is still. */
+#define WAVE_HEAD_S 3.0f
 /* What the running screensaver shows (one of the SAVER_ kinds). */
 static int saver_shown;
 static int64_t clock_second_shown = -1;
@@ -3120,27 +3123,43 @@ static void free_wave_list(void)
    numbers like the dial's arc: distances in 1/64 pixel and coverage out of
    256, with everything that depends only on the angle worked out once per
    segment. Pixels the wave can never reach are left alone. */
-static void draw_wave_ring(float filled, float step, const uint16_t *under,
+static void draw_wave_ring(int second, float step, const uint16_t *under,
                            const uint8_t *accent, const uint8_t *track)
 {
     static int16_t height[ARC_SEGMENTS];
     static uint16_t thin[ARC_SEGMENTS], head[ARC_SEGMENTS];
-    /* The phase falls by the same angle from one segment to the next, so
-       sine and cosine are carried along by rotation rather than computed
-       1024 times. The wave repeats every two seconds, so the jump from 60
-       back to 0 at 12 o'clock needs no correction. */
+    /* The tip creeps on through each second rather than jumping, and only
+       the last few seconds behind it ripple: the ripple fades out along the
+       body, which keeps the shape it was drawn with. */
+    const float fraction = (float)(ring_now_us % 1000000) * 1e-6f;
+    const float tip = (float)second + fraction;
+    const float drift = fraction * 6.28318531f;
+    /* The still phase falls by the same angle from one segment to the next,
+       so its sine and cosine are carried along by rotation rather than
+       computed 1024 times. The wave repeats every two seconds, so the jump
+       from 60 back to 0 at 12 o'clock needs no correction. */
     const float turn = -3.14159265f * 60.0f / ARC_SEGMENTS;
     const float turn_cos = cosf(turn), turn_sin = sinf(turn);
-    const float start = (float)(ARC_SEGMENTS / 4) * (60.0f / ARC_SEGMENTS) * 3.14159265f - ring_drift;
+    const float start = (float)(ARC_SEGMENTS / 4) * (60.0f / ARC_SEGMENTS) * 3.14159265f;
     float wave_sin = sinf(start), wave_cos = cosf(start);
     const float steep = 4.0f * 3.14159265f / step;
     for (int segment = 0; segment < ARC_SEGMENTS; ++segment) {
         const float at = (float)((ARC_SEGMENTS / 4 - segment) & ARC_MASK) *
                          (60.0f / ARC_SEGMENTS);
-        const float slope = steep * wave_cos;
-        height[segment] = (int16_t)(64.0f * wave_sin + (wave_sin < 0.0f ? -0.5f : 0.5f));
+        float sine = wave_sin, cosine = wave_cos;
+        const float behind = tip - at;
+        if (behind > -1.0f && behind < WAVE_HEAD_S) {
+            /* Full ripple at the tip, easing to none WAVE_HEAD_S behind it. */
+            float weight = behind <= 0.0f ? 1.0f : 1.0f - behind / WAVE_HEAD_S;
+            weight = weight * weight * (3.0f - 2.0f * weight);
+            const float phase = at * 3.14159265f - drift * weight;
+            sine = sinf(phase);
+            cosine = cosf(phase);
+        }
+        const float slope = steep * cosine;
+        height[segment] = (int16_t)(64.0f * sine + (sine < 0.0f ? -0.5f : 0.5f));
         thin[segment] = (uint16_t)(256.0f / sqrtf(1.0f + slope * slope) + 0.5f);
-        head[segment] = (uint16_t)(256.0f * coverage((filled - at) * step + 0.5f) + 0.5f);
+        head[segment] = (uint16_t)(256.0f * coverage(behind * step + 0.5f) + 0.5f);
         const float next_sin = wave_sin * turn_cos + wave_cos * turn_sin;
         wave_cos = wave_cos * turn_cos - wave_sin * turn_sin;
         wave_sin = next_sin;
@@ -3200,7 +3219,7 @@ static void draw_seconds_ring(int second, const uint16_t *under)
     static const uint8_t track[3] = {0x34, 0x34, 0x3E};
     uint16_t *pixels = (uint16_t *)canvas_pixels;
     if (saver_ring == RING_WAVE) {
-        draw_wave_ring(filled, step, under, accent, track);
+        draw_wave_ring(second, step, under, accent, track);
         return;
     }
     for (int i = 0; i < band_count; ++i) {
@@ -3315,6 +3334,7 @@ static void clock_tick(int64_t now)
         lv_obj_clear_flag(date_label, LV_OBJ_FLAG_HIDDEN);
     }
     ring_second = fields.tm_sec;
+    ring_now_us = now;
     draw_seconds_ring(ring_second, saver_shown == SAVER_BOTH && media_valid ? frame_pixels : NULL);
     if (lvgl_mutex) xSemaphoreGive(lvgl_mutex);
 }
@@ -3382,9 +3402,9 @@ static void saver_tick(int64_t now)
     if (saver_shown != SAVER_PICTURES && clock_valid) clock_tick(now);
     if (saver_shown != SAVER_PICTURES && clock_valid && saver_ring == RING_WAVE &&
         ring_second >= 0 && now >= ring_next_us) {
-        /* About 25 frames a second; one wavelength flows past each second. */
+        /* About 25 frames a second; the tip ripples one wavelength a second. */
         ring_next_us = now + 40000;
-        ring_drift = (float)(now % 1000000) * (6.28318531f / 1000000.0f);
+        ring_now_us = now;
         if (lvgl_mutex) xSemaphoreTake(lvgl_mutex, portMAX_DELAY);
         draw_seconds_ring(ring_second,
                           saver_shown == SAVER_BOTH && media_valid ? frame_pixels : NULL);

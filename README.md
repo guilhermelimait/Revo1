@@ -210,7 +210,7 @@ in the left sidebar.
   preview of the knob sits beside that choice's settings: **24-hour** (the
   default) or **AM/PM** for the clock and the **Seconds ring** round the edge
   (**Bullets**, **Bar**, **Wiggly**, **Ticks**, **Comet** or **None**;
-  **Wiggly** flows round continuously on the knob).
+  on the knob **Wiggly** grows smoothly with a rippling tip).
   **Pictures** holds your pictures and clips; click **Add pictures or
   videos...** to add more. Hover a thumbnail
   and click the cross to remove it. **Send to knob** copies the collection
