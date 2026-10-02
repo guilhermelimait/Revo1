@@ -254,7 +254,9 @@ in the left sidebar.
   Large or X-Large). Under **Window**, turn on **Minimise to the notification
   area** to hide Revo1 next to the clock when you minimise it (click the
   icon to bring it back, right-click for **Quit**). When it's on, the
-  start-at-sign-in shortcut starts it there too.
+  start-at-sign-in shortcut starts it there too. Closing the window or
+  choosing **Quit** asks first, since the knob stops working until Revo1
+  runs again (and warns harder during a firmware update).
 - **Wireless:** three tiles show which link is in use (**USB cable**,
   **Wi-Fi** or **Bluetooth**) and the state of the others, such as the
   knob's address on Wi-Fi or **Wrong password**. To pair, plug in the cable,

@@ -28,7 +28,7 @@
 #include "esp_wifi.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/semphr.h"
-#include "freertos/stream_buffer.h"
+#include "freertos/message_buffer.h"
 #include "freertos/task.h"
 #include "host/ble_hs.h"
 #include "host/util/util.h"
@@ -519,21 +519,28 @@ static volatile bool ble_synced;
 static uint8_t ble_address_type;
 static volatile uint16_t ble_connection = BLE_HS_CONN_HANDLE_NONE;
 static uint16_t ble_tx_handle;
-static StreamBufferHandle_t ble_stream;
+/* Each write is one message, tagged with the connection it arrived on, so
+   bytes left from a dropped connection never reach the next handshake. */
+static MessageBufferHandle_t ble_stream;
 static volatile bool ble_overflow;
 static volatile bool ble_drop;
+static volatile uint8_t ble_generation;
 
 static int ble_access(uint16_t connection, uint16_t attribute,
                       struct ble_gatt_access_ctxt *context, void *argument)
 {
-    static uint8_t buffer[520];
+    static uint8_t buffer[1 + 520];
     if (context->op != BLE_GATT_ACCESS_OP_WRITE_CHR) return BLE_ATT_ERR_UNLIKELY;
     uint16_t length = 0;
-    if (OS_MBUF_PKTLEN(context->om) > sizeof(buffer) ||
-        ble_hs_mbuf_to_flat(context->om, buffer, sizeof(buffer), &length) != 0) {
+    if (OS_MBUF_PKTLEN(context->om) > sizeof(buffer) - 1 ||
+        ble_hs_mbuf_to_flat(context->om, buffer + 1, sizeof(buffer) - 1, &length) != 0) {
         return BLE_ATT_ERR_INVALID_ATTR_VALUE_LEN;
     }
-    if (xStreamBufferSend(ble_stream, buffer, length, 0) != length) ble_overflow = true;
+    if (length == 0) return 0;
+    buffer[0] = ble_generation;
+    if (xMessageBufferSend(ble_stream, buffer, length + 1u, 0) != length + 1u) {
+        ble_overflow = true;
+    }
     return 0;
 }
 
@@ -592,6 +599,7 @@ static int ble_gap_event(struct ble_gap_event *event, void *argument)
     switch (event->type) {
     case BLE_GAP_EVENT_CONNECT:
         if (event->connect.status == 0) {
+            ble_generation++;
             ble_drop = true;
             ble_connection = event->connect.conn_handle;
             /* Ask for a short interval: uploads ride on it. */
@@ -607,6 +615,7 @@ static int ble_gap_event(struct ble_gap_event *event, void *argument)
     case BLE_GAP_EVENT_DISCONNECT:
         ble_connection = BLE_HS_CONN_HANDLE_NONE;
         ble_session.open = false;
+        ble_generation++;
         ble_drop = true;
         ble_advertise();
         break;
@@ -666,21 +675,23 @@ static void ble_terminate(void)
 
 static void ble_worker_task(void *argument)
 {
-    static uint8_t buffer[1024];
+    static uint8_t buffer[1 + 520];
+    uint8_t generation = ble_generation;
     for (;;) {
-        const size_t received = xStreamBufferReceive(ble_stream, buffer, sizeof(buffer),
-                                                     pdMS_TO_TICKS(200));
+        size_t received = xMessageBufferReceive(ble_stream, buffer, sizeof(buffer),
+                                                pdMS_TO_TICKS(200));
         if (ble_drop) {
-            /* A new or closed connection: start the handshake afresh, and
-               forget bytes from the old one. */
+            /* A new or closed connection: start the handshake afresh. */
             ble_drop = false;
             ble_overflow = false;
+            generation = ble_generation;
             session_reset(&ble_session);
-            if (ble_connection == BLE_HS_CONN_HANDLE_NONE) continue;
         }
+        /* Writes from an earlier connection are dropped. */
+        if (received && buffer[0] != generation) received = 0;
         if (ble_connection == BLE_HS_CONN_HANDLE_NONE) continue;
         if (ble_overflow || ble_session.failed || session_stale(&ble_session) ||
-            (received && !session_feed(&ble_session, buffer, received))) {
+            (received && !session_feed(&ble_session, buffer + 1, received - 1))) {
             ble_session.open = false;
             ble_overflow = false;
             ble_terminate();
@@ -695,7 +706,7 @@ static void ble_start(void)
         ble_advertise();
         return;
     }
-    ble_stream = xStreamBufferCreateWithCaps(BLE_STREAM_BYTES, 1, MALLOC_CAP_SPIRAM);
+    ble_stream = xMessageBufferCreateWithCaps(BLE_STREAM_BYTES, MALLOC_CAP_SPIRAM);
     if (!ble_stream || nimble_port_init() != ESP_OK) return;
     ble_hs_cfg.sync_cb = ble_on_sync;
     ble_svc_gap_init();

@@ -401,8 +401,11 @@ address.
 `7b8f0001-6c1e-4e8a-9c3d-2a1f5e0b9a10`: the app writes to `...0002` (write
 or write without response) and gets notifications from `...0003`. The
 advertisement carries the service UUID, and the scan response the name.
-Incoming bytes go through a 24 KB PSRAM stream buffer to a worker task, so
-the NimBLE host task never blocks. With a 517-byte MTU, Windows sends
+Incoming writes go through a 24 KB PSRAM message buffer to a worker task, so
+the NimBLE host task never blocks. Each write is tagged with a connection
+number that changes on every connect and disconnect, and the worker drops
+writes from an earlier connection, so a quick reconnect starts its handshake
+clean. With a 517-byte MTU, Windows sends
 512-byte writes, about 57 KB/s.
 
 **Configuration.** `sdkconfig.defaults` and `sdkconfig.waveshare-knob` enable

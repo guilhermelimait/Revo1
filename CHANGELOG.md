@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- Closing Revo1 (the window's close button or **Quit** in the notification
+  area) now asks first, since the knob disconnects until the app runs again;
+  during a firmware update it warns that closing stops the update.
+- Fixed: a quick Bluetooth disconnect and reconnect could feed bytes from the
+  old connection into the new handshake and drop it.
 - The Media screen now also follows players that don't report to Windows'
   media controls, such as Stremio: any app making sound is shown by its
   window title, as playing or paused, and play/pause, previous and next are

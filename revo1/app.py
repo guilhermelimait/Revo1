@@ -122,7 +122,7 @@ class App(DashboardPage, ScreensaverPage, GamesPage, WirelessTab):
         root.geometry(size)
         root.minsize(self.kit.px(SIDEBAR_WIDTH + MAIN_WIDTH), self.kit.px(WINDOW_HEIGHT))
         root.configure(bg=ui.MAIN_BG)
-        root.protocol("WM_DELETE_WINDOW", self.close)
+        root.protocol("WM_DELETE_WINDOW", self.request_close)
         self.in_tray = False
         root.bind("<Unmap>", self.on_unmap)
 
@@ -1664,8 +1664,8 @@ class App(DashboardPage, ScreensaverPage, GamesPage, WirelessTab):
                 elif kind == "show":
                     self.show_window()
                 elif kind == "quit":
-                    self.close()
-                    return
+                    if self.request_close():
+                        return
                 elif kind == "hello":
                     if not self.connected:
                         self.connected_port = payload
@@ -1851,6 +1851,29 @@ class App(DashboardPage, ScreensaverPage, GamesPage, WirelessTab):
         config.save(self.settings)
         if self.connected:
             self.bridge.send_backlight(self.settings["backlight"])
+
+    def request_close(self):
+        """Asks before closing, since the knob stops working without the app.
+        Returns True once the app is closed."""
+        if self.in_tray:
+            self.show_window()
+        if self.update_busy:
+            title = "Firmware update in progress"
+            message = ("Closing Revo1 now stops the firmware update, and the knob may "
+                       "not start until it is installed again.\n\nClose anyway?")
+        else:
+            title = "Close Revo1"
+            message = ("Closing Revo1 disconnects the knob: it stops controlling the "
+                       "volume, media and the other screens until you open Revo1 "
+                       "again.\n\nClose Revo1?")
+            if self.tray and not self.settings["minimize_to_tray"]:
+                message += ("\n\nTip: to keep it running out of the way, turn on "
+                            "\u201cMinimise to the notification area\u201d in Settings.")
+        if not messagebox.askyesno(title, message, icon="warning", default="no",
+                                   parent=self.root):
+            return False
+        self.close()
+        return True
 
     def close(self):
         self.actions.put((None, 0))
