@@ -1,4 +1,5 @@
 #include <math.h>
+#include <stdarg.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -26,6 +27,8 @@
 #include "nvs_flash.h"
 #include "rom/tjpgd.h"
 #include "esp_lcd_sh8601.h"
+#include "freertos/semphr.h"
+#include "wireless.h"
 
 #define LCD_WIDTH 360
 #define LCD_HEIGHT 360
@@ -384,6 +387,23 @@ static esp_err_t touch_error;
 /* Set once the PC has sent a STATE since boot; until then the firmware asks
    for one, so a restarted knob gets its settings back from a connected app. */
 static bool state_received;
+/* One line at a time reaches the parsers, from USB or a wireless link. */
+static SemaphoreHandle_t dispatch_lock;
+
+/* Sends a protocol line to the PC: over USB, and sealed over any open
+   wireless session. */
+static void host_printf(const char *format, ...)
+{
+    char text[256];
+    va_list arguments;
+    va_start(arguments, format);
+    int length = vsnprintf(text, sizeof(text), format, arguments);
+    va_end(arguments);
+    if (length < 0) return;
+    if (length >= (int)sizeof(text)) length = sizeof(text) - 1;
+    fputs(text, stdout);
+    wireless_send(text, (size_t)length);
+}
 
 static const lv_font_t *font_for_size(int size)
 {
@@ -1892,7 +1912,7 @@ static void whack_finish(int64_t now)
         whack_new_best = true;
         whack_save_best();
     }
-    printf("GAME,WHACK,%d,%d\n", whack_score, whack_best);
+    host_printf("GAME,WHACK,%d,%d\n", whack_score, whack_best);
     refresh_screen();
 }
 
@@ -2073,7 +2093,7 @@ static bool load_media(void)
 static void report_library(void)
 {
     const uint32_t capacity = media_partition ? media_partition->size - MEDIA_HEADER_BYTES : 0;
-    printf("LIBRARY,%lu,%lu,%lu,%08lX\n", (unsigned long)capacity,
+    host_printf("LIBRARY,%lu,%lu,%lu,%08lX\n", (unsigned long)capacity,
            (unsigned long)(media_valid ? media_header.count : 0),
            (unsigned long)(media_valid ? media_header.data_bytes : 0),
            (unsigned long)(media_valid ? media_header.data_crc : 0));
@@ -2144,13 +2164,13 @@ static void handle_media_line(char *line)
         return;
     }
     if (!media_partition || !frame_jpeg) {
-        printf("MEDIA_ERR,NOSTORAGE\n");
+        host_printf("MEDIA_ERR,NOSTORAGE\n");
         return;
     }
     if (strncmp(line, "MD,", 3) == 0) {
         char *data = strchr(line + 3, ',');
         if (!data || !media_busy) {
-            printf("MD_ERR,0\n");
+            host_printf("MD_ERR,0\n");
             return;
         }
         *data++ = '\0';
@@ -2160,17 +2180,17 @@ static void handle_media_line(char *line)
         if (*end != '\0' || length <= 0 || offset > upload_size ||
             (unsigned long)length > upload_size - offset ||
             esp_partition_write(media_partition, offset, chunk, length) != ESP_OK) {
-            printf("MD_ERR,%lu\n", offset);
+            host_printf("MD_ERR,%lu\n", offset);
             return;
         }
-        printf("MD_OK,%lu\n", offset);
+        host_printf("MD_OK,%lu\n", offset);
         return;
     }
     if (strncmp(line, "MEDIA_BEGIN,", 12) == 0) {
         char *end = NULL;
         const unsigned long bytes = strtoul(line + 12, &end, 10);
         if (*end != '\0' || bytes <= MEDIA_HEADER_BYTES || bytes > media_partition->size) {
-            printf("MEDIA_ERR,SIZE\n");
+            host_printf("MEDIA_ERR,SIZE\n");
             return;
         }
         media_busy = true;
@@ -2181,10 +2201,10 @@ static void handle_media_line(char *line)
         const uint32_t erase = (bytes + 4095) & ~4095u;
         if (esp_partition_erase_range(media_partition, 0, erase) != ESP_OK) {
             media_busy = false;
-            printf("MEDIA_ERR,ERASE\n");
+            host_printf("MEDIA_ERR,ERASE\n");
             return;
         }
-        printf("MEDIA_READY\n");
+        host_printf("MEDIA_READY\n");
         return;
     }
     if (strcmp(line, "MEDIA_END") == 0) {
@@ -2197,9 +2217,9 @@ static void handle_media_line(char *line)
         }
         media_busy = false;
         if (loaded) {
-            printf("MEDIA_OK,%lu\n", (unsigned long)media_header.count);
+            host_printf("MEDIA_OK,%lu\n", (unsigned long)media_header.count);
         } else {
-            printf("MEDIA_ERR,CHECK\n");
+            host_printf("MEDIA_ERR,CHECK\n");
         }
         report_library();
         return;
@@ -2210,7 +2230,7 @@ static void handle_media_line(char *line)
         vTaskDelay(pdMS_TO_TICKS(200));
         esp_partition_erase_range(media_partition, 0, MEDIA_HEADER_BYTES);
         media_busy = false;
-        printf("MEDIA_OK,0\n");
+        host_printf("MEDIA_OK,0\n");
         report_library();
         /* With no pictures left the knob goes back to its menu. */
         last_input_us = esp_timer_get_time();
@@ -2223,7 +2243,75 @@ static void handle_media_line(char *line)
     }
 }
 
+static void dispatch_unlocked(char *line, size_t length);
+
 static void dispatch_line(char *line, size_t length)
+{
+    xSemaphoreTake(dispatch_lock, portMAX_DELAY);
+    dispatch_unlocked(line, length);
+    xSemaphoreGive(dispatch_lock);
+}
+
+static int hex_value(char character)
+{
+    if (character >= '0' && character <= '9') return character - '0';
+    if (character >= 'a' && character <= 'f') return character - 'a' + 10;
+    if (character >= 'A' && character <= 'F') return character - 'A' + 10;
+    return -1;
+}
+
+/* Decodes hex up to the next comma (or the end) into `out`; returns the
+   byte count, or -1 on bad input. */
+static int decode_hex_field(const char **text, uint8_t *out, int capacity)
+{
+    int count = 0;
+    const char *cursor = *text;
+    while (*cursor && *cursor != ',') {
+        const int high = hex_value(cursor[0]);
+        const int low = cursor[1] ? hex_value(cursor[1]) : -1;
+        if (high < 0 || low < 0 || count >= capacity) return -1;
+        out[count++] = (uint8_t)(high << 4 | low);
+        cursor += 2;
+    }
+    if (*cursor == ',') ++cursor;
+    *text = cursor;
+    return count;
+}
+
+/* PAIR,<key hex>,<ssid hex>,<password hex> and UNPAIR. Only accepted over
+   USB: pairing needs the knob in hand. */
+static bool handle_pairing(const char *line)
+{
+    if (strcmp(line, "UNPAIR") == 0) {
+        wireless_unpair();
+        host_printf("UNPAIR_OK\n");
+        return true;
+    }
+    if (strncmp(line, "PAIR,", 5) != 0) return false;
+    const char *cursor = line + 5;
+    uint8_t key[WIRELESS_KEY_BYTES];
+    char ssid[33] = {0};
+    char password[65] = {0};
+    const int key_length = decode_hex_field(&cursor, key, sizeof(key));
+    const int ssid_length = decode_hex_field(&cursor, (uint8_t *)ssid, sizeof(ssid) - 1);
+    const int password_length =
+        decode_hex_field(&cursor, (uint8_t *)password, sizeof(password) - 1);
+    if (key_length != WIRELESS_KEY_BYTES || ssid_length < 0 || password_length < 0 ||
+        *cursor != '\0' || memchr(ssid, 0, ssid_length) || memchr(password, 0, password_length)) {
+        host_printf("PAIR_ERR,FORMAT\n");
+    } else if (!wireless_pair(key, ssid, password)) {
+        host_printf("PAIR_ERR,STORE\n");
+    } else {
+        char status[96];
+        wireless_status(status, sizeof(status));
+        host_printf("PAIR_OK\n%s\n", status);
+    }
+    memset(key, 0, sizeof(key));
+    memset(password, 0, sizeof(password));
+    return true;
+}
+
+static void dispatch_unlocked(char *line, size_t length)
 {
     if (strncmp(line, "MD,", 3) == 0 || strncmp(line, "MEDIA_", 6) == 0 ||
         strcmp(line, "LIBRARY") == 0) {
@@ -2251,7 +2339,7 @@ static void serial_reader_task(void *argument)
             if (character == '\n' || character == '\r') {
                 if (length && !overflow) {
                     line[length] = '\0';
-                    dispatch_line(line, length);
+                    if (!handle_pairing(line)) dispatch_line(line, length);
                 }
                 length = 0;
                 overflow = false;
@@ -2262,6 +2350,16 @@ static void serial_reader_task(void *argument)
             }
         }
     }
+}
+
+/* Lines from an authenticated wireless session; pairing stays USB-only. */
+static void wireless_line(char *line, size_t length)
+{
+    if (strncmp(line, "PAIR,", 5) == 0 || strcmp(line, "UNPAIR") == 0) {
+        host_printf("PAIR_ERR,USB\n");
+        return;
+    }
+    dispatch_line(line, length);
 }
 
 static int mode_from_name(const char *name)
@@ -2318,7 +2416,7 @@ static void confirm_menu(int mode)
     save_settings();
     dial_value_q8 = 0;
     reset_comet();
-    printf("TAP,%d\n", mode);
+    host_printf("TAP,%d\n", mode);
     refresh_screen();
 }
 
@@ -2327,7 +2425,7 @@ static void handle_command(char *line)
     if (strcmp(line, "SHOWMENU") == 0) {
         open_menu();
         refresh_screen();
-        printf("MENU_OK\n");
+        host_printf("MENU_OK\n");
         return;
     }
 
@@ -2345,7 +2443,7 @@ static void handle_command(char *line)
         if (!screen_enabled(menu_cursor)) menu_cursor = selected_mode;
         save_settings();
         refresh_screen();
-        printf("SCREENS_OK,%d\n", mask);
+        host_printf("SCREENS_OK,%d\n", mask);
         return;
     }
 
@@ -2354,7 +2452,7 @@ static void handle_command(char *line)
         if (!parse_integer(line + 7, 0, 1, &enabled)) return;
         swipe_enabled = enabled;
         save_settings();
-        printf("SWIPES_OK,%d\n", enabled);
+        host_printf("SWIPES_OK,%d\n", enabled);
         return;
     }
 
@@ -2364,7 +2462,7 @@ static void handle_command(char *line)
         backlight_percent = percent;
         apply_backlight();
         save_settings();
-        printf("BACKLIGHT_OK,%d\n", percent);
+        host_printf("BACKLIGHT_OK,%d\n", percent);
         return;
     }
 
@@ -2374,7 +2472,7 @@ static void handle_command(char *line)
         dim_enabled = enabled;
         apply_backlight();
         save_settings();
-        printf("DIM_OK,%d\n", enabled);
+        host_printf("DIM_OK,%d\n", enabled);
         return;
     }
 
@@ -2394,7 +2492,7 @@ static void handle_command(char *line)
         clock_24h = h24;
         clock_valid = true;
         clock_second_shown = -1;
-        printf("TIME_OK\n");
+        host_printf("TIME_OK\n");
         return;
     }
 
@@ -2427,7 +2525,7 @@ static void handle_command(char *line)
         }
         saver_ring = ring;
         save_settings();
-        printf("SAVER_OK\n");
+        host_printf("SAVER_OK\n");
         return;
     }
 
@@ -2499,7 +2597,7 @@ static void handle_command(char *line)
         number_font = font;
         save_settings();
         refresh_screen();
-        printf("STYLE_OK\n");
+        host_printf("STYLE_OK\n");
         return;
     }
 
@@ -2579,7 +2677,7 @@ static void handle_command(char *line)
     } else {
         refresh_text();
     }
-    printf("STATE_OK,%s,%d,%d\n", mode, selected_value, orientation);
+    host_printf("STATE_OK,%s,%d,%d\n", mode, selected_value, orientation);
 }
 
 static void send_touch_event(void)
@@ -2595,7 +2693,7 @@ static void send_touch_event(void)
         save_settings();
         dial_value_q8 = 0;
         reset_comet();
-        printf("SWIPE,%s\n", direction);
+        host_printf("SWIPE,%s\n", direction);
         refresh_screen();
         return;
     }
@@ -2605,15 +2703,15 @@ static void send_touch_event(void)
         abs((int)touch_start_y - SCREEN_CENTER) <= MEDIA_HIT) {
         const int offset = (int)touch_start_x - SCREEN_CENTER;
         if (abs(offset) <= MEDIA_HIT) {
-            printf("MEDIA,PLAYPAUSE\n");
+            host_printf("MEDIA,PLAYPAUSE\n");
             return;
         }
         if (abs(offset + MEDIA_BUTTON_SPACING) <= MEDIA_HIT) {
-            printf("MEDIA,PREV\n");
+            host_printf("MEDIA,PREV\n");
             return;
         }
         if (abs(offset - MEDIA_BUTTON_SPACING) <= MEDIA_HIT) {
-            printf("MEDIA,NEXT\n");
+            host_printf("MEDIA,NEXT\n");
             return;
         }
     }
@@ -2622,13 +2720,13 @@ static void send_touch_event(void)
     if (whack_tap(dx, dy)) return;
     if (!show_menu && selected_mode == POMODORO_MODE &&
         dx * dx + dy * dy < DIAL_CAP_R * DIAL_CAP_R) {
-        printf("POMO,TOGGLE\n");
+        host_printf("POMO,TOGGLE\n");
         return;
     }
     /* On Volume and Mic the cap mutes; the name below it still opens the menu. */
     if (!show_menu && mode_can_mute(selected_mode) &&
         dx * dx + dy * dy < DIAL_CAP_R * DIAL_CAP_R) {
-        printf("MUTE,TOGGLE\n");
+        host_printf("MUTE,TOGGLE\n");
         return;
     }
     const int centre_r = show_menu ? 50 : DIAL_CAP_R;
@@ -2637,7 +2735,7 @@ static void send_touch_event(void)
     if (on_name || dx * dx + dy * dy < centre_r * centre_r) {
         if (!show_menu) {
             open_menu();
-            printf("MENU\n");
+            host_printf("MENU\n");
             refresh_screen();
         } else {
             confirm_menu(menu_cursor);
@@ -3415,7 +3513,7 @@ static void start_saver(int64_t now)
     if (lvgl_mutex) xSemaphoreGive(lvgl_mutex);
     /* Each time the screensaver starts it picks up with the next item. */
     if (saver_shown != SAVER_CLOCK) begin_saver_item(saver_item + 1, now);
-    printf("SAVER,ON\n");
+    host_printf("SAVER,ON\n");
 }
 
 static void stop_saver(void)
@@ -3429,7 +3527,7 @@ static void stop_saver(void)
     lv_obj_add_flag(date_label, LV_OBJ_FLAG_HIDDEN);
     if (lvgl_mutex) xSemaphoreGive(lvgl_mutex);
     refresh_screen();
-    printf("SAVER,OFF\n");
+    host_printf("SAVER,OFF\n");
 }
 
 /* Whether the chosen screensaver has something to show. Pictures with the
@@ -3486,7 +3584,7 @@ static void saver_tick(int64_t now)
     }
     if (!shown) {
         /* A damaged item is skipped rather than retried every frame. */
-        printf("SAVER,BAD,%d\n", saver_item);
+        host_printf("SAVER,BAD,%d\n", saver_item);
         if (media_header.count > 1) {
             begin_saver_item(saver_item + 1, now);
             saver_next_frame = now + 100000;
@@ -3589,6 +3687,9 @@ void app_main(void)
 
     serial_queue = xQueueCreate(SERIAL_QUEUE_DEPTH, SERIAL_LINE_MAX);
     assert(serial_queue);
+    dispatch_lock = xSemaphoreCreateMutex();
+    assert(dispatch_lock);
+    wireless_init(wireless_line);
     xTaskCreate(serial_reader_task, "serial_reader", 4096, NULL, 3, NULL);
 
     char command[SERIAL_LINE_MAX];
@@ -3633,13 +3734,13 @@ void app_main(void)
             /* In the menu the knob walks the highlight around the ring,
                clockwise with a clockwise turn. */
             menu_cursor = step_screen(menu_cursor, detents);
-            printf("CURSOR,%d\n", menu_cursor);
+            host_printf("CURSOR,%d\n", menu_cursor);
             refresh_screen();
         } else if (detents != 0 && selected_mode == GAMES_MODE) {
             /* Games keep the knob to themselves; the PC hears nothing. */
             whack_rotate(detents);
         } else if (detents != 0) {
-            printf("ROT,%d\n", detents);
+            host_printf("ROT,%d\n", detents);
             /* Scroll and zoom have no value to show, so the turn itself is the
                feedback: the comet follows the knob. Segments run anticlockwise
                and a positive detent is a clockwise turn, hence the minus. */
@@ -3663,9 +3764,12 @@ void app_main(void)
         saver_tick(now);
         apply_backlight();
         if (now - last_hello >= 1000000) {
-            printf("HELLO,REVO1,1\n");
-            printf("VERSION,%s\n", REVO1_VERSION);
-            if (!state_received) printf("SYNC\n");
+            host_printf("HELLO,REVO1,1\n");
+            host_printf("VERSION,%s\n", REVO1_VERSION);
+            if (!state_received) host_printf("SYNC\n");
+            char network[96];
+            wireless_status(network, sizeof(network));
+            host_printf("%s\n", network);
             last_hello = now;
         }
         vTaskDelay(1);

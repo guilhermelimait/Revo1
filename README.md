@@ -93,6 +93,11 @@ sync as you turn the knob.
 - **A real Windows app:** a one-click installer, Start Menu entry, optional
   start at sign-in, and a clean uninstall. It remembers all settings between
   runs, and can minimise to the notification area.
+- **Wireless:** pair the knob once over USB, then use it over **Wi-Fi** or
+  **Bluetooth** whenever the cable is unplugged (the knob still needs power,
+  from a battery or a USB charger). Plugging the cable back in switches to
+  USB at once. The wireless link is end-to-end encrypted with AES-256-GCM
+  and a key only your PC and the knob hold.
 - **Updates from the app:** the About page shows the newest release on GitHub
   and installs its firmware on the knob with one click.
 
@@ -100,6 +105,8 @@ sync as you turn the knob.
 
 - A **Waveshare ESP32-S3-Knob-Touch-LCD-1.8**
   ([buy on Amazon](https://link.amazon/B061NfG3G)) and a USB-C data cable.
+- Optional, for wireless use: a 2.4 GHz Wi-Fi network or Bluetooth on the
+  PC, and power for the knob away from the PC (a battery or a USB charger).
 - **Windows 10 or 11** (x64 or ARM64). Nothing else: Python is bundled.
 
 *The Amazon link is an affiliate link: as an Amazon Associate I earn from
@@ -224,7 +231,7 @@ in the left sidebar.
   80 MB, into `%LOCALAPPDATA%\Revo1\tools`) to read it; if `ffmpeg` is
   already on your `PATH`, that one is used.
 
-**Settings** has four tabs:
+**Settings** has five tabs:
 
 - **Device:** the screen backlight, the name shown in the sidebar and the
   list of connected knobs
@@ -241,6 +248,18 @@ in the left sidebar.
   area** to hide Revo1 next to the clock when you minimise it (click the
   icon to bring it back, right-click for **Quit**). When it's on, the
   start-at-sign-in shortcut starts it there too.
+- **Wireless:** three tiles show which link is in use (**USB cable**,
+  **Wi-Fi** or **Bluetooth**) and the state of the others, such as the
+  knob's address on Wi-Fi or **Wrong password**. To pair, plug in the cable,
+  check the **Wi-Fi network** (filled in with the one this PC is on), type
+  its **Password** and click **Pair over USB**. Leave the network empty to
+  use Bluetooth only. The password goes to the knob over the cable and is
+  never saved on the PC; the pairing key is stored protected by Windows for
+  your user account. **Update Wi-Fi** changes the network later without a
+  new key, and **Forget pairing** clears it on both sides. **Use wireless
+  when the cable is unplugged** turns wireless off without unpairing.
+  With the cable out, Revo1 looks for the knob on Wi-Fi first and then over
+  Bluetooth; it takes a few seconds to connect.
 - **About:** links to GitHub, the releases, the licence and Ko-fi; the app
   version, the firmware version on the knob, and the latest release on
   GitHub. When the release has newer firmware than the knob, **Update
@@ -250,7 +269,7 @@ in the left sidebar.
   `revo1-firmware-x.y.z.bin` you downloaded or built yourself; it's always
   there while a knob is connected, and it refuses files that aren't a Revo1
   image. **Update app** opens the release page when there's a newer
-  installer.
+  installer. Updating keeps the knob's settings and its wireless pairing.
 
 Settings are saved in `%LOCALAPPDATA%\Revo1\settings.json` straight
 away. The knob also remembers its last control, orientation, colour, number
@@ -271,6 +290,11 @@ never overwritten with old saved values.
 - **Brightness does nothing.** Brightness is set through Windows' WMI
   interface, which normally covers built-in laptop screens only. Most external
   desktop monitors are not supported yet.
+- **Wireless doesn't connect.** Check Settings > Wireless: the Wi-Fi tile
+  says **Wrong password** or **Can't find** the network when the knob can't
+  join it (it only sees 2.4 GHz networks), and a red line says when the knob
+  holds a different key. Pair again with the cable plugged in. Over
+  Bluetooth, keep the knob within a few metres of the PC.
 - **Song titles show "?".** The device fonts only have Latin letters. Accents
   are removed ("Musica" for "Música"); other scripts, such as Japanese,
   show as "?".
@@ -287,6 +311,11 @@ never overwritten with old saved values.
 - The knob has no clock battery: the date and time screensaver starts once
   the app has connected after the knob was powered on.
 - Video playback on the knob is 10 frames per second, without sound.
+- Wireless links one PC at a time. Pairing and firmware updates need the
+  USB cable. Bluetooth is about half as fast as USB (about 57 KB/s), so
+  sending screensaver pictures over it takes longer.
+- The knob stores its pairing key and Wi-Fi password in plain flash (it has
+  no flash encryption), so someone with the device in hand could read them.
 
 ## Development
 
@@ -318,7 +347,10 @@ python -m revo1                        # run from source
 
 ## Protocol
 
-USB serial: 115200 baud, ASCII lines terminated by `\n`.
+USB serial: 115200 baud, ASCII lines terminated by `\n`. The same lines run
+over Wi-Fi (TCP port 47010) and Bluetooth LE inside an encrypted session; see
+[firmware/README.md](firmware/README.md#wireless) for the handshake and
+framing.
 
 | Direction | Message | Meaning |
 | --- | --- | --- |
@@ -352,6 +384,9 @@ USB serial: 115200 baud, ASCII lines terminated by `\n`.
 | Device to PC | `SAVER,ON` or `SAVER,OFF` | Screensaver started or stopped |
 | PC to device | `LIBRARY` | Ask for `LIBRARY,<capacity>,<items>,<bytes>,<CRC-32 hex>` (also sent after each change) |
 | PC to device | `MEDIA_BEGIN,<bytes>`, `MD,<offset>,<base64>`, `MEDIA_END`, `MEDIA_CLEAR` | Screensaver upload; see [firmware/README.md](firmware/README.md) |
+| PC to device | `PAIR,<key hex>,<SSID hex>,<password hex>` | USB only: store the 32-byte link key and the Wi-Fi network; answered by `PAIR_OK` or `PAIR_ERR,<FORMAT\|STORE\|USB>` |
+| PC to device | `UNPAIR` | Forget the key and the network; answered by `UNPAIR_OK` |
+| Device to PC | `NET,<key id\|->,<wifi 0-4>,<IP\|->,<name>,<links>` | Every second: pairing, Wi-Fi state (off, connecting, connected, wrong password, not found), address and active links (bit 0 Wi-Fi, bit 1 Bluetooth) |
 
 Mode names, in sector order: `VOLUME`, `SCROLL`, `BRIGHTNESS`, `MIC`, `ZOOM`,
 `MEDIA`, `POMODORO`, `GAMES`. The preview uses a neutral midpoint for non-percentage controls.

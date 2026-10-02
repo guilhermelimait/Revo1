@@ -296,10 +296,13 @@ value actually changed. The level itself isn't stored; it comes from Windows.
 
 Until the first `STATE` after boot, the firmware sends `SYNC` with every
 `HELLO`, and a connected app answers with its style and state. The merged
-release image covers the NVS partition, so a firmware update clears the saved
-settings; the app sends them again straight after the update. The media
-partition lies outside the merged image, so the screensaver collection
-survives firmware updates.
+release image covers the NVS partition (`0x9000`-`0xF000`), padded with
+`0xFF`. The app's updater therefore writes it in two parts, `0x0`-`0x9000`
+and the app from `0x10000`, so the saved settings and the wireless pairing
+(namespace `link`) survive an update. `scripts\flash-firmware.ps1` writes the
+whole image and clears them; the app sends its settings again straight away,
+but the knob has to be paired again. The media partition lies outside the
+merged image, so the screensaver collection always survives firmware updates.
 
 Performance is the main design constraint:
 
@@ -343,6 +346,68 @@ Other constraints:
 Note that PlatformIO's generated `sdkconfig.waveshare-knob` overrides
 `sdkconfig.defaults` once it exists, so configuration changes must be made in
 the generated file or it must be deleted first.
+
+## Wireless
+
+`main\wireless.c` adds Wi-Fi and Bluetooth LE links that carry the same
+text protocol as USB. `host_printf` sends every line to USB and to the
+wireless session, if there is one; lines that arrive over the air go through
+`dispatch_line` like serial ones, under `dispatch_lock`. Both radios stay
+off until the knob is paired.
+
+**Pairing (USB only).** The app sends `PAIR,<64 hex key>,<SSID hex>,<password
+hex>`. The knob stores the 32-byte key, the SSID and the password in NVS
+(namespace `link`: `key`, `ssid`, `pass`), answers `PAIR_OK`, and restarts
+both radios. `UNPAIR` erases them. `PAIR` received over the air is refused
+with `PAIR_ERR,USB`. Every second the knob sends
+`NET,<key id>,<wifi>,<ip>,<name>,<links>`, where the key id is the first 4
+bytes of SHA-256(key) in hex.
+
+**Session.** Each connection starts with a mutual challenge-response, then
+switches to authenticated encryption:
+
+1. App to knob: `R1H1` and a 16-byte random nonce Nc.
+2. Knob to app: a 16-byte nonce Nk and HMAC-SHA256(K, `revo1-knob` Nc Nk).
+3. App to knob: HMAC-SHA256(K, `revo1-app` Nc Nk). The knob drops the
+   connection if the proof is wrong or takes over 10 s.
+4. Session keys: HMAC-SHA256(K, `revo1-c2k` Nc Nk) for app to knob and
+   `revo1-k2c` for knob to app.
+
+Every frame is a 2-byte big-endian length (ciphertext plus the 16-byte tag)
+followed by AES-256-GCM ciphertext and tag. The nonce is 4 zero bytes and a
+64-bit counter for that direction, and the length bytes are the associated
+data, so frames can't be altered, reordered or replayed. Frames carry up to
+8 KB of protocol lines. Fresh nonces on both sides make every session's keys
+different. The app does the same in `revo1\secure.py`, using Windows CNG for
+AES-GCM, and keeps its copy of the key protected with DPAPI.
+
+**Wi-Fi.** A station on the paired network (WPA2/WPA3, 2.4 GHz) with the
+hostname set to the knob's name in lower case. It reconnects on its own, and
+reports wrong passwords and missing networks in `NET`. A TCP server on port
+47010 takes one session at a time (a new connection replaces the old one). A
+UDP responder on port 47011 answers the broadcast `REVO1?` with
+`REVO1,<key id>,<name>`, so the app finds the knob without knowing its
+address.
+
+**Bluetooth LE.** NimBLE, peripheral only, one connection. The service is
+`7b8f0001-6c1e-4e8a-9c3d-2a1f5e0b9a10`: the app writes to `...0002` (write
+or write without response) and gets notifications from `...0003`. The
+advertisement carries the service UUID, and the scan response the name.
+Incoming bytes go through a 24 KB PSRAM stream buffer to a worker task, so
+the NimBLE host task never blocks. With a 517-byte MTU, Windows sends
+512-byte writes, about 57 KB/s.
+
+**Configuration.** `sdkconfig.defaults` and `sdkconfig.waveshare-knob` enable
+NimBLE (Bluedroid off, host memory in PSRAM, central and observer roles off)
+and `CONFIG_SPIRAM_TRY_ALLOCATE_WIFI_LWIP`, so Wi-Fi and lwIP buffers use
+PSRAM. With both radios on, at least 42 KB of internal RAM stays free, and
+the screensaver's seconds ring still draws in 1.5-11.3 ms a frame (40 ms
+budget).
+
+The app always prefers USB. Without a cable it tries Wi-Fi (the last
+address, then discovery) and then Bluetooth (the last address, then a scan
+for the service). While wireless, it checks for the cable every 1.5 s and
+switches as soon as it appears.
 
 ## Encoder
 

@@ -38,6 +38,9 @@ a = Analysis(
     # The WinRT projections are imported lazily, so name the ones used.
     hiddenimports=collect_submodules("winrt.windows.media.control")
     + collect_submodules("winrt.windows.foundation")
+    # Bluetooth for the wireless link (bleak and the WinRT parts it uses).
+    + collect_submodules("bleak") + collect_submodules("winrt.windows.devices")
+    + collect_submodules("winrt.windows.storage.streams")
     + ["winrt.system", "comtypes.stream"],
     excludes=["matplotlib", "scipy", "pandas", "IPython", "pytest"],
     noarchive=False,

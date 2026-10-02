@@ -25,6 +25,7 @@ from revo1.layout import (CARD_WIDTH, DIAL_GAP, MAIN_WIDTH, NAV_HEIGHT, NAV_WIDT
 from revo1.media import MediaSession
 from revo1.screensaver import Library
 from revo1.screensaver_page import TIME_RESEND_S, ScreensaverPage
+from revo1.wireless_page import WirelessTab, link_kind
 
 LEVEL_MODES = ("Volume", "Mic", "Brightness")
 MUTE_MODES = ("Volume", "Mic")
@@ -53,12 +54,12 @@ DEVICE_ROW_HEIGHT = 36
 DEVICE_SCAN_MS = 2000
 NUMBER_LABELS = {24: "Small", 32: "Medium", 40: "Large", 48: "X-Large"}
 SETTINGS_TABS = (("device", "Device"), ("controls", "Controls"), ("interface", "Interface"),
-                 ("about", "About"))
+                 ("wireless", "Wireless"), ("about", "About"))
 # How long a release check stays fresh before the About tab asks GitHub again.
 RELEASE_CHECK_S = 30 * 60
 
 
-class App(DashboardPage, ScreensaverPage, GamesPage):
+class App(DashboardPage, ScreensaverPage, GamesPage, WirelessTab):
     def __init__(self, root, tray=None, start_minimized=False):
         self.root = root
         self.tray = tray
@@ -70,6 +71,7 @@ class App(DashboardPage, ScreensaverPage, GamesPage):
         self.value = 50
         self.events = queue.Queue()
         self.bridge = DeviceBridge(self.events, self.settings["port"])
+        self.init_wireless()
         self.actions = queue.Queue()
         self.worker = threading.Thread(target=self.run_actions, daemon=True)
         self._connected = False
@@ -277,6 +279,7 @@ class App(DashboardPage, ScreensaverPage, GamesPage):
         self.build_device_tab(self.tabs["device"])
         self.build_controls_tab(self.tabs["controls"])
         self.build_interface_tab(self.tabs["interface"])
+        self.build_wireless_tab(self.tabs["wireless"])
         self.build_about_tab(self.tabs["about"])
         self.settings_page = page
         self.show_tab(self.settings_tab)
@@ -1632,6 +1635,8 @@ class App(DashboardPage, ScreensaverPage, GamesPage):
                         self.connected = False
                 elif kind == "disconnected":
                     self.connected = False
+                    self.link_kind = None
+                    self.refresh_wireless()
                     self.device_version = None
                     self.device_library = None
                     if self.upload_state and self.upload_state[0] == "busy":
@@ -1667,8 +1672,11 @@ class App(DashboardPage, ScreensaverPage, GamesPage):
                 elif kind == "hello":
                     if not self.connected:
                         self.connected_port = payload
+                        self.link_kind = link_kind(payload)
                         self.connected = True
-                        self.status.set(f"Connected on {payload}")
+                        self.status.set(f"Connected over {payload}" if self.link_kind != "usb"
+                                        else f"Connected on {payload}")
+                        self.refresh_wireless()
                         self.refresh_about()
                         self.push_device_state()
                 elif (kind == "sync" and self.connected
@@ -1705,6 +1713,8 @@ class App(DashboardPage, ScreensaverPage, GamesPage):
                 elif kind == "library":
                     self.device_library = payload
                     self.refresh_screensaver()
+                elif kind in ("net", "pair_done", "pair_error", "knob_seen", "ssid"):
+                    self.on_wireless_event(kind, payload)
                 elif kind in ("upload", "upload_done", "upload_error", "saver_added",
                               "saver_progress", "saver_failed"):
                     self.on_screensaver_event(kind, payload)

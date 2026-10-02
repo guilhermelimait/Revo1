@@ -7,6 +7,7 @@ import re
 import shutil
 import subprocess
 import sys
+import tempfile
 import urllib.error
 import urllib.request
 import zipfile
@@ -148,6 +149,10 @@ def esptool_command(progress=None):
 
 IMAGE_MAGIC = 0xE9
 APP_OFFSET = 0x10000
+# The knob's settings and wireless pairing live in NVS between the partition
+# table and the app (firmware/partitions.csv). A merged image pads that range
+# with 0xFF, so it is skipped when flashing to keep them across updates.
+NVS_START = 0x9000
 FLASH_SIZE = 16 * 1024 * 1024
 FIRMWARE_MARKERS = (b"HELLO,REVO1,1", b"HELLO,ROUNDSCREEN,1")
 
@@ -171,9 +176,22 @@ def check_image(path):
 
 
 def flash(command, port, image, progress=None):
-    """Writes a merged firmware image at 0x0 and resets the knob."""
-    arguments = command + ["--chip", "esp32s3", "--port", port, "--baud", "921600",
-                           "write-flash", "0x0", str(image)]
+    """Writes a merged firmware image (all but the NVS range) and resets the knob."""
+    data = Path(image).read_bytes()
+    with tempfile.TemporaryDirectory(prefix="revo1-flash-") as folder:
+        boot, app = Path(folder) / "boot.bin", Path(folder) / "app.bin"
+        boot.write_bytes(data[:NVS_START])
+        app.write_bytes(data[APP_OFFSET:])
+        _run_esptool(command + ["--chip", "esp32s3", "--port", port, "--baud", "921600",
+                                "write-flash", "0x0", str(boot),
+                                f"0x{APP_OFFSET:X}", str(app)],
+                     [NVS_START, len(data) - APP_OFFSET], progress)
+
+
+def _run_esptool(arguments, sizes, progress):
+    """esptool reports each file's progress separately, in address order;
+    `sizes` weights them into one overall fraction."""
+    total = sum(sizes)
     try:
         process = subprocess.Popen(arguments, stdout=subprocess.PIPE,
                                    stderr=subprocess.STDOUT,
@@ -190,7 +208,9 @@ def flash(command, port, image, progress=None):
             output += chunk
             matches = PROGRESS.findall(chunk)
             if progress and matches:
-                progress(min(float(matches[-1]), 100.0) / 100)
+                done = min(output.count(b"Hash of data verified"), len(sizes) - 1)
+                fraction = min(float(matches[-1]), 100.0) / 100
+                progress((sum(sizes[:done]) + fraction * sizes[done]) / total)
     if process.wait() != 0:
         lines = [line for line in output.decode("utf-8", "replace").splitlines()
                  if line.strip()]

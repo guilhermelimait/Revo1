@@ -6,6 +6,8 @@ import time
 import serial
 from serial.tools import list_ports
 
+from revo1 import links, secure
+
 # USB IDs of the ESP32-S3 native USB Serial/JTAG port the knob enumerates as.
 DEVICE_IDS = (0x303A, 0x1001)
 # The firmware's greeting. Early builds, made while the project was called
@@ -16,6 +18,10 @@ MODE_COUNT = 8
 UPLOAD_CHUNK = 3072
 # Chunks in flight before waiting for an acknowledgement.
 UPLOAD_WINDOW = 4
+# How often a wireless session checks whether a USB cable has appeared.
+USB_CHECK_S = 1.5
+# Pause between rounds of looking for the knob over Wi-Fi and Bluetooth.
+WIRELESS_RETRY_S = 4
 
 
 def find_devices():
@@ -36,6 +42,33 @@ class DeviceBridge:
         self.idle_event = threading.Event()
         self.jobs = queue.Queue()
         self.thread = threading.Thread(target=self._run, daemon=True)
+        # Wireless: the pairing key and where the knob was last seen.
+        self.link_key = None
+        self.key_id = ""
+        self.knob_ip = ""
+        self.knob_ble = ""
+        self.wireless_enabled = True
+        self.link_kind = None
+
+    def set_wireless(self, key, enabled=True, knob_ip="", knob_ble=""):
+        """The pairing key (None when not paired) and the last known Wi-Fi
+        address and Bluetooth address of the knob."""
+        changed = (key != self.link_key or enabled != self.wireless_enabled)
+        self.link_key = key
+        self.key_id = secure.key_id(key) if key else ""
+        self.wireless_enabled = enabled
+        self.knob_ip = knob_ip or self.knob_ip
+        self.knob_ble = knob_ble or self.knob_ble
+        if changed and self.link_kind in ("wifi", "ble"):
+            self.reconnect_event.set()
+
+    def pair(self, key, ssid, password):
+        """Gives the knob the key and the Wi-Fi network (USB only). Answers
+        with ("pair_done", None) or ("pair_error", reason)."""
+        self.jobs.put(("pair", (bytes(key), ssid, password)))
+
+    def unpair(self):
+        self.jobs.put(("unpair", None))
 
     def start(self):
         self.thread.start()
@@ -146,41 +179,162 @@ class DeviceBridge:
                 continue
             self.reconnect_event.clear()
             port = self._port()
-            if not port:
-                status = "Device not found (connect the ESP32-S3 USB side)"
-                if status != last_error:
-                    self.events.put(("status", status))
-                    last_error = status
-                self.reconnect_event.wait(2)
-                continue
-            try:
-                with serial.Serial(port, 115200, timeout=0.2, write_timeout=1) as connection:
-                    self.events.put(("status", f"Waiting for companion firmware on {port}"))
-                    while not self.stop_event.is_set():
-                        if self.reconnect_event.is_set():
-                            self.events.put(("disconnected", port))
-                            break
-                        line = connection.read_until(b"\n", 256).decode(
-                            "ascii", errors="replace").strip()
-                        if line in HELLO_LINES:
+            if port:
+                # USB always wins while a cable is plugged in.
+                try:
+                    with serial.Serial(port, 115200, timeout=0.2, write_timeout=1) as connection:
+                        self.link_kind = "usb"
+                        self.events.put(("status", f"Waiting for companion firmware on {port}"))
+                        if self._serve(connection, port):
                             last_error = None
-                        self._handle_line(line, port)
-                        self._flush(connection)
-                        try:
-                            kind, payload = self.jobs.get_nowait()
-                        except queue.Empty:
-                            continue
-                        if kind == "upload":
-                            self._upload(connection, port, payload)
-                        elif kind == "clear":
-                            self._clear(connection, port)
-            except (serial.SerialException, OSError) as exc:
-                self.events.put(("disconnected", port))
-                status = f"Serial connection error on {port}: {exc}"
-                if status != last_error:
-                    self.events.put(("status", status))
-                    last_error = status
-                self.reconnect_event.wait(2)
+                except (serial.SerialException, OSError) as exc:
+                    self.events.put(("disconnected", port))
+                    status = f"Serial connection error on {port}: {exc}"
+                    if status != last_error:
+                        self.events.put(("status", status))
+                        last_error = status
+                    self.reconnect_event.wait(2)
+                finally:
+                    self.link_kind = None
+                continue
+            link = self._open_wireless()
+            if link:
+                last_error = None
+                try:
+                    with link:
+                        self.link_kind = link.kind
+                        self._serve(link, link.label)
+                except OSError as exc:
+                    self.events.put(("disconnected", link.label))
+                    self.events.put(("status", f"{link.label} link lost: {exc}"))
+                finally:
+                    self.link_kind = None
+                continue
+            status = ("Device not found (connect the USB cable, or check the knob is on "
+                      "and in range)" if self._wireless_ready() else
+                      "Device not found (connect the ESP32-S3 USB side)")
+            if status != last_error:
+                self.events.put(("status", status))
+                last_error = status
+            self._fail_jobs("Connect the knob to do that")
+            self.reconnect_event.wait(WIRELESS_RETRY_S if self._wireless_ready() else 2)
+
+    def _wireless_ready(self):
+        return bool(self.link_key) and self.wireless_enabled
+
+    def _open_wireless(self):
+        """Wi-Fi first (faster), then Bluetooth; None if neither answers."""
+        if not self._wireless_ready():
+            return None
+        key = self.link_key
+        candidates = [self.knob_ip] if self.knob_ip else []
+        found = links.discover_wifi(self.key_id)
+        if found and found not in candidates:
+            candidates.insert(0, found)
+        for host in candidates:
+            if self._usb_or_stop():
+                return None
+            try:
+                link = links.TcpLink(host, key)
+            except OSError:
+                continue
+            self.knob_ip = host
+            self.events.put(("knob_seen", ("wifi", host)))
+            return link
+        if not links.ble_available() or self._usb_or_stop():
+            return None
+        self.events.put(("status", "Looking for the knob over Bluetooth..."))
+        addresses = [self.knob_ble] if self.knob_ble else []
+        found = links.discover_ble()
+        if found and found not in addresses:
+            addresses.insert(0, found)
+        for address in addresses:
+            if self._usb_or_stop():
+                return None
+            try:
+                link = links.BleLink(address, key)
+            except OSError:
+                continue
+            self.knob_ble = address
+            self.events.put(("knob_seen", ("ble", address)))
+            return link
+        return None
+
+    def _usb_or_stop(self):
+        return (self.stop_event.is_set() or self.pause_event.is_set()
+                or self.reconnect_event.is_set() or bool(self._port()))
+
+    def _serve(self, connection, label):
+        """Runs one connection until it drops or the bridge switches link.
+        Returns True once the knob said hello."""
+        greeted = False
+        wireless = not isinstance(connection, serial.Serial)
+        next_usb_check = time.monotonic() + USB_CHECK_S
+        while not self.stop_event.is_set():
+            if self.reconnect_event.is_set() or self.pause_event.is_set():
+                break
+            if wireless and time.monotonic() >= next_usb_check:
+                next_usb_check = time.monotonic() + USB_CHECK_S
+                if self._port():
+                    break
+            line = connection.read_until(b"\n", 256).decode("ascii", errors="replace").strip()
+            if line in HELLO_LINES:
+                greeted = True
+            self._handle_line(line, label)
+            self._flush(connection)
+            try:
+                kind, payload = self.jobs.get_nowait()
+            except queue.Empty:
+                continue
+            if kind == "upload":
+                self._upload(connection, label, payload)
+            elif kind == "clear":
+                self._clear(connection, label)
+            elif kind in ("pair", "unpair"):
+                if wireless:
+                    self.events.put(("pair_error", "Connect the knob with the USB cable to "
+                                                   "pair it"))
+                else:
+                    self._pair(connection, label, kind, payload)
+        self.events.put(("disconnected", label))
+        return greeted
+
+    def _fail_jobs(self, reason):
+        """With no knob, pending pairing requests fail instead of waiting."""
+        kept = []
+        try:
+            while True:
+                kind, payload = self.jobs.get_nowait()
+                if kind in ("pair", "unpair"):
+                    self.events.put(("pair_error", reason))
+                else:
+                    kept.append((kind, payload))
+        except queue.Empty:
+            pass
+        for job in kept:
+            self.jobs.put(job)
+
+    def _pair(self, connection, port, kind, payload):
+        if kind == "unpair":
+            connection.write(b"UNPAIR\n")
+            reply = self._await(connection, port, ("UNPAIR_OK", "PAIR_ERR"), 10)
+            if reply == "UNPAIR_OK":
+                self.events.put(("pair_done", None))
+            else:
+                self.events.put(("pair_error", reply or "The knob did not answer"))
+            return
+        key, ssid, password = payload
+        line = ("PAIR," + key.hex() + "," + ssid.encode("utf-8").hex() + ","
+                + password.encode("utf-8").hex() + "\n")
+        connection.write(line.encode("ascii"))
+        reply = self._await(connection, port, ("PAIR_OK", "PAIR_ERR"), 10)
+        if reply == "PAIR_OK":
+            self.events.put(("pair_done", key))
+        else:
+            reason = {"PAIR_ERR,FORMAT": "The knob rejected the network name or password",
+                      "PAIR_ERR,STORE": "The knob could not save the pairing"}.get(
+                          reply, reply or "The knob did not answer (update its firmware)")
+            self.events.put(("pair_error", reason))
 
     def _flush(self, connection):
         try:
@@ -230,6 +384,10 @@ class DeviceBridge:
             command = line[6:]
             if command in ("PREV", "PLAYPAUSE", "NEXT"):
                 self.events.put(("mediacmd", command))
+        elif line.startswith("NET,"):
+            network = parse_network(line)
+            if network:
+                self.events.put(("net", network))
         elif line.startswith("LIBRARY,"):
             library = parse_library(line)
             if library:
@@ -321,3 +479,24 @@ def parse_library(line):
     if min(capacity, count, used) < 0:
         return None
     return {"capacity": capacity, "count": count, "bytes": used, "crc": crc}
+
+
+WIFI_STATES = ("off", "connecting", "connected", "bad_password", "not_found")
+
+
+def parse_network(line):
+    """"NET,<key id>,<wifi>,<ip>,<name>,<links>" as a dict, or None."""
+    parts = line.split(",")
+    if len(parts) != 6 or parts[0] != "NET":
+        return None
+    try:
+        wifi = int(parts[2])
+        active = int(parts[5])
+    except ValueError:
+        return None
+    if not 0 <= wifi < len(WIFI_STATES) or not 0 <= active <= 3:
+        return None
+    key_id = "" if parts[1] == "-" else parts[1]
+    return {"key_id": key_id, "wifi": WIFI_STATES[wifi],
+            "ip": "" if parts[3] == "-" else parts[3], "name": parts[4][:24],
+            "wifi_link": bool(active & 1), "ble_link": bool(active & 2)}

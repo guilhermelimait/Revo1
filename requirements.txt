@@ -5,3 +5,4 @@ winrt-Windows.Foundation>=3,<4
 winrt-Windows.Media.Control>=3,<4
 numpy>=1.26
 Pillow>=10
+bleak>=3,<4

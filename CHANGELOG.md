@@ -2,6 +2,18 @@
 
 ## Unreleased
 
+- Wireless: pair the knob once over USB in the new **Settings > Wireless**
+  tab, then use it over Wi-Fi (2.4 GHz) or Bluetooth LE whenever the cable is
+  unplugged. USB always takes over when it's plugged in. The tab shows which
+  link is in use and the knob's Wi-Fi state (connecting, its address, wrong
+  password, network not found), and fills in the PC's own Wi-Fi network.
+  The link is end-to-end encrypted: a mutual HMAC-SHA256 challenge, then
+  AES-256-GCM frames with per-session keys. The PC keeps the key protected
+  by Windows (DPAPI), and the Wi-Fi password is never saved on the PC. New
+  protocol lines `PAIR`, `UNPAIR` and `NET`. The app needs `bleak` for
+  Bluetooth.
+- Firmware updates from the app keep the knob's saved settings and pairing:
+  the NVS range of the merged image is no longer written.
 - New Games screen: a round card per game on the knob and a grid of game
   cards in the app (with "Soon" placeholders), starting with Whack-a-Mole.
   Turn the knob to aim at one of seven holes and touch to whack; gold moles
