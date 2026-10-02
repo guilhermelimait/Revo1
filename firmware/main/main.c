@@ -2480,8 +2480,8 @@ static int decode_hex_field(const char **text, uint8_t *out, int capacity)
     return count;
 }
 
-/* PAIR,<key hex>,<ssid hex>,<password hex> and UNPAIR. Only accepted over
-   USB: pairing needs the knob in hand. */
+/* PAIR,<key hex> and UNPAIR. Only accepted over USB: pairing needs the
+   knob in hand. */
 static bool handle_pairing(const char *line)
 {
     if (strcmp(line, "UNPAIR") == 0) {
@@ -2492,16 +2492,10 @@ static bool handle_pairing(const char *line)
     if (strncmp(line, "PAIR,", 5) != 0) return false;
     const char *cursor = line + 5;
     uint8_t key[WIRELESS_KEY_BYTES];
-    char ssid[33] = {0};
-    char password[65] = {0};
     const int key_length = decode_hex_field(&cursor, key, sizeof(key));
-    const int ssid_length = decode_hex_field(&cursor, (uint8_t *)ssid, sizeof(ssid) - 1);
-    const int password_length =
-        decode_hex_field(&cursor, (uint8_t *)password, sizeof(password) - 1);
-    if (key_length != WIRELESS_KEY_BYTES || ssid_length < 0 || password_length < 0 ||
-        *cursor != '\0' || memchr(ssid, 0, ssid_length) || memchr(password, 0, password_length)) {
+    if (key_length != WIRELESS_KEY_BYTES || *cursor != '\0') {
         host_printf("PAIR_ERR,FORMAT\n");
-    } else if (!wireless_pair(key, ssid, password)) {
+    } else if (!wireless_pair(key)) {
         host_printf("PAIR_ERR,STORE\n");
     } else {
         char status[96];
@@ -2509,7 +2503,6 @@ static bool handle_pairing(const char *line)
         host_printf("PAIR_OK\n%s\n", status);
     }
     memset(key, 0, sizeof(key));
-    memset(password, 0, sizeof(password));
     return true;
 }
 
@@ -3467,7 +3460,7 @@ static inline float coverage(float value)
 #define SPARKLE_REACH 12
 #define ORBIT_REACH 8
 #define PULSE_REACH 14
-/* Internal RAM left free for Wi-Fi and Bluetooth when a ring list is built. */
+/* Internal RAM left free for Bluetooth when a ring list is built. */
 #define RING_INTERNAL_RESERVE (64 * 1024)
 static uint32_t *ring_pixels;
 static uint8_t *ring_bytes;

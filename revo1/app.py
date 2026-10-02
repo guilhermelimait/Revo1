@@ -31,8 +31,7 @@ LEVEL_MODES = ("Volume", "Mic", "Brightness")
 MUTE_MODES = ("Volume", "Mic")
 MUTED_RED = "#E5484D"
 # How the knob is reached, as the sidebar names it: (icon, words).
-LINK_NAMES = {"usb": ("Usb", "USB cable"), "wifi": ("Wifi", "Wi-Fi"),
-              "ble": ("Bluetooth", "Bluetooth")}
+LINK_NAMES = {"usb": ("Usb", "USB cable"), "ble": ("Bluetooth", "Bluetooth")}
 # Beside the dial: what the knob does on each screen.
 SCREEN_HELP = {
     "Volume": ("Turn the knob to set the PC volume.",
@@ -975,7 +974,7 @@ class App(DashboardPage, ScreensaverPage, GamesPage, WirelessTab):
         if not self.devices:
             note = ui.Picture(self.device_list, PANEL_BG)
             image = k.canvas(CARD_WIDTH, 22, PANEL_BG)
-            k.text(image, 0, 11, "No knob on USB. Once paired, Revo1 reaches it over Wi-Fi or "
+            k.text(image, 0, 11, "No knob on USB. Once paired, Revo1 reaches it over "
                    "Bluetooth instead.", "regular", 9,
                    ui.MUTED_INK)
             note.show(image)
@@ -1791,7 +1790,7 @@ class App(DashboardPage, ScreensaverPage, GamesPage, WirelessTab):
                 elif kind == "library":
                     self.device_library = payload
                     self.refresh_screensaver()
-                elif kind in ("net", "pair_done", "pair_error", "knob_seen", "ssid"):
+                elif kind in ("net", "pair_done", "pair_error", "knob_seen"):
                     self.on_wireless_event(kind, payload)
                 elif kind in ("upload", "upload_done", "upload_error", "saver_added",
                               "saver_progress", "saver_failed"):

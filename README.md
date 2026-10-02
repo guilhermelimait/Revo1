@@ -97,7 +97,7 @@ sync as you turn the knob.
 - **Always in sync:** the knob, the screen and the app window show the same
   value, and volume changes made elsewhere in Windows show up on the knob.
 - **Knows when the app is gone:** if Revo1 isn't running, or isn't reached
-  over USB, Wi-Fi or Bluetooth, the knob shows **Not connected** instead of
+  over USB or Bluetooth, the knob shows **Not connected** instead of
   any screen, and opens its main menu as soon as the app answers.
 - **Personalise it:** one colour per control or a single colour of your
   choice, four sizes for the big number, and screen orientation in 90 degree
@@ -105,8 +105,8 @@ sync as you turn the knob.
 - **A real Windows app:** a one-click installer, Start Menu entry, optional
   start at sign-in, and a clean uninstall. It remembers all settings between
   runs, and can minimise to the notification area.
-- **Wireless:** pair the knob once over USB, then use it over **Wi-Fi** or
-  **Bluetooth** whenever the cable is unplugged (the knob still needs power,
+- **Wireless:** pair the knob once over USB, then use it over **Bluetooth**
+  whenever the cable is unplugged (the knob still needs power,
   from a battery or a USB charger). Plugging the cable back in switches to
   USB at once. The wireless link is end-to-end encrypted with AES-256-GCM
   and a key only your PC and the knob hold.
@@ -117,8 +117,7 @@ sync as you turn the knob.
 
 - A **Waveshare ESP32-S3-Knob-Touch-LCD-1.8**
   ([buy on Amazon](https://link.amazon/B061NfG3G)) and a USB-C data cable.
-- Optional, for wireless use: a 2.4 GHz Wi-Fi network or Bluetooth on the
-  PC, and power for the knob away from the PC (a battery or a USB charger).
+- Optional, for wireless use: Bluetooth on the PC, and power for the knob away from the PC (a battery or a USB charger).
 - **Windows 10 or 11** (x64 or ARM64). Nothing else: Python is bundled.
 
 *The Amazon link is an affiliate link: as an Amazon Associate I earn from
@@ -173,7 +172,7 @@ firmware.)
 
 Then start Revo1 from the Start Menu. Once the knob answers, the ring on
 the little knob beside the name turns green, and the line below it shows
-how the knob is linked: **On USB cable**, **On Wi-Fi** or **On Bluetooth**.
+how the knob is linked: **On USB cable** or **On Bluetooth**.
 
 ## Using it
 
@@ -280,18 +279,14 @@ in the left sidebar.
   start-at-sign-in shortcut starts it there too. Closing the window or
   choosing **Quit** asks first, since the knob stops working until Revo1
   runs again (and warns harder during a firmware update).
-- **Wireless:** three tiles show which link is in use (**USB cable**,
-  **Wi-Fi** or **Bluetooth**) and the state of the others, such as the
-  knob's address on Wi-Fi or **Wrong password**. To pair, plug in the cable,
-  check the **Wi-Fi network** (filled in with the one this PC is on), type
-  its **Password** and click **Pair over USB**. Leave the network empty to
-  use Bluetooth only. The password goes to the knob over the cable and is
-  never saved on the PC; the pairing key is stored protected by Windows for
-  your user account. **Update Wi-Fi** changes the network later without a
-  new key, and **Forget pairing** clears it on both sides. Once paired,
-  unplugging the cable is all it takes: Revo1 looks for the knob on Wi-Fi
-  first and then over Bluetooth on its own, and connects in a few seconds.
-  USB takes over again as soon as it is plugged in.
+- **Wireless:** two tiles show which link is in use (**USB cable** or
+  **Bluetooth**) and whether the other is ready. To pair, plug in the cable
+  and click **Pair over USB**: the PC and the knob share one new key, and no
+  password is involved. The key is stored on the PC protected by Windows for
+  your user account. **Pair again** replaces the key, and **Forget pairing**
+  clears it on both sides. Once paired, unplugging the cable is all it
+  takes: Revo1 finds the knob over Bluetooth on its own and connects in a
+  few seconds. USB takes over again as soon as it is plugged in.
 - **About:** links to GitHub, the releases, the licence and Ko-fi; the app
   version, the firmware version on the knob, and the latest release on
   GitHub. When the release has newer firmware than the knob, **Update
@@ -322,11 +317,10 @@ never overwritten with old saved values.
 - **Brightness does nothing.** Brightness is set through Windows' WMI
   interface, which normally covers built-in laptop screens only. Most external
   desktop monitors are not supported yet.
-- **Wireless doesn't connect.** Check Settings > Wireless: the Wi-Fi tile
-  says **Wrong password** or **Can't find** the network when the knob can't
-  join it (it only sees 2.4 GHz networks), and a red line says when the knob
-  holds a different key. Pair again with the cable plugged in. Over
-  Bluetooth, keep the knob within a few metres of the PC.
+- **Wireless doesn't connect.** Check Settings > Wireless: a red line says
+  when the knob holds a different key; pair again with the cable plugged in.
+  Make sure Bluetooth is on in Windows and keep the knob within a few metres
+  of the PC.
 - **Song titles show "?".** The device fonts only have Latin letters. Accents
   are removed ("Musica" for "Música"); other scripts, such as Japanese,
   show as "?".
@@ -346,8 +340,11 @@ never overwritten with old saved values.
 - Wireless links one PC at a time. Pairing and firmware updates need the
   USB cable. Bluetooth is about half as fast as USB (about 57 KB/s), so
   sending screensaver pictures over it takes longer.
-- The knob stores its pairing key and Wi-Fi password in plain flash (it has
-  no flash encryption), so someone with the device in hand could read them.
+- The knob stores its pairing key in plain flash (it has no flash
+  encryption), so someone with the device in hand could read it; **Forget
+  pairing** removes it. Revo1 has no Wi-Fi, so the knob never holds a
+  network password (firmware from this version on also wipes one saved by
+  earlier versions).
 
 ## Development
 
@@ -380,7 +377,7 @@ python -m revo1                        # run from source
 ## Protocol
 
 USB serial: 115200 baud, ASCII lines terminated by `\n`. The same lines run
-over Wi-Fi (TCP port 47010) and Bluetooth LE inside an encrypted session; see
+over Bluetooth LE inside an encrypted session; see
 [firmware/README.md](firmware/README.md#wireless) for the handshake and
 framing.
 
@@ -419,9 +416,9 @@ framing.
 | Device to PC | `SAVER,ON` or `SAVER,OFF` | Screensaver started or stopped |
 | PC to device | `LIBRARY` | Ask for `LIBRARY,<capacity>,<items>,<bytes>,<CRC-32 hex>` (also sent after each change) |
 | PC to device | `MEDIA_BEGIN,<bytes>`, `MD,<offset>,<base64>`, `MEDIA_END`, `MEDIA_CLEAR` | Screensaver upload; see [firmware/README.md](firmware/README.md) |
-| PC to device | `PAIR,<key hex>,<SSID hex>,<password hex>` | USB only: store the 32-byte link key and the Wi-Fi network; answered by `PAIR_OK` or `PAIR_ERR,<FORMAT\|STORE\|USB>` |
-| PC to device | `UNPAIR` | Forget the key and the network; answered by `UNPAIR_OK` |
-| Device to PC | `NET,<key id\|->,<wifi 0-4>,<IP\|->,<name>,<links>` | Every second: pairing, Wi-Fi state (off, connecting, connected, wrong password, not found), address and active links (bit 0 Wi-Fi, bit 1 Bluetooth) |
+| PC to device | `PAIR,<key hex>` | USB only: store the 32-byte link key; answered by `PAIR_OK` or `PAIR_ERR,<FORMAT\|STORE\|USB>` |
+| PC to device | `UNPAIR` | Forget the key; answered by `UNPAIR_OK` |
+| Device to PC | `NET,<key id\|->,<name>,<0 or 1>` | Every second: the pairing key id, the Bluetooth name and whether the app is linked over Bluetooth |
 
 Mode names, in sector order: `VOLUME`, `SCROLL`, `BRIGHTNESS`, `MIC`, `ZOOM`,
 `MEDIA`, `POMODORO`, `GAMES` (the Microphone screen keeps `MIC` on the wire). The preview uses a neutral midpoint for non-percentage controls.

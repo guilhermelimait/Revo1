@@ -2,11 +2,17 @@
 
 ## Unreleased
 
+- Wi-Fi is removed from the app and the firmware: wireless use is Bluetooth
+  only. Pairing no longer asks for a network or password (`PAIR,<key hex>`),
+  `NET` drops the Wi-Fi fields (`NET,<key id>,<name>,<0 or 1>`), the firmware
+  no longer includes the Wi-Fi and TCP/IP stack, and the knob erases the
+  network name and password that earlier firmware saved. The app drops its
+  saved Wi-Fi network and knob address too.
 - The screensaver library now starts with a built-in **Moon** picture,
   centred to fill the round screen. Existing libraries get it once; removing
   it keeps it removed.
 - The knob no longer jumps to Volume whenever the app connects or reconnects
-  (starting Revo1, a reinstall, a cable, Wi-Fi or Bluetooth link): it opens
+  (starting Revo1, a reinstall, a cable or Bluetooth link): it opens
   its main menu instead. Value updates no longer close a menu opened on the
   knob either. `STATE` gains an optional keep-view field for this.
 - The screensaver's seconds ring now follows the **Time colour**, on the knob
@@ -55,15 +61,15 @@
   screen's icon in the middle with its name below, like the other screens.
 - The top of the sidebar shows a small knob next to the name, with a ring
   that lights green while connected. Below the name, an icon and label show
-  the link in use: USB cable, Wi-Fi or Bluetooth.
+  the link in use: USB cable or Bluetooth.
 - Wireless is now automatic: once the knob is paired, unplugging the cable
-  is enough for Revo1 to find it over Wi-Fi or Bluetooth. The **Use
+  is enough for Revo1 to find it over Bluetooth. The **Use
   wireless when the cable is unplugged** switch is gone.
 - Fixed: Revo1 could refuse to start ("Invalid settings") when its settings
   file held a value it didn't know, for example one written by a newer
   version. Such a value now falls back to its default, and every other
   setting, the wireless pairing included, is kept.
-- When the app isn't running, or isn't reachable over USB, Wi-Fi or
+- When the app isn't running, or isn't reachable over USB or
   Bluetooth, the knob now shows **Not connected** and "Open Revo1 on your
   PC" above a large icon in the centre, instead of the dashboard or any other screen, and goes back to its screen
   when the app returns. The app answers each `HELLO` with a new `APP`
@@ -90,13 +96,11 @@
 - The level screens (Volume, Scroll, Brightness, Mic, Zoom) no longer show
   arrows either side of the value, on the knob or in the app.
 - Wireless: pair the knob once over USB in the new **Settings > Wireless**
-  tab, then use it over Wi-Fi (2.4 GHz) or Bluetooth LE whenever the cable is
-  unplugged. USB always takes over when it's plugged in. The tab shows which
-  link is in use and the knob's Wi-Fi state (connecting, its address, wrong
-  password, network not found), and fills in the PC's own Wi-Fi network.
+  tab, then use it over Bluetooth LE whenever the cable is unplugged. USB
+  always takes over when it's plugged in. The tab shows which link is in use.
   The link is end-to-end encrypted: a mutual HMAC-SHA256 challenge, then
   AES-256-GCM frames with per-session keys. The PC keeps the key protected
-  by Windows (DPAPI), and the Wi-Fi password is never saved on the PC. New
+  by Windows (DPAPI). New
   protocol lines `PAIR`, `UNPAIR` and `NET`. The app needs `bleak` for
   Bluetooth.
 - Firmware updates from the app keep the knob's saved settings and pairing:

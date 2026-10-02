@@ -340,7 +340,7 @@ every command or touch that changes one of them, and only writes flash when a
 value actually changed. The level itself isn't stored; it comes from Windows.
 
 The app answers every `HELLO` (once a second) with `APP`. Any whole line
-from the app, over USB, Wi-Fi or Bluetooth, counts as a sign of life; after
+from the app, over USB or Bluetooth, counts as a sign of life; after
 3.5 seconds without one (and from boot until the app is first heard) the
 knob replaces every screen with **Not connected** and "Open Revo1 on your
 PC". Meanwhile the screensaver stays off, a game round is abandoned, and a
@@ -409,19 +409,21 @@ the generated file or it must be deleted first.
 
 ## Wireless
 
-`main\wireless.c` adds Wi-Fi and Bluetooth LE links that carry the same
-text protocol as USB. `host_printf` sends every line to USB and to the
-wireless session, if there is one; lines that arrive over the air go through
-`dispatch_line` like serial ones, under `dispatch_lock`. Both radios stay
-off until the knob is paired.
+`main\wireless.c` adds a Bluetooth LE link that carries the same text
+protocol as USB. `host_printf` sends every line to USB and to the wireless
+session, if there is one; lines that arrive over the air go through
+`dispatch_line` like serial ones, under `dispatch_lock`. The radio stays off
+until the knob is paired. There is no Wi-Fi: the firmware doesn't include
+the Wi-Fi or TCP/IP stack and never stores a network password.
 
-**Pairing (USB only).** The app sends `PAIR,<64 hex key>,<SSID hex>,<password
-hex>`. The knob stores the 32-byte key, the SSID and the password in NVS
-(namespace `link`: `key`, `ssid`, `pass`), answers `PAIR_OK`, and restarts
-both radios. `UNPAIR` erases them. `PAIR` received over the air is refused
-with `PAIR_ERR,USB`. Every second the knob sends
-`NET,<key id>,<wifi>,<ip>,<name>,<links>`, where the key id is the first 4
-bytes of SHA-256(key) in hex.
+**Pairing (USB only).** The app sends `PAIR,<64 hex key>`. The knob stores
+the 32-byte key in NVS (namespace `link`, key `key`), answers `PAIR_OK`, and
+restarts Bluetooth. `UNPAIR` erases it. `PAIR` received over the air is
+refused with `PAIR_ERR,USB`. Every second the knob sends
+`NET,<key id>,<name>,<0 or 1>`, where the key id is the first 4 bytes of
+SHA-256(key) in hex and the last field is 1 while the app is linked over
+Bluetooth. On boot the knob erases the `ssid` and `pass` entries that
+firmware with Wi-Fi saved.
 
 **Session.** Each connection starts with a mutual challenge-response, then
 switches to authenticated encryption:
@@ -441,14 +443,6 @@ data, so frames can't be altered, reordered or replayed. Frames carry up to
 different. The app does the same in `revo1\secure.py`, using Windows CNG for
 AES-GCM, and keeps its copy of the key protected with DPAPI.
 
-**Wi-Fi.** A station on the paired network (WPA2/WPA3, 2.4 GHz) with the
-hostname set to the knob's name in lower case. It reconnects on its own, and
-reports wrong passwords and missing networks in `NET`. A TCP server on port
-47010 takes one session at a time (a new connection replaces the old one). A
-UDP responder on port 47011 answers the broadcast `REVO1?` with
-`REVO1,<key id>,<name>`, so the app finds the knob without knowing its
-address.
-
 **Bluetooth LE.** NimBLE, peripheral only, one connection. The service is
 `7b8f0001-6c1e-4e8a-9c3d-2a1f5e0b9a10`: the app writes to `...0002` (write
 or write without response) and gets notifications from `...0003`. The
@@ -461,15 +455,12 @@ clean. With a 517-byte MTU, Windows sends
 512-byte writes, about 57 KB/s.
 
 **Configuration.** `sdkconfig.defaults` and `sdkconfig.waveshare-knob` enable
-NimBLE (Bluedroid off, host memory in PSRAM, central and observer roles off)
-and `CONFIG_SPIRAM_TRY_ALLOCATE_WIFI_LWIP`, so Wi-Fi and lwIP buffers use
-PSRAM. With both radios on, at least 42 KB of internal RAM stays free, and
-the screensaver's seconds ring still draws in 1.5-11.3 ms a frame (40 ms
-budget).
+NimBLE (Bluedroid off, host memory in PSRAM, central and observer roles off).
+With Bluetooth on, at least 42 KB of internal RAM stays free, and the
+screensaver's seconds ring still draws in 1.5-11.3 ms a frame (40 ms budget).
 
-The app always prefers USB. Without a cable it tries Wi-Fi (the last
-address, then discovery) and then Bluetooth (the last address, then a scan
-for the service). While wireless, it checks for the cable every 1.5 s and
+The app always prefers USB. Without a cable it tries Bluetooth (the last
+address, then a scan for the service). While wireless, it checks for the cable every 1.5 s and
 switches as soon as it appears.
 
 ## Encoder

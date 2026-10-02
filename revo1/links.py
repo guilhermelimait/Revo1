@@ -1,20 +1,17 @@
-"""Wireless links to the knob: Wi-Fi (TCP) and Bluetooth LE.
+"""The wireless link to the knob: Bluetooth LE.
 
-Both carry the encrypted session from `secure.py` and offer the same
+It carries the encrypted session from `secure.py` and offers the same
 `read_until` / `write` / `close` calls as a pyserial port, so the bridge drives
-USB and wireless links with the same code.
+USB and Bluetooth with the same code.
 """
 
 import asyncio
 import queue
-import socket
 import threading
 import time
 
 from revo1 import secure
 
-TCP_PORT = 47010
-DISCOVERY_PORT = 47011
 SERVICE_UUID = "7b8f0001-6c1e-4e8a-9c3d-2a1f5e0b9a10"
 RX_UUID = "7b8f0002-6c1e-4e8a-9c3d-2a1f5e0b9a10"
 TX_UUID = "7b8f0003-6c1e-4e8a-9c3d-2a1f5e0b9a10"
@@ -70,82 +67,6 @@ class SecureLink:
         except secure.SecureError as exc:
             self.close()
             raise LinkError(str(exc)) from exc
-
-
-# ----- Wi-Fi --------------------------------------------------------------------
-
-class TcpLink(SecureLink):
-    kind = "wifi"
-
-    def __init__(self, host, key, timeout=2.5):
-        super().__init__(key, f"Wi-Fi ({host})")
-        self.host = host
-        self.sock = socket.create_connection((host, TCP_PORT), timeout=timeout)
-        self.sock.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
-        self.handshake()
-
-    def _send_raw(self, data):
-        if self.closed:
-            raise LinkError("The Wi-Fi link is closed")
-        self.sock.settimeout(5)
-        try:
-            self.sock.sendall(data)
-        except OSError as exc:
-            raise LinkError(f"Wi-Fi send failed: {exc}") from exc
-
-    def _receive_raw(self, count, timeout):
-        if self.closed:
-            raise LinkError("The Wi-Fi link is closed")
-        self.sock.settimeout(max(0.01, timeout))
-        try:
-            data = self.sock.recv(max(count, 4096))
-        except socket.timeout:
-            return b""
-        except OSError as exc:
-            raise LinkError(f"Wi-Fi link lost: {exc}") from exc
-        if not data:
-            raise LinkError("The knob closed the Wi-Fi link")
-        return data
-
-    def close(self):
-        if not self.closed:
-            self.closed = True
-            try:
-                self.sock.close()
-            except OSError:
-                pass
-
-
-def discover_wifi(key_id, timeout=1.2):
-    """Asks the local network for knobs; returns the address of the one
-    paired with `key_id`, or None."""
-    with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as sock:
-        sock.setsockopt(socket.SOL_SOCKET, socket.SO_BROADCAST, 1)
-        sock.settimeout(0.2)
-        targets = {"255.255.255.255"}
-        try:
-            for address in socket.gethostbyname_ex(socket.gethostname())[2]:
-                if not address.startswith("127."):
-                    targets.add(address.rsplit(".", 1)[0] + ".255")
-        except OSError:
-            pass
-        for target in targets:
-            try:
-                sock.sendto(b"REVO1?", (target, DISCOVERY_PORT))
-            except OSError:
-                pass
-        deadline = time.monotonic() + timeout
-        while time.monotonic() < deadline:
-            try:
-                data, (address, _) = sock.recvfrom(64)
-            except socket.timeout:
-                continue
-            except OSError:
-                return None
-            parts = data.decode("ascii", errors="replace").split(",")
-            if len(parts) == 3 and parts[0] == "REVO1" and parts[1] == key_id:
-                return address
-    return None
 
 
 # ----- Bluetooth LE -------------------------------------------------------------

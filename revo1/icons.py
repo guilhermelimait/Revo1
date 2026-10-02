@@ -135,14 +135,7 @@ SHAPES = {
         ("seg", -5, 11.5, 5, 11.5, 2.4),
         ("seg", -11, -12, 11, 12, 2.4),
     ],
-    # The Wireless settings: a Wi-Fi fan, the Bluetooth rune, a USB plug and
-    # a padlock.
-    "Wifi": [
-        ("disc", 0, 9, 2.4),
-        ("arc", 0, 9, 6, 2.6, -135, -45),
-        ("arc", 0, 9, 11, 2.6, -135, -45),
-        ("arc", 0, 9, 16, 2.6, -135, -45),
-    ],
+    # The Wireless settings: the Bluetooth rune, a USB plug and a padlock.
     "Bluetooth": [
         ("seg", 0, -12, 0, 12, 2.4),
         ("seg", 0, -12, 6, -6, 2.4),

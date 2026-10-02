@@ -1,5 +1,5 @@
-/* Wireless link to the Revo1 app: Wi-Fi (TCP) and Bluetooth LE (GATT), both
-   carrying the same end-to-end encrypted session. See revo1/secure.py for the
+/* Wireless link to the Revo1 app over Bluetooth LE (GATT), carrying an
+   end-to-end encrypted session. See revo1/secure.py for the
    other side; the two must stay in step.
 
    Pairing happens over USB only (PAIR in main.c), which gives both sides a
@@ -19,20 +19,16 @@
 #include <stdio.h>
 #include <string.h>
 
-#include "esp_event.h"
 #include "esp_heap_caps.h"
 #include "esp_mac.h"
-#include "esp_netif.h"
 #include "esp_random.h"
 #include "esp_timer.h"
-#include "esp_wifi.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/semphr.h"
 #include "freertos/message_buffer.h"
 #include "freertos/task.h"
 #include "host/ble_hs.h"
 #include "host/util/util.h"
-#include "lwip/sockets.h"
 #include "mbedtls/gcm.h"
 #include "mbedtls/md.h"
 #include "mbedtls/sha256.h"
@@ -48,13 +44,10 @@
 #define GCM_TAG_BYTES 16
 #define FRAME_MAX 8192
 #define LINE_BYTES 4200
-#define TCP_PORT 47010
-#define DISCOVERY_PORT 47011
 #define HANDSHAKE_US 10000000
 #define BLE_STREAM_BYTES (24 * 1024)
 
-enum { LINK_WIFI = 1, LINK_BLE = 2 };
-enum { WIFI_OFF, WIFI_CONNECTING, WIFI_CONNECTED, WIFI_BAD_PASSWORD, WIFI_NOT_FOUND };
+enum { LINK_BLE = 2 };
 
 typedef struct session session_t;
 struct session {
@@ -85,11 +78,8 @@ static wireless_line_fn line_handler;
 static uint8_t link_key[WIRELESS_KEY_BYTES];
 static volatile bool paired;
 static char key_id[9] = "-";
-static char wifi_ssid[33];
-static char wifi_password[65];
 static char device_name[16];
 
-static session_t tcp_session;
 static session_t ble_session;
 
 /* ----- Crypto ------------------------------------------------------------ */
@@ -284,223 +274,14 @@ static bool session_stale(const session_t *session)
 
 void wireless_send(const char *text, size_t length)
 {
-    session_t *sessions[] = {&tcp_session, &ble_session};
-    for (int index = 0; index < 2; ++index) {
-        session_t *session = sessions[index];
-        if (!session->lock || !session->open) continue;
-        xSemaphoreTake(session->lock, portMAX_DELAY);
-        if (session->open && !session_seal(session, (const uint8_t *)text, length)) {
-            session->open = false;
-            session->failed = true;
-        }
-        xSemaphoreGive(session->lock);
+    session_t *session = &ble_session;
+    if (!session->lock || !session->open) return;
+    xSemaphoreTake(session->lock, portMAX_DELAY);
+    if (session->open && !session_seal(session, (const uint8_t *)text, length)) {
+        session->open = false;
+        session->failed = true;
     }
-}
-
-/* ----- Wi-Fi ------------------------------------------------------------- */
-
-static bool wifi_ready;
-static volatile bool wifi_wanted;
-static volatile int wifi_state = WIFI_OFF;
-static volatile uint32_t wifi_ip;
-static esp_netif_t *wifi_netif;
-static esp_timer_handle_t wifi_retry;
-static volatile int tcp_client = -1;
-
-static void wifi_event(void *argument, esp_event_base_t base, int32_t id, void *data)
-{
-    if (base == WIFI_EVENT && id == WIFI_EVENT_STA_START) {
-        if (wifi_wanted) {
-            wifi_state = WIFI_CONNECTING;
-            esp_wifi_connect();
-        }
-    } else if (base == WIFI_EVENT && id == WIFI_EVENT_STA_DISCONNECTED) {
-        const wifi_event_sta_disconnected_t *event = data;
-        wifi_ip = 0;
-        if (!wifi_wanted) {
-            wifi_state = WIFI_OFF;
-            return;
-        }
-        switch (event->reason) {
-        case WIFI_REASON_AUTH_FAIL:
-        case WIFI_REASON_4WAY_HANDSHAKE_TIMEOUT:
-        case WIFI_REASON_HANDSHAKE_TIMEOUT:
-            wifi_state = WIFI_BAD_PASSWORD;
-            break;
-        case WIFI_REASON_NO_AP_FOUND:
-            wifi_state = WIFI_NOT_FOUND;
-            break;
-        default:
-            if (wifi_state == WIFI_CONNECTED) wifi_state = WIFI_CONNECTING;
-            break;
-        }
-        esp_timer_stop(wifi_retry);
-        esp_timer_start_once(wifi_retry, 3000000);
-    } else if (base == IP_EVENT && id == IP_EVENT_STA_GOT_IP) {
-        const ip_event_got_ip_t *event = data;
-        wifi_ip = event->ip_info.ip.addr;
-        wifi_state = WIFI_CONNECTED;
-    }
-}
-
-static void wifi_reconnect(void *argument)
-{
-    if (wifi_wanted) esp_wifi_connect();
-}
-
-static bool tcp_send(const uint8_t *data, size_t length)
-{
-    const int client = tcp_client;
-    while (length && client >= 0) {
-        const int sent = send(client, data, length, 0);
-        if (sent <= 0) return false;
-        data += sent;
-        length -= (size_t)sent;
-    }
-    return length == 0;
-}
-
-static void tcp_close(void)
-{
-    xSemaphoreTake(tcp_session.lock, portMAX_DELAY);
-    tcp_session.open = false;
-    if (tcp_client >= 0) {
-        shutdown(tcp_client, SHUT_RDWR);
-        close(tcp_client);
-        tcp_client = -1;
-    }
-    xSemaphoreGive(tcp_session.lock);
-}
-
-static void tcp_task(void *argument)
-{
-    const int listener = socket(AF_INET, SOCK_STREAM, IPPROTO_IP);
-    const int on = 1;
-    setsockopt(listener, SOL_SOCKET, SO_REUSEADDR, &on, sizeof(on));
-    struct sockaddr_in address = {
-        .sin_family = AF_INET,
-        .sin_port = htons(TCP_PORT),
-        .sin_addr.s_addr = htonl(INADDR_ANY),
-    };
-    if (bind(listener, (struct sockaddr *)&address, sizeof(address)) != 0 ||
-        listen(listener, 1) != 0) {
-        close(listener);
-        vTaskDelete(NULL);
-        return;
-    }
-    static uint8_t buffer[1460];
-    for (;;) {
-        fd_set ready;
-        FD_ZERO(&ready);
-        FD_SET(listener, &ready);
-        int highest = listener;
-        const int client = tcp_client;
-        if (client >= 0) {
-            FD_SET(client, &ready);
-            if (client > highest) highest = client;
-        }
-        struct timeval wait = {.tv_sec = 1};
-        const int count = select(highest + 1, &ready, NULL, NULL, &wait);
-        if (client >= 0 && (tcp_session.failed || session_stale(&tcp_session) || !paired)) {
-            tcp_close();
-            continue;
-        }
-        if (count <= 0) continue;
-        if (FD_ISSET(listener, &ready)) {
-            const int incoming = accept(listener, NULL, NULL);
-            if (incoming >= 0) {
-                /* The newest connection wins: the app reconnecting after a
-                   network change must not wait for the old socket to die. */
-                if (tcp_client >= 0) tcp_close();
-                const int idle = 5, interval = 2, probes = 3;
-                const struct timeval send_limit = {.tv_sec = 3};
-                setsockopt(incoming, IPPROTO_TCP, TCP_NODELAY, &on, sizeof(on));
-                setsockopt(incoming, SOL_SOCKET, SO_KEEPALIVE, &on, sizeof(on));
-                setsockopt(incoming, IPPROTO_TCP, TCP_KEEPIDLE, &idle, sizeof(idle));
-                setsockopt(incoming, IPPROTO_TCP, TCP_KEEPINTVL, &interval, sizeof(interval));
-                setsockopt(incoming, IPPROTO_TCP, TCP_KEEPCNT, &probes, sizeof(probes));
-                setsockopt(incoming, SOL_SOCKET, SO_SNDTIMEO, &send_limit, sizeof(send_limit));
-                session_reset(&tcp_session);
-                tcp_client = incoming;
-            }
-            continue;
-        }
-        if (client >= 0 && FD_ISSET(client, &ready)) {
-            const int received = recv(client, buffer, sizeof(buffer), 0);
-            if (received <= 0 || !session_feed(&tcp_session, buffer, (size_t)received)) {
-                tcp_close();
-            }
-        }
-    }
-}
-
-/* Answers "REVO1?" broadcasts so the app can find the knob on the network. */
-static void discovery_task(void *argument)
-{
-    const int sock = socket(AF_INET, SOCK_DGRAM, IPPROTO_IP);
-    struct sockaddr_in address = {
-        .sin_family = AF_INET,
-        .sin_port = htons(DISCOVERY_PORT),
-        .sin_addr.s_addr = htonl(INADDR_ANY),
-    };
-    if (bind(sock, (struct sockaddr *)&address, sizeof(address)) != 0) {
-        close(sock);
-        vTaskDelete(NULL);
-        return;
-    }
-    char request[16];
-    char reply[48];
-    for (;;) {
-        struct sockaddr_in sender;
-        socklen_t sender_length = sizeof(sender);
-        const int received = recvfrom(sock, request, sizeof(request) - 1, 0,
-                                      (struct sockaddr *)&sender, &sender_length);
-        if (received != 6 || memcmp(request, "REVO1?", 6) != 0 || !paired) continue;
-        const int length = snprintf(reply, sizeof(reply), "REVO1,%s,%s", key_id, device_name);
-        sendto(sock, reply, length, 0, (struct sockaddr *)&sender, sender_length);
-    }
-}
-
-static void wifi_apply(void)
-{
-    wifi_wanted = paired && wifi_ssid[0];
-    if (!wifi_ready) {
-        if (!wifi_wanted) return;
-        esp_netif_init();
-        esp_event_loop_create_default();
-        wifi_netif = esp_netif_create_default_wifi_sta();
-        char host[20];
-        snprintf(host, sizeof(host), "%s", device_name);
-        for (char *c = host; *c; ++c) {
-            if (*c >= 'A' && *c <= 'Z') *c = (char)(*c - 'A' + 'a');
-        }
-        esp_netif_set_hostname(wifi_netif, host);
-        wifi_init_config_t config = WIFI_INIT_CONFIG_DEFAULT();
-        if (esp_wifi_init(&config) != ESP_OK) return;
-        esp_wifi_set_storage(WIFI_STORAGE_RAM);
-        esp_event_handler_instance_register(WIFI_EVENT, ESP_EVENT_ANY_ID, wifi_event, NULL, NULL);
-        esp_event_handler_instance_register(IP_EVENT, IP_EVENT_STA_GOT_IP, wifi_event, NULL, NULL);
-        const esp_timer_create_args_t retry = {.callback = wifi_reconnect, .name = "wifi_retry"};
-        esp_timer_create(&retry, &wifi_retry);
-        esp_wifi_set_mode(WIFI_MODE_STA);
-        xTaskCreate(tcp_task, "link_tcp", 4096, NULL, 3, NULL);
-        xTaskCreate(discovery_task, "link_find", 3072, NULL, 2, NULL);
-        wifi_ready = true;
-    }
-    esp_wifi_disconnect();
-    esp_wifi_stop();
-    wifi_ip = 0;
-    wifi_state = WIFI_OFF;
-    if (!wifi_wanted) return;
-    wifi_config_t config = {0};
-    memcpy(config.sta.ssid, wifi_ssid, strlen(wifi_ssid));
-    memcpy(config.sta.password, wifi_password, strlen(wifi_password));
-    config.sta.threshold.authmode = wifi_password[0] ? WIFI_AUTH_WPA_WPA2_PSK : WIFI_AUTH_OPEN;
-    config.sta.pmf_cfg.capable = true;
-    config.sta.sae_pwe_h2e = WPA3_SAE_PWE_BOTH;
-    esp_wifi_set_config(WIFI_IF_STA, &config);
-    wifi_state = WIFI_CONNECTING;
-    esp_wifi_start();
+    xSemaphoreGive(session->lock);
 }
 
 /* ----- Bluetooth LE ------------------------------------------------------ */
@@ -741,8 +522,6 @@ static void update_key_id(void)
 
 static void drop_sessions(void)
 {
-    tcp_session.open = false;
-    tcp_session.failed = true;
     ble_session.open = false;
     ble_terminate();
 }
@@ -751,52 +530,39 @@ void wireless_init(wireless_line_fn on_line)
 {
     line_handler = on_line;
     uint8_t mac[6] = {0};
-    esp_read_mac(mac, ESP_MAC_WIFI_STA);
+    esp_efuse_mac_get_default(mac);
     snprintf(device_name, sizeof(device_name), "Revo1-%02X%02X", mac[4], mac[5]);
-    if (!session_setup(&tcp_session, LINK_WIFI, tcp_send) ||
-        !session_setup(&ble_session, LINK_BLE, ble_send)) {
-        return;
-    }
+    if (!session_setup(&ble_session, LINK_BLE, ble_send)) return;
     nvs_handle_t handle;
-    if (nvs_open(LINK_NAMESPACE, NVS_READONLY, &handle) == ESP_OK) {
+    if (nvs_open(LINK_NAMESPACE, NVS_READWRITE, &handle) == ESP_OK) {
         size_t length = sizeof(link_key);
         paired = nvs_get_blob(handle, "key", link_key, &length) == ESP_OK &&
                  length == sizeof(link_key);
-        length = sizeof(wifi_ssid);
-        if (nvs_get_str(handle, "ssid", wifi_ssid, &length) != ESP_OK) wifi_ssid[0] = '\0';
-        length = sizeof(wifi_password);
-        if (nvs_get_str(handle, "pass", wifi_password, &length) != ESP_OK) wifi_password[0] = '\0';
+        /* Earlier firmware also kept a Wi-Fi network here; wipe it. */
+        const bool had_ssid = nvs_erase_key(handle, "ssid") == ESP_OK;
+        const bool had_pass = nvs_erase_key(handle, "pass") == ESP_OK;
+        if (had_ssid || had_pass) nvs_commit(handle);
         nvs_close(handle);
     }
     update_key_id();
     if (!paired) return;
     ble_start();
-    wifi_apply();
 }
 
-bool wireless_pair(const uint8_t key[WIRELESS_KEY_BYTES], const char *ssid,
-                   const char *password)
+bool wireless_pair(const uint8_t key[WIRELESS_KEY_BYTES])
 {
-    if (strlen(ssid) >= sizeof(wifi_ssid) || strlen(password) >= sizeof(wifi_password) ||
-        !tcp_session.lock) {
-        return false;
-    }
+    if (!ble_session.lock) return false;
     nvs_handle_t handle;
     if (nvs_open(LINK_NAMESPACE, NVS_READWRITE, &handle) != ESP_OK) return false;
     const bool stored = nvs_set_blob(handle, "key", key, WIRELESS_KEY_BYTES) == ESP_OK &&
-                        nvs_set_str(handle, "ssid", ssid) == ESP_OK &&
-                        nvs_set_str(handle, "pass", password) == ESP_OK &&
                         nvs_commit(handle) == ESP_OK;
     nvs_close(handle);
     if (!stored) return false;
     drop_sessions();
     memcpy(link_key, key, WIRELESS_KEY_BYTES);
-    strcpy(wifi_ssid, ssid);
-    strcpy(wifi_password, password);
     paired = true;
     update_key_id();
     ble_start();
-    wifi_apply();
     return true;
 }
 
@@ -811,21 +577,11 @@ void wireless_unpair(void)
     paired = false;
     drop_sessions();
     memset(link_key, 0, sizeof(link_key));
-    wifi_ssid[0] = wifi_password[0] = '\0';
     update_key_id();
     ble_stop();
-    wifi_apply();
 }
 
 void wireless_status(char *out, size_t size)
 {
-    char address[16] = "-";
-    const uint32_t ip = wifi_ip;
-    if (ip) {
-        snprintf(address, sizeof(address), "%u.%u.%u.%u", (unsigned)(ip & 0xFF),
-                 (unsigned)((ip >> 8) & 0xFF), (unsigned)((ip >> 16) & 0xFF),
-                 (unsigned)(ip >> 24));
-    }
-    const int links = (tcp_session.open ? 1 : 0) | (ble_session.open ? 2 : 0);
-    snprintf(out, size, "NET,%s,%d,%s,%s,%d", key_id, wifi_state, address, device_name, links);
+    snprintf(out, size, "NET,%s,%s,%d", key_id, device_name, ble_session.open ? 1 : 0);
 }

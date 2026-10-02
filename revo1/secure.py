@@ -1,4 +1,4 @@
-"""The encrypted channel between Revo1 and the knob over Wi-Fi or Bluetooth.
+"""The encrypted channel between Revo1 and the knob over Bluetooth.
 
 Pairing (over USB, which needs the device in hand) gives both sides one shared
 32-byte key. Every wireless session then runs a mutual challenge-response with

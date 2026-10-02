@@ -20,7 +20,7 @@ UPLOAD_CHUNK = 3072
 UPLOAD_WINDOW = 4
 # How often a wireless session checks whether a USB cable has appeared.
 USB_CHECK_S = 1.5
-# Pause between rounds of looking for the knob over Wi-Fi and Bluetooth.
+# Pause between rounds of looking for the knob over Bluetooth.
 WIRELESS_RETRY_S = 4
 
 
@@ -45,26 +45,24 @@ class DeviceBridge:
         # Wireless: the pairing key and where the knob was last seen.
         self.link_key = None
         self.key_id = ""
-        self.knob_ip = ""
         self.knob_ble = ""
         self.link_kind = None
 
-    def set_wireless(self, key, knob_ip="", knob_ble=""):
-        """The pairing key (None when not paired) and the last known Wi-Fi
-        address and Bluetooth address of the knob. Once paired, the knob is
-        reached over Wi-Fi or Bluetooth whenever the cable is unplugged."""
+    def set_wireless(self, key, knob_ble=""):
+        """The pairing key (None when not paired) and the last known Bluetooth
+        address of the knob. Once paired, the knob is reached over Bluetooth
+        whenever the cable is unplugged."""
         changed = key != self.link_key
         self.link_key = key
         self.key_id = secure.key_id(key) if key else ""
-        self.knob_ip = knob_ip or self.knob_ip
         self.knob_ble = knob_ble or self.knob_ble
-        if changed and self.link_kind in ("wifi", "ble"):
+        if changed and self.link_kind == "ble":
             self.reconnect_event.set()
 
-    def pair(self, key, ssid, password):
-        """Gives the knob the key and the Wi-Fi network (USB only). Answers
-        with ("pair_done", None) or ("pair_error", reason)."""
-        self.jobs.put(("pair", (bytes(key), ssid, password)))
+    def pair(self, key):
+        """Gives the knob the key (USB only). Answers with ("pair_done", key)
+        or ("pair_error", reason)."""
+        self.jobs.put(("pair", bytes(key)))
 
     def unpair(self):
         self.jobs.put(("unpair", None))
@@ -237,24 +235,10 @@ class DeviceBridge:
         return bool(self.link_key)
 
     def _open_wireless(self):
-        """Wi-Fi first (faster), then Bluetooth; None if neither answers."""
+        """A Bluetooth link to the paired knob, or None if it doesn't answer."""
         if not self._wireless_ready():
             return None
         key = self.link_key
-        candidates = [self.knob_ip] if self.knob_ip else []
-        found = links.discover_wifi(self.key_id)
-        if found and found not in candidates:
-            candidates.insert(0, found)
-        for host in candidates:
-            if self._usb_or_stop():
-                return None
-            try:
-                link = links.TcpLink(host, key)
-            except OSError:
-                continue
-            self.knob_ip = host
-            self.events.put(("knob_seen", ("wifi", host)))
-            return link
         if not links.ble_available() or self._usb_or_stop():
             return None
         self.events.put(("status", "Looking for the knob over Bluetooth..."))
@@ -337,15 +321,13 @@ class DeviceBridge:
             else:
                 self.events.put(("pair_error", reply or "The knob did not answer"))
             return
-        key, ssid, password = payload
-        line = ("PAIR," + key.hex() + "," + ssid.encode("utf-8").hex() + ","
-                + password.encode("utf-8").hex() + "\n")
-        connection.write(line.encode("ascii"))
+        key = payload
+        connection.write(("PAIR," + key.hex() + "\n").encode("ascii"))
         reply = self._await(connection, port, ("PAIR_OK", "PAIR_ERR"), 10)
         if reply == "PAIR_OK":
             self.events.put(("pair_done", key))
         else:
-            reason = {"PAIR_ERR,FORMAT": "The knob rejected the network name or password",
+            reason = {"PAIR_ERR,FORMAT": "The knob rejected the pairing (update its firmware)",
                       "PAIR_ERR,STORE": "The knob could not save the pairing"}.get(
                           reply, reply or "The knob did not answer (update its firmware)")
             self.events.put(("pair_error", reason))
@@ -504,22 +486,10 @@ def parse_library(line):
     return {"capacity": capacity, "count": count, "bytes": used, "crc": crc}
 
 
-WIFI_STATES = ("off", "connecting", "connected", "bad_password", "not_found")
-
-
 def parse_network(line):
-    """"NET,<key id>,<wifi>,<ip>,<name>,<links>" as a dict, or None."""
+    """"NET,<key id>,<name>,<1 when linked over Bluetooth>" as a dict, or None."""
     parts = line.split(",")
-    if len(parts) != 6 or parts[0] != "NET":
-        return None
-    try:
-        wifi = int(parts[2])
-        active = int(parts[5])
-    except ValueError:
-        return None
-    if not 0 <= wifi < len(WIFI_STATES) or not 0 <= active <= 3:
+    if len(parts) != 4 or parts[0] != "NET" or parts[3] not in ("0", "1"):
         return None
     key_id = "" if parts[1] == "-" else parts[1]
-    return {"key_id": key_id, "wifi": WIFI_STATES[wifi],
-            "ip": "" if parts[3] == "-" else parts[3], "name": parts[4][:24],
-            "wifi_link": bool(active & 1), "ble_link": bool(active & 2)}
+    return {"key_id": key_id, "name": parts[2][:24], "ble_link": parts[3] == "1"}
