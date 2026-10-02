@@ -3068,252 +3068,294 @@ static inline float coverage(float value)
     return value <= 0.0f ? 0.0f : (value >= 1.0f ? 1.0f : value);
 }
 
-/* Redraws the seconds ring around the screensaver clock in the chosen style:
-   the seconds passed this minute in the accent, the rest as a faint track.
-   It is painted over `under` (the shaded picture) or, without one, the black
-   clock face, so a new frame or a new minute simply paints it again.
-   Call with lvgl_mutex held. */
-static void invalidate_ring(void);
-
-/* The wave's pixels, packed into fast internal memory while it is on screen:
-   the pixel index in the low 17 bits and the segment above it, with the
-   distance from the groove centre in 1/16 pixel alongside. */
+/* Every ring style is drawn from a packed list of just the pixels it can
+   touch, kept in fast internal memory while the screensaver runs, so any
+   style can redraw 25 times a second and move smoothly between seconds.
+   Each entry holds the pixel index in the low 17 bits and its segment above,
+   with one byte alongside: for bullets, ticks and the bar, whose shapes are
+   fixed, the pixel's coverage by the shape out of 255; for the wave and the
+   comet, whose shapes move, its distance from the groove centre in 1/16 px. */
+#define RING_REACH 11
 #define WAVE_REACH 8
-static uint32_t *wave_pixels;
-static int8_t *wave_offsets;
-static int wave_count;
+#define COMET_REACH 5
+static uint32_t *ring_pixels;
+static uint8_t *ring_bytes;
+static int ring_count;
+static int ring_list_style = -1;
 
-static bool build_wave_list(void)
+/* Seconds clockwise from 12 o'clock, 0 to 60, for a segment. */
+static inline float segment_seconds(int segment)
 {
-    if (wave_pixels) return true;
+    return (float)((ARC_SEGMENTS / 4 - segment) & ARC_MASK) * (60.0f / ARC_SEGMENTS);
+}
+
+static inline float ease(float t)
+{
+    return t * t * (3.0f - 2.0f * t);
+}
+
+/* How much of a pixel a fixed shape covers, 0 to 1. */
+static float ring_shape(int style, float off, int segment)
+{
+    const float step = 6.28318531f * DIAL_ARC_R / 60.0f;
+    const float at = segment_seconds(segment);
+    const int mark = (int)lroundf(at) % 60;
+    const float along = (at - roundf(at)) * step;
+    switch (style) {
+    case RING_DOTS: {
+        const float radius = mark % 5 == 0 ? 3.2f : 2.0f;
+        return coverage(radius + 0.5f - sqrtf(off * off + along * along));
+    }
+    case RING_TICKS: {
+        const float half = mark % 5 == 0 ? 1.4f : 0.9f;
+        const float inner = mark % 5 == 0 ? -10.0f : -4.0f;
+        return coverage(half + 0.5f - fabsf(along)) *
+               coverage(fminf(off - inner, 8.0f - off) + 0.5f);
+    }
+    case RING_BAR:
+        return coverage(3.5f - fabsf(off));
+    case RING_WAVE:
+        return fabsf(off) < WAVE_REACH ? 1.0f : 0.0f;
+    case RING_COMET:
+        return fabsf(off) < COMET_REACH ? 1.0f : 0.0f;
+    default:
+        return 0.0f;
+    }
+}
+
+static void free_ring_list(void)
+{
+    free(ring_pixels);
+    free(ring_bytes);
+    ring_pixels = NULL;
+    ring_bytes = NULL;
+    ring_count = 0;
+    ring_list_style = -1;
+}
+
+static bool build_ring_list(int style)
+{
+    if (ring_pixels && ring_list_style == style) return true;
+    free_ring_list();
     int count = 0;
     for (int i = 0; i < band_count; ++i) {
-        if (abs(band_offset[i]) < WAVE_REACH * 64) ++count;
+        const float off = (float)band_offset[i] * (1.0f / 64.0f);
+        if (fabsf(off) < RING_REACH && ring_shape(style, off, band_segment[i]) > 0.0f) ++count;
     }
-    wave_pixels = heap_caps_malloc(count * sizeof(uint32_t), MALLOC_CAP_INTERNAL);
-    wave_offsets = heap_caps_malloc(count, MALLOC_CAP_INTERNAL);
-    if (!wave_pixels || !wave_offsets) {
+    if (count == 0) return false;
+    ring_pixels = heap_caps_malloc(count * sizeof(uint32_t), MALLOC_CAP_INTERNAL);
+    ring_bytes = heap_caps_malloc(count, MALLOC_CAP_INTERNAL);
+    if (!ring_pixels || !ring_bytes) {
         /* Short of internal memory the list still works from PSRAM, slower. */
-        free(wave_pixels);
-        free(wave_offsets);
-        wave_pixels = heap_caps_malloc(count * sizeof(uint32_t), MALLOC_CAP_SPIRAM);
-        wave_offsets = heap_caps_malloc(count, MALLOC_CAP_SPIRAM);
-        if (!wave_pixels || !wave_offsets) {
-            free(wave_pixels);
-            free(wave_offsets);
-            wave_pixels = NULL;
-            wave_offsets = NULL;
+        free(ring_pixels);
+        free(ring_bytes);
+        ring_pixels = heap_caps_malloc(count * sizeof(uint32_t), MALLOC_CAP_SPIRAM);
+        ring_bytes = heap_caps_malloc(count, MALLOC_CAP_SPIRAM);
+        if (!ring_pixels || !ring_bytes) {
+            free_ring_list();
             return false;
         }
     }
-    wave_count = 0;
+    const bool moving = style == RING_WAVE || style == RING_COMET;
     for (int i = 0; i < band_count; ++i) {
-        if (abs(band_offset[i]) >= WAVE_REACH * 64) continue;
-        wave_pixels[wave_count] = band_pixel[i] | ((uint32_t)band_segment[i] << 17);
-        wave_offsets[wave_count] = (int8_t)(band_offset[i] / 4);
-        ++wave_count;
+        const float off = (float)band_offset[i] * (1.0f / 64.0f);
+        if (fabsf(off) >= RING_REACH) continue;
+        const float shape = ring_shape(style, off, band_segment[i]);
+        if (shape <= 0.0f) continue;
+        ring_pixels[ring_count] = band_pixel[i] | ((uint32_t)band_segment[i] << 17);
+        ring_bytes[ring_count] = moving ? (uint8_t)(int8_t)(band_offset[i] / 4)
+                                        : (uint8_t)lroundf(shape * 255.0f);
+        ++ring_count;
     }
+    ring_list_style = style;
     return true;
 }
 
-static void free_wave_list(void)
+/* Paints one ring pixel: `lit` of the accent and `dim` of the track, out of
+   256, over the picture or the black clock face. */
+static inline uint16_t ring_pixel(const uint16_t *under, uint32_t index, int lit, int dim,
+                                  const uint8_t *accent)
 {
-    free(wave_pixels);
-    free(wave_offsets);
-    wave_pixels = NULL;
-    wave_offsets = NULL;
-    wave_count = 0;
+    static const uint8_t track[3] = {0x34, 0x34, 0x3E};
+    int r, g, b;
+    if (under) {
+        const uint16_t value = (uint16_t)((under[index] >> 8) | (under[index] << 8));
+        /* Over a picture the track is a shadow rather than a grey. */
+        const int keep = 256 - ((141 * dim) >> 8);
+        r = (((value >> 11) << 3) * keep) >> 8;
+        g = ((((value >> 5) & 63) << 2) * keep) >> 8;
+        b = (((value & 31) << 3) * keep) >> 8;
+    } else {
+        r = (track[0] * dim) >> 8;
+        g = (track[1] * dim) >> 8;
+        b = (track[2] * dim) >> 8;
+    }
+    r += ((accent[0] - r) * lit) >> 8;
+    g += ((accent[1] - g) * lit) >> 8;
+    b += ((accent[2] - b) * lit) >> 8;
+    return pack_pixel(r, g, b);
 }
 
-/* The wiggly ring redraws 25 times a second as it flows, so it runs in whole
-   numbers like the dial's arc: distances in 1/64 pixel and coverage out of
-   256, with everything that depends only on the angle worked out once per
-   segment. Pixels the wave can never reach are left alone. */
-static void draw_wave_ring(int second, float step, const uint16_t *under,
-                           const uint8_t *accent, const uint8_t *track)
+static inline int clamp_256(int value)
 {
-    static int16_t height[ARC_SEGMENTS];
-    static uint16_t thin[ARC_SEGMENTS], head[ARC_SEGMENTS];
-    /* The tip creeps on through each second rather than jumping, and only
-       the last few seconds behind it ripple: the ripple fades out along the
-       body, which keeps the shape it was drawn with. */
-    const float fraction = (float)(ring_now_us % 1000000) * 1e-6f;
-    const float tip = (float)second + fraction;
-    /* The tip sways back and forth once a second. A sway is periodic, so
-       unlike a travelling phase it has no jump when the second turns over. */
-    const float sway = 1.4f * sinf(fraction * 6.28318531f);
-    /* The still phase falls by the same angle from one segment to the next,
-       so its sine and cosine are carried along by rotation rather than
-       computed 1024 times. The wave repeats every two seconds, so the jump
-       from 60 back to 0 at 12 o'clock needs no correction. */
-    const float turn = -3.14159265f * 60.0f / ARC_SEGMENTS;
-    const float turn_cos = cosf(turn), turn_sin = sinf(turn);
-    const float start = (float)(ARC_SEGMENTS / 4) * (60.0f / ARC_SEGMENTS) * 3.14159265f;
-    float wave_sin = sinf(start), wave_cos = cosf(start);
-    const float steep = 4.0f * 3.14159265f / step;
-    for (int segment = 0; segment < ARC_SEGMENTS; ++segment) {
-        const float at = (float)((ARC_SEGMENTS / 4 - segment) & ARC_MASK) *
-                         (60.0f / ARC_SEGMENTS);
-        float sine = wave_sin, cosine = wave_cos;
-        const float behind = tip - at;
-        if (behind > -1.0f && behind < WAVE_HEAD_S) {
-            /* Full ripple at the tip, easing to none WAVE_HEAD_S behind it. */
-            float weight = behind <= 0.0f ? 1.0f : 1.0f - behind / WAVE_HEAD_S;
-            weight = weight * weight * (3.0f - 2.0f * weight);
-            const float phase = at * 3.14159265f - sway * weight;
-            sine = sinf(phase);
-            cosine = cosf(phase);
-        }
-        const float slope = steep * cosine;
-        height[segment] = (int16_t)(64.0f * sine + (sine < 0.0f ? -0.5f : 0.5f));
-        thin[segment] = (uint16_t)(256.0f / sqrtf(1.0f + slope * slope) + 0.5f);
-        head[segment] = (uint16_t)(256.0f * coverage(behind * step + 0.5f) + 0.5f);
-        const float next_sin = wave_sin * turn_cos + wave_cos * turn_sin;
-        wave_cos = wave_cos * turn_cos - wave_sin * turn_sin;
-        wave_sin = next_sin;
-    }
-    if (!build_wave_list()) return;
-    uint16_t *pixels = (uint16_t *)canvas_pixels;
-    const int ar = accent[0], ag = accent[1], ab = accent[2];
-    for (int i = 0; i < wave_count; ++i) {
-        const uint32_t packed = wave_pixels[i];
-        const uint32_t index = packed & 0x1FFFF;
-        const int segment = (int)(packed >> 17);
-        const int off = wave_offsets[i];
-        const int fill = head[segment];
-        /* A squiggle 5 px wide up to the current second, a 3.5 px line after. */
-        int d = off - height[segment];
-        if (d < 0) d = -d;
-        int lit = (40 - ((d * thin[segment]) >> 8)) * 16;
-        lit = lit < 0 ? 0 : (lit > 256 ? 256 : lit);
-        lit = (lit * fill) >> 8;
-        int dim = 0;
-        if (fill < 256) {
-            dim = (28 - (off < 0 ? -off : off)) * 16;
-            dim = dim < 0 ? 0 : (dim > 256 ? 256 : dim);
-            dim = (dim * (256 - fill)) >> 8;
-        }
-        int r, g, b;
-        if (under) {
-            const uint16_t value = (uint16_t)((under[index] >> 8) | (under[index] << 8));
-            /* Over a picture the track is a shadow rather than a grey. */
-            const int keep = 256 - ((141 * dim) >> 8);
-            r = ((((value >> 11) << 3)) * keep) >> 8;
-            g = ((((value >> 5) & 63) << 2) * keep) >> 8;
-            b = (((value & 31) << 3) * keep) >> 8;
-        } else {
-            r = (track[0] * dim) >> 8;
-            g = (track[1] * dim) >> 8;
-            b = (track[2] * dim) >> 8;
-        }
-        r += ((ar - r) * lit) >> 8;
-        g += ((ag - g) * lit) >> 8;
-        b += ((ab - b) * lit) >> 8;
-        pixels[index] = pack_pixel(r, g, b);
-    }
+    return value < 0 ? 0 : (value > 256 ? 256 : value);
+}
+
+/* Only the ring changed, so only its strips are sent to the screen. */
+static void invalidate_ring(int reach)
+{
     dirty_count = 0;
-    mark_ring_dirty(DIAL_ARC_R + WAVE_REACH + 1, DIAL_ARC_R - WAVE_REACH - 1);
+    mark_ring_dirty(DIAL_ARC_R + reach + 1, DIAL_ARC_R - reach - 1);
     for (int index = 0; index < dirty_count; ++index) {
         lv_obj_invalidate_area(canvas, &dirty_areas[index]);
     }
 }
 
+/* Redraws the seconds ring around the screensaver clock in the chosen style:
+   the seconds passed this minute in the accent, the rest as a faint track.
+   Everything moves on smoothly through each second: a bullet or tick fades
+   in, the bar and the wave grow, and the comet glides. In the last second
+   of the minute the filled part fades back to the track, so the new minute
+   starts without a jump. It is painted over `under` (the shaded picture) or,
+   without one, the black clock face, so a new frame simply paints it again.
+   Call with lvgl_mutex held. */
 static void draw_seconds_ring(int second, const uint16_t *under)
 {
-    /* Pixels per second along the ring, and the ring's own radius. */
+    /* Pixels per second along the ring. */
     const float step = 6.28318531f * DIAL_ARC_R / 60.0f;
-    const float filled = (float)(second + 1);
     const uint8_t *accent = accent_of(selected_mode);
-    static const uint8_t track[3] = {0x34, 0x34, 0x3E};
     uint16_t *pixels = (uint16_t *)canvas_pixels;
+    int reach = RING_REACH;
     if (ring_wipe) {
+        /* A new style: clear the whole band once so the old one leaves nothing. */
         ring_wipe = false;
         for (int i = 0; i < band_count; ++i) {
             const uint32_t index = band_pixel[i];
             pixels[index] = under ? under[index] : 0;
         }
+        reach = DIAL_ARC_BAND;
     }
-    if (saver_ring == RING_WAVE) {
-        draw_wave_ring(second, step, under, accent, track);
+    const int style = saver_ring;
+    if (style == RING_NONE || !build_ring_list(style)) {
+        if (reach == DIAL_ARC_BAND) invalidate_ring(reach);
         return;
     }
-    for (int i = 0; i < band_count; ++i) {
-        const uint32_t index = band_pixel[i];
-        const float off = (float)band_offset[i] * (1.0f / 64.0f);
-        float lit = 0.0f, dim = 0.0f;
-        /* Seconds clockwise from 12 o'clock, 0 to 60. */
-        const float at = (float)((ARC_SEGMENTS / 4 - band_segment[i]) & ARC_MASK) *
-                         (60.0f / ARC_SEGMENTS);
-        const int nearest = (int)lroundf(at) % 60;
-        const float along = (at - roundf(at)) * step;
-        switch (saver_ring) {
-        case RING_DOTS: {
-            const float radius = nearest % 5 == 0 ? 3.2f : 2.0f;
-            const float cover = coverage(radius + 0.5f - sqrtf(off * off + along * along));
-            if (nearest <= second) lit = cover; else dim = cover;
-            break;
-        }
-        case RING_TICKS: {
-            const float half = nearest % 5 == 0 ? 1.4f : 0.9f;
-            const float inner = nearest % 5 == 0 ? -10.0f : -4.0f;
-            const float cover = coverage(half + 0.5f - fabsf(along)) *
-                                coverage(fminf(off - inner, 8.0f - off) + 0.5f);
-            if (nearest <= second) lit = cover; else dim = cover;
-            break;
-        }
-        case RING_BAR: {
-            const float cover = coverage(3.5f - fabsf(off));
-            const float head = coverage((filled - at) * step + 0.5f);
-            lit = cover * head;
-            dim = cover * (1.0f - head);
-            break;
-        }
-        case RING_COMET: {
-            /* A bright head on the current second with a tail fading behind. */
-            const float behind = fmodf((float)second - at + 60.0f, 60.0f);
-            const float tail = behind < 20.0f ? 1.0f - behind / 20.0f : 0.0f;
-            const float head_along = fmodf(at - (float)second + 90.0f, 60.0f) - 30.0f;
-            const float head = coverage(4.5f - sqrtf(off * off + head_along * head_along *
-                                                     step * step));
-            lit = fmaxf(head, coverage(0.5f + 3.0f * tail - fabsf(off)) * tail);
-            dim = coverage(1.5f - fabsf(off)) * (1.0f - lit);
-            break;
-        }
-        default:
-            break;
-        }
-        int r = 0, g = 0, b = 0;
-        if (under) {
-            const uint16_t value = (uint16_t)((under[index] >> 8) | (under[index] << 8));
-            r = (value >> 11) << 3;
-            g = ((value >> 5) & 63) << 2;
-            b = (value & 31) << 3;
-            /* Over a picture the track is a shadow rather than a grey. */
-            const float keep = 1.0f - 0.55f * dim;
-            r = (int)(r * keep);
-            g = (int)(g * keep);
-            b = (int)(b * keep);
-        } else {
-            r = (int)(track[0] * dim);
-            g = (int)(track[1] * dim);
-            b = (int)(track[2] * dim);
-        }
-        r += (int)((accent[0] - r) * lit);
-        g += (int)((accent[1] - g) * lit);
-        b += (int)((accent[2] - b) * lit);
-        pixels[index] = pack_pixel(r, g, b);
-    }
-    invalidate_ring();
-}
+    const float fraction = (float)(ring_now_us % 1000000) * 1e-6f;
+    /* In second 59 the filled part fades out towards the new minute. */
+    const int fade = second == 59 ? (int)lroundf(256.0f * (1.0f - ease(fraction))) : 256;
 
-/* Only the ring changed, so only its strips are sent to the screen. */
-static void invalidate_ring(void)
-{
-    dirty_count = 0;
-    mark_arc_dirty();
-    for (int index = 0; index < dirty_count; ++index) {
-        lv_obj_invalidate_area(canvas, &dirty_areas[index]);
+    if (style == RING_DOTS || style == RING_TICKS || style == RING_BAR) {
+        /* How lit each segment is: whole seconds passed, plus the next one
+           fading in (bullets and ticks) or the bar's edge creeping on. */
+        static uint16_t weight[ARC_SEGMENTS];
+        const int arriving = (int)lroundf(256.0f * ease(fraction));
+        const float filled = (float)second + 1.0f + fraction;
+        for (int segment = 0; segment < ARC_SEGMENTS; ++segment) {
+            const float at = segment_seconds(segment);
+            int w;
+            if (style == RING_BAR) {
+                w = (int)lroundf(256.0f * coverage((filled - at) * step + 0.5f));
+            } else {
+                const int mark = (int)lroundf(at) % 60;
+                w = mark <= second ? 256 : (mark == second + 1 ? arriving : 0);
+            }
+            /* The first second stays lit through the fade into the new minute. */
+            if (at >= 1.0f && !(style != RING_BAR && (int)lroundf(at) % 60 == 0)) {
+                w = (w * fade) >> 8;
+            }
+            weight[segment] = (uint16_t)w;
+        }
+        for (int i = 0; i < ring_count; ++i) {
+            const uint32_t packed = ring_pixels[i];
+            const uint32_t index = packed & 0x1FFFF;
+            const int shape = ring_bytes[i] + (ring_bytes[i] >> 7);
+            const int lit = (shape * weight[packed >> 17]) >> 8;
+            pixels[index] = ring_pixel(under, index, lit, shape - lit, accent);
+        }
+    } else if (style == RING_WAVE) {
+        static int16_t height[ARC_SEGMENTS];
+        static uint16_t thin[ARC_SEGMENTS], head[ARC_SEGMENTS];
+        /* The tip creeps on through each second and only the last few
+           seconds behind it ripple, swaying back and forth once a second (a
+           sway is periodic, so nothing jumps when the second turns over); the
+           ripple eases out along the body, which keeps its shape. */
+        const float tip = (float)second + fraction;
+        const float sway = 1.4f * sinf(fraction * 6.28318531f);
+        /* The still phase falls by the same angle from one segment to the
+           next, so its sine and cosine are carried along by rotation. The
+           wave repeats every two seconds, so 60 back to 0 needs no fix. */
+        const float turn = -3.14159265f * 60.0f / ARC_SEGMENTS;
+        const float turn_cos = cosf(turn), turn_sin = sinf(turn);
+        const float begin = segment_seconds(0) * 3.14159265f;
+        float wave_sin = sinf(begin), wave_cos = cosf(begin);
+        const float steep = 4.0f * 3.14159265f / step;
+        for (int segment = 0; segment < ARC_SEGMENTS; ++segment) {
+            const float at = segment_seconds(segment);
+            float sine = wave_sin, cosine = wave_cos;
+            const float behind = tip - at;
+            if (behind > -1.0f && behind < WAVE_HEAD_S) {
+                const float weight = ease(behind <= 0.0f ? 1.0f : 1.0f - behind / WAVE_HEAD_S);
+                const float phase = at * 3.14159265f - sway * weight;
+                sine = sinf(phase);
+                cosine = cosf(phase);
+            }
+            const float slope = steep * cosine;
+            height[segment] = (int16_t)(64.0f * sine + (sine < 0.0f ? -0.5f : 0.5f));
+            thin[segment] = (uint16_t)(256.0f / sqrtf(1.0f + slope * slope) + 0.5f);
+            int fill = (int)(256.0f * coverage(behind * step + 0.5f) + 0.5f);
+            if (at >= 1.0f) fill = (fill * fade) >> 8;
+            head[segment] = (uint16_t)fill;
+            const float next_sin = wave_sin * turn_cos + wave_cos * turn_sin;
+            wave_cos = wave_cos * turn_cos - wave_sin * turn_sin;
+            wave_sin = next_sin;
+        }
+        for (int i = 0; i < ring_count; ++i) {
+            const uint32_t packed = ring_pixels[i];
+            const uint32_t index = packed & 0x1FFFF;
+            const int segment = (int)(packed >> 17);
+            const int off = (int8_t)ring_bytes[i];
+            const int fill = head[segment];
+            /* A squiggle 5 px wide where filled, a 3.5 px line after it. */
+            int d = off - height[segment];
+            if (d < 0) d = -d;
+            const int lit = (clamp_256((40 - ((d * thin[segment]) >> 8)) * 16) * fill) >> 8;
+            int dim = 0;
+            if (fill < 256) dim = (clamp_256((28 - (off < 0 ? -off : off)) * 16) * (256 - fill)) >> 8;
+            pixels[index] = ring_pixel(under, index, lit, dim, accent);
+        }
+    } else {
+        /* The comet: a bright head gliding round with a tail fading behind. */
+        static uint16_t tail[ARC_SEGMENTS];
+        static int16_t tail_half[ARC_SEGMENTS], head_along[ARC_SEGMENTS];
+        const float now_s = (float)second + fraction;
+        for (int segment = 0; segment < ARC_SEGMENTS; ++segment) {
+            const float at = segment_seconds(segment);
+            const float behind = fmodf(now_s - at + 60.0f, 60.0f);
+            const float t = behind < 20.0f ? 1.0f - behind / 20.0f : 0.0f;
+            tail[segment] = (uint16_t)lroundf(256.0f * t);
+            tail_half[segment] = (int16_t)lroundf(16.0f * (0.5f + 3.0f * t));
+            const float along = (fmodf(at - now_s + 90.0f, 60.0f) - 30.0f) * step;
+            head_along[segment] = fabsf(along) < 5.0f ? (int16_t)lroundf(along * 16.0f)
+                                                      : INT16_MAX;
+        }
+        for (int i = 0; i < ring_count; ++i) {
+            const uint32_t packed = ring_pixels[i];
+            const uint32_t index = packed & 0x1FFFF;
+            const int segment = (int)(packed >> 17);
+            const int off = (int8_t)ring_bytes[i];
+            const int distance = off < 0 ? -off : off;
+            int lit = (clamp_256((tail_half[segment] - distance) * 16) * tail[segment]) >> 8;
+            if (head_along[segment] != INT16_MAX) {
+                const float along = (float)head_along[segment];
+                const float d = sqrtf((float)(off * off) + along * along) * (1.0f / 16.0f);
+                const int head = (int)(256.0f * coverage(4.5f - d));
+                if (head > lit) lit = head;
+            }
+            const int dim = (clamp_256((24 - distance) * 16) * (256 - lit)) >> 8;
+            pixels[index] = ring_pixel(under, index, lit, dim, accent);
+        }
     }
+    invalidate_ring(reach);
 }
 
 static void clock_tick(int64_t now)
@@ -3381,7 +3423,7 @@ static void stop_saver(void)
     if (!saver_active) return;
     saver_active = false;
     if (lvgl_mutex) xSemaphoreTake(lvgl_mutex, portMAX_DELAY);
-    free_wave_list();
+    free_ring_list();
     lv_obj_add_flag(clock_label, LV_OBJ_FLAG_HIDDEN);
     lv_obj_add_flag(ampm_label, LV_OBJ_FLAG_HIDDEN);
     lv_obj_add_flag(date_label, LV_OBJ_FLAG_HIDDEN);
@@ -3415,9 +3457,9 @@ static void saver_tick(int64_t now)
         }
     }
     if (saver_shown != SAVER_PICTURES && clock_valid) clock_tick(now);
-    if (saver_shown != SAVER_PICTURES && clock_valid && saver_ring == RING_WAVE &&
+    if (saver_shown != SAVER_PICTURES && clock_valid && saver_ring != RING_NONE &&
         ring_second >= 0 && now >= ring_next_us) {
-        /* About 25 frames a second; the tip ripples one wavelength a second. */
+        /* About 25 frames a second, so every style moves smoothly between seconds. */
         ring_next_us = now + 40000;
         ring_now_us = now;
         if (lvgl_mutex) xSemaphoreTake(lvgl_mutex, portMAX_DELAY);

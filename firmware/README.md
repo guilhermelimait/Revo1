@@ -193,20 +193,27 @@ the clock is set it shows the pictures alone.
 An optional sixth `SAVER` field picks the seconds ring drawn round the clock:
 0 bullets (the sixty dots), 1 bar, 2 wiggly (a wave up to the current second,
 a flat line after it), 3 ticks (watch-style marks), 4 comet (a head on the
-current second with a fading tail) or 5 none. `draw_seconds_ring` repaints the
-whole ring every second over the black face or the current picture (kept in
-`frame_pixels`), and again after each new frame, so it never leaves traces.
+current second with a fading tail) or 5 none. `draw_seconds_ring` paints the
+ring over the black face or the current picture (kept in `frame_pixels`), and
+again after each new frame, so it never leaves traces.
 It is saved as `ring`; a new style is drawn in place on a running screensaver,
 with the band wiped once so the old style leaves nothing behind.
 
-The wiggly ring grows: `saver_tick` redraws it every 40 ms, the tip creeping
-on through each second. Only the last `WAVE_HEAD_S` (3) seconds behind the
+Every style moves smoothly between seconds: `saver_tick` redraws the ring every
+40 ms (about 25 frames a second). The next bullet or tick fades in through
+the second, the bar and the comet head creep on continuously, and during
+second 59 the filled ring fades out so the new minute starts clean. All
+styles share one renderer: when the screensaver starts, `build_ring_list`
+packs the pixels near the ring (11 px reach, 8 for wiggly, 5 for comet) with
+their segment and a precomputed shape coverage or offset, in internal RAM;
+`free_ring_list` frees it when the screensaver ends. Each frame works in
+integer arithmetic over that list and invalidates only the narrow ring, so a
+frame costs about 1.5 ms (bullets) to 8.5 ms (wiggly).
+
+The wiggly tip creeps on through each second. Only the last `WAVE_HEAD_S` (3) seconds behind the
 tip ripple: they sway back and forth once a second (a periodic sway, so
-nothing jumps when the second turns over), easing to still along the body. `draw_wave_ring` does this in integer
-arithmetic over a packed list of the pixels within 8 px of the groove (built
-in internal RAM when the screensaver starts, freed when it ends), with the
-per-segment sine, slope and fill worked out once per frame by rotation, and
-invalidates only that narrow ring. A frame costs about 8 ms.
+nothing jumps when the second turns over), easing to still along the body, with the per-segment sine, slope and fill
+worked out once per frame by rotation.
 
 ## Media transport screen
 

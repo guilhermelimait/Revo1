@@ -35,6 +35,9 @@
   optional sixth `SAVER` field). The wiggly ring grows smoothly at about 25
   frames a second: only its tip sways, and the body behind it stays still.
   Picking a ring style while the screensaver is on changes it in place.
+- Every seconds ring style now moves smoothly between seconds: the next bullet
+  or tick fades in, the bar and the comet glide on, and at the end of each
+  minute the ring fades out instead of vanishing at once.
 - Removing every picture and sending the empty collection takes the knob back
   to its menu instead of the last screen.
 - The screensaver preview in the app no longer draws a coloured bezel inside
