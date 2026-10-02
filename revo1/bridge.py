@@ -355,6 +355,8 @@ class DeviceBridge:
         if not line:
             return line
         if line in HELLO_LINES:
+            # The knob shows "not connected" when nothing answers its hello.
+            self.outbound.put(b"APP\n")
             self.events.put(("hello", port))
         elif line.startswith("VERSION,"):
             version = line[8:]

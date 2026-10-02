@@ -90,6 +90,9 @@ sync as you turn the knob.
   confirm. It opens on the control you used last.
 - **Always in sync:** the knob, the screen and the app window show the same
   value, and volume changes made elsewhere in Windows show up on the knob.
+- **Knows when the app is gone:** if Revo1 isn't running, or isn't reached
+  over USB, Wi-Fi or Bluetooth, the knob shows **Not connected** instead of
+  any screen, and comes back to where it was as soon as the app answers.
 - **Personalise it:** one colour per control or a single colour of your
   choice, four sizes for the big number, and screen orientation in 90 degree
   steps.
@@ -363,7 +366,8 @@ framing.
 
 | Direction | Message | Meaning |
 | --- | --- | --- |
-| Device to PC | `HELLO,REVO1,1` | Companion handshake |
+| Device to PC | `HELLO,REVO1,1` | Companion handshake, every second |
+| PC to device | `APP` | Heartbeat: the app answers every `HELLO`; after 3.5 s without any line from the app the knob shows **Not connected** |
 | Device to PC | `VERSION,<x.y.z>` | Firmware version, right after each `HELLO` |
 | Device to PC | `SYNC` | Sent with `HELLO` until the first `STATE` after a restart; the app resends style and state |
 | Device to PC | `ROT,<signed steps>` | Knob movement |

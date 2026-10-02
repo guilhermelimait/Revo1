@@ -65,7 +65,7 @@ LVGL 8.4 and the panel driver are declared in `main\idf_component.yml`.
 | Touch interrupt | GPIO 9 (polled touch data is used) |
 
 The native USB Serial/JTAG console runs at 115200 baud and implements the
-`HELLO,REVO1,1`, `VERSION`, `SYNC`, `ROT`, `MENU`, `CURSOR`, `TAP`, `SWIPE`, `MEDIA`, `STATE`,
+`HELLO,REVO1,1`, `APP`, `VERSION`, `SYNC`, `ROT`, `MENU`, `CURSOR`, `TAP`, `SWIPE`, `MEDIA`, `STATE`,
 `SHOWMENU`, `COMETRESET`, `STYLE`, `TRACK`, `ARTIST`, `PLAY`, `SCREENS`,
 `BACKLIGHT`, `DIM`, `SWIPES`, `TIME`, `POMO`, `SAVER`, `LIBRARY`, `GAME` and media upload lines used by
 `revo1\bridge.py`. The menu has one sector per enabled screen (`SCREENS`
@@ -301,6 +301,14 @@ display starts, so a restarted knob comes back in the same view and the same
 orientation even when the PC app isn't running. `save_settings` runs after
 every command or touch that changes one of them, and only writes flash when a
 value actually changed. The level itself isn't stored; it comes from Windows.
+
+The app answers every `HELLO` (once a second) with `APP`. Any whole line
+from the app, over USB, Wi-Fi or Bluetooth, counts as a sign of life; after
+3.5 seconds without one (and from boot until the app is first heard) the
+knob replaces every screen with **Not connected** and "Open Revo1 on your
+PC". Meanwhile the screensaver stays off, a game round is abandoned, and a
+touch or turn only wakes the screen. When the app is heard again the knob
+returns to the screen it was on.
 
 Until the first `STATE` after boot, the firmware sends `SYNC` with every
 `HELLO`, and a connected app answers with its style and state. The merged

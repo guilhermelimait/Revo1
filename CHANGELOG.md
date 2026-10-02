@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+- When the app isn't running, or isn't reachable over USB, Wi-Fi or
+  Bluetooth, the knob now shows **Not connected** ("Open Revo1 on your PC")
+  instead of the dashboard or any other screen, and goes back to its screen
+  when the app returns. The app answers each `HELLO` with a new `APP`
+  heartbeat, so update the app and the firmware together: an older app would
+  leave the knob showing Not connected.
 - Closing Revo1 (the window's close button or **Quit** in the notification
   area) now asks first, since the knob disconnects until the app runs again;
   during a firmware update it warns that closing stops the update.

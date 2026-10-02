@@ -333,6 +333,13 @@ static bool clock_shade = true;
 static int saver_idle_s = 300;
 static int saver_interval_s = 30;
 static bool saver_active;
+/* The app answers every HELLO with APP. Without any line from it for a few
+   seconds the knob shows that it is not connected, in place of every screen.
+   It starts out that way, until the app is first heard. */
+#define APP_TIMEOUT_MS 3500
+static volatile uint32_t last_host_ms;
+static volatile bool host_seen;
+static bool app_offline = true;
 static bool touch_swallowed;
 static int64_t last_input_us;
 static int saver_item = -1;
@@ -1275,6 +1282,20 @@ static const icon_part_t icon_back[] = {
     {PART_SEG, {-3.5f, 0, 2.5f, 7, 2.6f}},
 };
 static const menu_icon_t back_button = {icon_back, ICON_COUNT(icon_back)};
+/* A screen struck through: the app is not there. */
+static const icon_part_t icon_offline[] = {
+    {PART_SEG, {-12, -10, 12, -10, 2.4f}},
+    {PART_SEG, {12, -10, 12, 6, 2.4f}},
+    {PART_SEG, {12, 6, -12, 6, 2.4f}},
+    {PART_SEG, {-12, 6, -12, -10, 2.4f}},
+    {PART_SEG, {0, 6, 0, 11, 2.4f}},
+    {PART_SEG, {-6, 11.5f, 6, 11.5f, 2.4f}},
+    {PART_SEG, {-14, -13, 14, 13, 2.4f}},
+};
+static const menu_icon_t offline_icon = {icon_offline, ICON_COUNT(icon_offline)};
+#define OFFLINE_ICON_Y (-24)
+#define OFFLINE_ICON_SIZE 1.25f
+#define OFFLINE_HEAD_Y 18
 /* Mute, under the level on Volume and Mic: the plain icon while on, crossed
    out while muted. */
 static const icon_part_t icon_volume_muted[] = {
@@ -1676,6 +1697,21 @@ static void render_canvas(void)
     if (saver_active) return;
     dirty_count = 0;
 
+    if (app_offline) {
+        if (force_full_redraw) {
+            render_dial_chrome();
+            draw_gauge_track();
+            draw_menu_icon(&offline_icon, SCREEN_CENTER, SCREEN_CENTER + OFFLINE_ICON_Y,
+                           OFFLINE_ICON_SIZE, 0xE5, 0x48, 0x4D);
+            mark_dirty(0, 0, LCD_WIDTH - 1, LCD_HEIGHT - 1);
+            force_full_redraw = false;
+            for (int index = 0; index < dirty_count; ++index) {
+                lv_obj_invalidate_area(canvas, &dirty_areas[index]);
+            }
+        }
+        return;
+    }
+
     if (force_full_redraw) {
         render_dial_chrome();
         draw_gauge_track();
@@ -1778,6 +1814,23 @@ static void draw_frame(void)
 static void apply_labels(void)
 {
     if (saver_active) return;
+    if (app_offline) {
+        lv_obj_align(value_label, LV_ALIGN_CENTER, 0, OFFLINE_HEAD_Y);
+        lv_obj_set_style_text_font(value_label, &lv_font_montserrat_16, 0);
+        lv_obj_set_style_text_color(value_label, lv_color_hex(0x2A2A34), 0);
+        lv_label_set_text(value_label, "NOT CONNECTED");
+        lv_obj_align(title_label, LV_ALIGN_CENTER, 0, MEDIA_TITLE_Y);
+        lv_label_set_text(title_label, "Open Revo1 on your PC");
+        lv_obj_align(artist_label, LV_ALIGN_CENTER, 0, MEDIA_ARTIST_Y);
+        lv_obj_set_style_text_color(artist_label, lv_color_hex(0x76768A), 0);
+        lv_label_set_text(artist_label, "USB, Wi-Fi or Bluetooth");
+        lv_obj_clear_flag(value_label, LV_OBJ_FLAG_HIDDEN);
+        lv_obj_clear_flag(title_label, LV_OBJ_FLAG_HIDDEN);
+        lv_obj_clear_flag(artist_label, LV_OBJ_FLAG_HIDDEN);
+        lv_obj_add_flag(time_label, LV_OBJ_FLAG_HIDDEN);
+        return;
+    }
+    lv_obj_align(value_label, LV_ALIGN_CENTER, 0, 0);
     /* Games move the labels: onto the card, or the title into the cap above
        the score. */
     const bool games = !show_menu && selected_mode == GAMES_MODE;
@@ -1929,7 +1982,7 @@ static void refresh_screen(void)
 /* Repaints the holes in `mask` (bit n is hole n) and nothing else. */
 static void whack_redraw(unsigned mask)
 {
-    if (!mask || saver_active || show_menu || selected_mode != GAMES_MODE) return;
+    if (!mask || saver_active || app_offline || show_menu || selected_mode != GAMES_MODE) return;
     if (lvgl_mutex) xSemaphoreTake(lvgl_mutex, portMAX_DELAY);
     if (!game_backdrop_ready) {
         force_full_redraw = true;
@@ -2382,6 +2435,8 @@ static bool handle_pairing(const char *line)
 
 static void dispatch_unlocked(char *line, size_t length)
 {
+    /* The app's heartbeat: hearing it at all is what counts. */
+    if (strcmp(line, "APP") == 0) return;
     if (strncmp(line, "MD,", 3) == 0 || strncmp(line, "MEDIA_", 6) == 0 ||
         strcmp(line, "LIBRARY") == 0) {
         handle_media_line(line);
@@ -2390,6 +2445,13 @@ static void dispatch_unlocked(char *line, size_t length)
     /* Anything else is a short command; an over-long track title is cut. */
     if (length >= SERIAL_LINE_MAX) line[SERIAL_LINE_MAX - 1] = '\0';
     xQueueSend(serial_queue, line, pdMS_TO_TICKS(100));
+}
+
+/* Any whole line from the app shows it is there. */
+static void note_host(void)
+{
+    last_host_ms = (uint32_t)(esp_timer_get_time() / 1000);
+    host_seen = true;
 }
 
 /* Reads the USB serial port through its driver, so long upload lines arrive
@@ -2408,6 +2470,7 @@ static void serial_reader_task(void *argument)
             if (character == '\n' || character == '\r') {
                 if (length && !overflow) {
                     line[length] = '\0';
+                    note_host();
                     if (!handle_pairing(line)) dispatch_line(line, length);
                 }
                 length = 0;
@@ -2424,6 +2487,7 @@ static void serial_reader_task(void *argument)
 /* Lines from an authenticated wireless session; pairing stays USB-only. */
 static void wireless_line(char *line, size_t length)
 {
+    note_host();
     if (strncmp(line, "PAIR,", 5) == 0 || strcmp(line, "UNPAIR") == 0) {
         host_printf("PAIR_ERR,USB\n");
         return;
@@ -2913,7 +2977,8 @@ static void poll_touch(void)
             touch_active = true;
             touch_start_x = x;
             touch_start_y = y;
-            touch_swallowed = saver_active || dark;
+            /* With no app a touch only wakes the screen: there is nothing to drive. */
+            touch_swallowed = saver_active || dark || app_offline;
             if (saver_active) stop_saver();
             if (!touch_swallowed && whack_press(x, y)) touch_swallowed = true;
         }
@@ -3644,6 +3709,7 @@ static void stop_saver(void)
    time run without the clock until the app has set it. */
 static bool saver_ready(void)
 {
+    if (app_offline) return false;
     if (saver_kind == SAVER_CLOCK) return clock_valid;
     return media_valid && !media_busy;
 }
@@ -3724,7 +3790,7 @@ static void saver_tick(int64_t now)
    dial costs nothing at all. */
 static bool dial_advance(void)
 {
-    if (show_menu || saver_active) return false;
+    if (show_menu || saver_active || app_offline) return false;
 
     if (mode_is_level(selected_mode)) {
         const int32_t target = (int32_t)selected_value << 8;
@@ -3835,6 +3901,10 @@ void app_main(void)
             encoder_accumulator = 0;
             detents = 0;
         }
+        if (app_offline) {
+            /* Nothing to drive without the app; the turn only wakes the screen. */
+            detents = 0;
+        }
         if (detents != 0 && saver_active) {
             /* The turn that wakes the dial does nothing else. */
             stop_saver();
@@ -3862,6 +3932,21 @@ void app_main(void)
         }
         poll_touch();
         const int64_t now = esp_timer_get_time();
+        {
+            const bool offline =
+                !host_seen || (uint32_t)(now / 1000) - last_host_ms > APP_TIMEOUT_MS;
+            if (offline != app_offline) {
+                app_offline = offline;
+                if (offline) {
+                    /* A round or a screensaver must not carry on underneath. */
+                    memset(whack_holes, 0, sizeof(whack_holes));
+                    game_state = GAME_LOBBY;
+                    stop_saver();
+                }
+                /* Coming back shows whichever screen was open before. */
+                refresh_screen();
+            }
+        }
         whack_tick(now);
         if (now - last_frame >= 40000) {
             if (dial_advance()) draw_frame();
