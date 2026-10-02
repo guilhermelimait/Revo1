@@ -22,9 +22,9 @@ STANDARD_ACCENT = "standard"
 NUMBER_SIZES = (24, 32, 40, 48)
 # How a level ring is coloured along its length; the order is the number sent
 # to the knob.
-BAR_STYLES = ("fade", "soft", "solid", "glow")
+BAR_STYLES = ("glow", "fade", "soft", "solid")
 DEFAULTS = {"mode": "Volume", "orientation": 0, "port": "", "name": DEFAULT_NAME,
-            "accent": STANDARD_ACCENT, "bar_style": "fade", "number_size": 32, "minimize_to_tray": False,
+            "accent": STANDARD_ACCENT, "bar_style": "glow", "number_size": 32, "minimize_to_tray": False,
             "invert_scroll": False, "invert_zoom": False, "swipe_screens": True,
             "screens": list(MODES), "known_screens": list(MODES), "backlight": 100,
             "focus_minutes": 25, "break_minutes": 5,

@@ -97,7 +97,7 @@ class DeviceBridge:
     def send_state(self, mode, value, orientation):
         self.outbound.put(f"STATE,{mode.upper()},{value},{orientation}\n".encode("ascii"))
 
-    def send_style(self, accent, number_size, bar_style="fade"):
+    def send_style(self, accent, number_size, bar_style="glow"):
         """accent is "standard" or "#RRGGBB"; number_size is the font in pixels;
         bar_style is one of config.BAR_STYLES."""
         colour = "STANDARD" if accent == "standard" else accent.lstrip("#").upper()

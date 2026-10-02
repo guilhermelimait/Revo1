@@ -339,8 +339,8 @@ static uint8_t clock_track[3] = {0x30, 0x30, 0x31};
 static bool clock_shade = true;
 /* How a level ring is coloured along its length; the order is the number the
    PC sends as the third field of STYLE. */
-enum { BAR_FADE, BAR_SOFT, BAR_SOLID, BAR_GLOW, BAR_STYLE_COUNT };
-static int bar_style = BAR_FADE;
+enum { BAR_GLOW, BAR_FADE, BAR_SOFT, BAR_SOLID, BAR_STYLE_COUNT };
+static int bar_style = BAR_GLOW;
 static int saver_idle_s = 300;
 static int saver_interval_s = 30;
 static bool saver_active;
@@ -1786,13 +1786,18 @@ static void render_canvas(void)
                                    SCREEN_CENTER + MUTE_ICON_Y, MUTE_ICON_SIZE,
                                    0x8A, 0x8A, 0x98);
                 }
+            } else if (selected_mode == POMODORO_MODE) {
+                /* The timer icon under the time, where the level screens keep theirs. */
+                draw_menu_icon(&menu_icons[POMODORO_MODE], SCREEN_CENTER,
+                               SCREEN_CENTER + MUTE_ICON_Y, MUTE_ICON_SIZE,
+                               0x8A, 0x8A, 0x98);
             } else if (selected_mode == GAMES_MODE) {
                 if (game_state == GAME_LOBBY) {
                     draw_game_cards();
                 } else {
                     draw_whack_board();
                 }
-            } else if (selected_mode != POMODORO_MODE) {
+            } else {
                 const uint8_t *accent = accent_of(selected_mode);
                 draw_menu_icon(&menu_icons[selected_mode], SCREEN_CENTER,
                                SCREEN_CENTER + MODE_ICON_Y,
@@ -1951,6 +1956,8 @@ static void apply_labels(void)
         lv_obj_set_style_text_font(value_label, number_font, 0);
         lv_label_set_text(value_label, clock);
         lv_label_set_text(time_label, pomo_phase ? "BREAK" : "FOCUS");
+        /* The phase sits above the time, like MUTED on the level screens. */
+        lv_obj_align(time_label, LV_ALIGN_CENTER, 0, MUTE_LABEL_Y);
         lv_label_set_text(title_label, pomo_running ? "Tap to pause" : "Tap to start");
         lv_obj_clear_flag(value_label, LV_OBJ_FLAG_HIDDEN);
         lv_obj_clear_flag(time_label, LV_OBJ_FLAG_HIDDEN);

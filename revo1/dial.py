@@ -216,7 +216,7 @@ class DialRenderer:
         self._base = _chrome(background)
         self._chrome = {"gauge": self._with_track(self._base, _in_gauge(self._segment))}
         self._menus = {}
-        self.bar_style = "fade"
+        self.bar_style = "glow"
 
     def _menu(self, count):
         """Slot map and chrome for a menu of `count` slots, built once each."""

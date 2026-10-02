@@ -189,7 +189,8 @@ how the knob is linked: **On USB cable**, **On Wi-Fi** or **On Bluetooth**.
   marks the spot; while muted it turns into a red crossed-out icon, the
   number greys and **MUTED** shows above it.
   The back icon still opens the menu.
-- On the **Pomodoro** screen, tap the dial to start or pause the timer.
+- On the **Pomodoro** screen, **FOCUS** or **BREAK** sits above the time and
+  the timer icon below it. Tap the dial to start or pause the timer.
   Once it has started, turn the knob to add or remove a minute per click.
 - The **Games** screen opens on the game cards. Turn the knob to pick a
   card (once there is more than one game) and tap it to play. In
@@ -264,10 +265,10 @@ in the left sidebar.
   **Touch**, **Swipe between screens** turns the left/right swipe on the knob
   on or off.
 - **Interface:** **Standard** colours (one per control), a swatch, or
-  **Custom...** for any single bar colour; the **bar style** (**Fade to
-  solid**, a deep-to-bright gradient that turns into one colour near 100%;
-  **Soft gradient**; **Solid**; or **Glowing tip**, an even bar whose end
-  brightens); and the number size (Small, Medium,
+  **Custom...** for any single bar colour; the **bar style** (**Glowing
+  tip**, the default, an even bar whose end brightens; **Fade to solid**, a
+  deep-to-bright gradient that turns into one colour near 100%; **Soft
+  gradient**; or **Solid**); and the number size (Small, Medium,
   Large or X-Large). Under **Window**, turn on **Minimise to the notification
   area** to hide Revo1 next to the clock when you minimise it (click the
   icon to bring it back, right-click for **Quit**). When it's on, the
@@ -392,7 +393,7 @@ framing.
 | PC to device | `STATE,<MODE>,<0..100>,<0\|90\|180\|270>` | Set screen state |
 | PC to device | `SHOWMENU` | Show radial menu |
 | PC to device | `COMETRESET` | Put the scroll/zoom comet back at its start (sent on connect) |
-| PC to device | `STYLE,<STANDARD\|RRGGBB>,<24\|32\|40\|48>[,<bar style 0-3>]` | Bar colour, number size and bar style (0 fade to solid, 1 soft gradient, 2 solid, 3 glowing tip) |
+| PC to device | `STYLE,<STANDARD\|RRGGBB>,<24\|32\|40\|48>[,<bar style 0-3>]` | Bar colour, number size and bar style (0 glowing tip, 1 fade to solid, 2 soft gradient, 3 solid) |
 | Device to PC | `MEDIA,PREV\|PLAYPAUSE\|NEXT` | Transport icon tapped |
 | PC to device | `TRACK,<title>` | Now-playing title |
 | PC to device | `ARTIST,<artist>` | Now-playing artist |

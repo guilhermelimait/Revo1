@@ -2,9 +2,12 @@
 
 ## Unreleased
 
+- Pomodoro on the knob and in the preview: **FOCUS** or **BREAK** moved above
+  the time, and the timer icon sits below it like the other screens.
+
 - New **Bar style** choice under Settings > Interface, beside the bar colour:
-  **Fade to solid** (the default), **Soft gradient**, **Solid** or **Glowing
-  tip**. The knob keeps it across restarts; `STYLE` gains an optional third
+  **Glowing tip** (the default, listed first), **Fade to solid**, **Soft
+  gradient** or **Solid**. The knob keeps it across restarts; `STYLE` gains an optional third
   field for it.
 - The level ring's dark-to-bright gradient now eases into one even colour
   from 85% up, so a full ring closes without a seam where the dark start met

@@ -83,6 +83,9 @@ The host owns the timer. `POMO,<phase>,<remaining s>,<total s>,<running>`
 arrives on every change and once a minute; the firmware counts the seconds
 down locally in between so the ring and the `M:SS` number move smoothly, and
 a tap on the dial sends `POMO,TOGGLE` back. The chime plays on the PC.
+`FOCUS` or `BREAK` sits above the time (`MUTE_LABEL_Y`) and the timer icon
+below it (`MUTE_ICON_Y`), the places the level screens use for MUTED and
+their icon.
 Turning the knob on this screen sends `ROT` as usual; the app adds or removes
 a minute per click once the timer has started and answers with a new `POMO`.
 
@@ -268,7 +271,7 @@ cap and the ring; a tap within 30 px of it opens the menu.
   at 100% the colour meets itself as a full ring.
   The colour runs from a deep tail to the full accent at the head, and a bright
   tick marks the live end. `level_shade` picks each segment's place on that
-  ramp for the bar style (`bar_style`, NVS key `bar`): **fade** (the full
+  ramp for the bar style (`bar_style`, NVS key `bar`, default glow): **fade** (the full
   ramp, easing into the full accent past `GAUGE_BLEND_FROM`, 85%), **soft**
   (the same from `SOFT_FLOOR` up), **solid** (the full accent throughout) or
   **glow** (an even `GLOW_BODY` with the last `GLOW_TIP` segments brightening,

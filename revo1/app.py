@@ -56,8 +56,8 @@ KOFI_RED = "#FF5E5B"
 DEVICE_ROW_HEIGHT = 36
 DEVICE_SCAN_MS = 2000
 NUMBER_LABELS = {24: "Small", 32: "Medium", 40: "Large", 48: "X-Large"}
-BAR_STYLE_LABELS = {"fade": "Fade to solid", "soft": "Soft gradient", "solid": "Solid",
-                    "glow": "Glowing tip"}
+BAR_STYLE_LABELS = {"glow": "Glowing tip", "fade": "Fade to solid",
+                    "soft": "Soft gradient", "solid": "Solid"}
 SETTINGS_TABS = (("device", "Device"), ("controls", "Controls"), ("interface", "Interface"),
                  ("wireless", "Wireless"), ("about", "About"))
 # How long a release check stays fresh before the About tab asks GitHub again.
@@ -1407,11 +1407,13 @@ class App(DashboardPage, ScreensaverPage, GamesPage, WirelessTab):
             remaining = timer.remaining()
             self.pomodoro_shown = remaining
             pixels = np.array(self.dial.level(accent, timer.fraction()))
+            self.draw_icon(pixels, "Pomodoro", c, c + dial.MUTE_ICON_Y,
+                           dial.FOOTER_INK, size=dial.MUTE_ICON_SIZE)
             image = Image.fromarray(pixels)
             draw = ImageDraw.Draw(image)
             self.put_text(draw, c, c, f"{remaining // 60}:{remaining % 60:02d}",
                           self.settings["number_size"], dial.VALUE_INK)
-            self.put_text(draw, c, c + dial.MEDIA_TIME_Y,
+            self.put_text(draw, c, c + dial.MUTE_LABEL_Y,
                           pomodoro.PHASE_NAMES[timer.phase].upper(), 12, dial.TIME_INK)
             self.put_text(draw, c, c + dial.MEDIA_TITLE_Y,
                           "Tap to pause" if timer.running else "Tap to start",
