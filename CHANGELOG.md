@@ -8,9 +8,12 @@
   no longer includes the Wi-Fi and TCP/IP stack, and the knob erases the
   network name and password that earlier firmware saved. The app drops its
   saved Wi-Fi network and knob address too.
-- The screensaver library now starts with a built-in **Moon** picture,
-  centred to fill the round screen. Existing libraries get it once; removing
-  it keeps it removed.
+- The screensaver library now starts with a built-in colourful **Moon**
+  picture, centred to fill the round screen. It replaces the earlier moon
+  pictures; existing libraries get it once, and removing it keeps it removed.
+- The ring on the small knob at the top of the sidebar always shows the bar
+  colour: the colour you picked, or the current screen's own colour in the
+  standard style.
 - The knob no longer jumps to Volume whenever the app connects or reconnects
   (starting Revo1, a reinstall, a cable or Bluetooth link): it opens
   its main menu instead. Value updates no longer close a menu opened on the
@@ -60,7 +63,7 @@
 - On the knob (and its preview in the app), Scroll and Zoom show the
   screen's icon in the middle with its name below, like the other screens.
 - The top of the sidebar shows a small knob next to the name, with a ring
-  that lights green while connected. Below the name, an icon and label show
+  in the bar colour. Below the name, an icon and label show
   the link in use: USB cable or Bluetooth.
 - Wireless is now automatic: once the knob is paired, unplugging the cable
   is enough for Revo1 to find it over Bluetooth. The **Use

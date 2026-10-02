@@ -36,10 +36,12 @@ VIDEO_FPS = 10
 MAX_CLIP_SECONDS = 20
 THUMB_SIZE = 96
 
-# Pictures that come with Revo1, already centred on the round screen. Each is
-# offered once: a new library starts with them, and one that is removed stays
-# removed.
-STARTER_PICTURES = (("Moon", Path(__file__).with_name("assets") / "moon.jpg"),)
+# Pictures that come with Revo1, already centred on the round screen, as
+# (key, name, file). Each key is offered once: a new library starts with them,
+# and one that is removed stays removed. A replaced picture gets a new key so
+# existing libraries are offered it too.
+STARTER_PICTURES = (("moon-colour", "Moon",
+                     Path(__file__).with_name("assets") / "moon.jpg"),)
 
 IMAGE_TYPES = (".jpg", ".jpeg", ".png", ".bmp", ".webp", ".gif", ".tif", ".tiff")
 VIDEO_TYPES = (".mp4", ".mov", ".avi", ".mkv", ".webm", ".m4v", ".wmv")
@@ -271,14 +273,14 @@ class Library:
         if not isinstance(offered, list):
             offered = []
         added = False
-        for name, path in starters:
-            if name in offered:
+        for key, name, path in starters:
+            if key in offered:
                 continue
             try:
                 self.add(path, name=name)
             except (MediaError, OSError):
                 continue
-            offered.append(name)
+            offered.append(key)
             added = True
         if added:
             record.write_text(json.dumps(offered), encoding="utf-8")

@@ -170,9 +170,9 @@ powershell -ExecutionPolicy Bypass -File .\scripts\flash-firmware.ps1 -Restore .
 (Use your own backup file name. Keep it: it is the only copy of the stock
 firmware.)
 
-Then start Revo1 from the Start Menu. Once the knob answers, the ring on
-the little knob beside the name turns green, and the line below it shows
-how the knob is linked: **On USB cable** or **On Bluetooth**.
+Then start Revo1 from the Start Menu. The ring on the little knob beside
+the name always shows your bar colour. Once the knob answers, the line
+below it shows how the knob is linked: **On USB cable** or **On Bluetooth**.
 
 ## Using it
 
@@ -244,7 +244,7 @@ in the left sidebar.
   **Shade**, which darkens the picture behind the time (on by default). If
   the time and background are too close, the preview warns **Hard to read**.
   **Pictures** holds your pictures and clips. It starts with a built-in
-  **Moon**, centred to fill the round screen (remove it and it stays
+  colourful **Moon**, centred to fill the round screen (remove it and it stays
   removed); click **Add pictures or videos...** to add more. Pictures are
   cropped around their centre. Hover a thumbnail
   and click the cross to remove it. **Send to knob** copies the collection

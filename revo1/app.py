@@ -805,7 +805,7 @@ class App(DashboardPage, ScreensaverPage, GamesPage, WirelessTab):
 
     def paint_knob_badge(self, image, cx, cy, radius):
         """A miniature of the knob: a light bezel round a dark screen, whose
-        ring lights up while the app is connected to it."""
+        ring always shows the bar colour of the current screen."""
         k = self.kit
         factor = 4
         size = k.px(radius * 2) * factor
@@ -825,8 +825,7 @@ class App(DashboardPage, ScreensaverPage, GamesPage, WirelessTab):
         pad = size / 2 - ring * unit
         box = (pad, pad, size - pad, size - pad)
         draw.arc(box, 135, 405, fill=(0x3A, 0x3A, 0x46), width=round(2.2 * unit))
-        if self.connected:
-            draw.arc(box, 135, 315, fill=ui.rgb(ui.OK_GREEN), width=round(2.2 * unit))
+        draw.arc(box, 135, 315, fill=tuple(self.accent(self.mode)), width=round(2.2 * unit))
         badge = badge.resize((size // factor, size // factor), Image.LANCZOS)
         image.paste(badge, (k.px(cx - radius), k.px(cy - radius)), badge)
 
@@ -841,6 +840,8 @@ class App(DashboardPage, ScreensaverPage, GamesPage, WirelessTab):
     def refresh_nav(self):
         for button in self.nav.values():
             button.refresh()
+        if hasattr(self, "identity"):
+            self.refresh_identity()
 
     # ----- settings actions ---------------------------------------------
 
