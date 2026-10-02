@@ -343,7 +343,7 @@ The app answers every `HELLO` (once a second) with `APP`. Any whole line
 from the app, over USB or Bluetooth, counts as a sign of life; after
 3.5 seconds without one (and from boot until the app is first heard) the
 knob replaces every screen with **Not connected** and "Open Revo1 on your
-PC". Meanwhile the screensaver stays off, a game round is abandoned, and a
+PC" (above and below a large icon). Meanwhile the screensaver stays off, a game round is abandoned, and a
 touch or turn only wakes the screen. When the app is heard again the knob
 opens its main menu and sends `MENU`, and the app sends `SHOWMENU` on every
 connection too, so a fresh session always starts from the menu.

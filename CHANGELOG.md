@@ -71,7 +71,8 @@
   setting, the wireless pairing included, is kept.
 - When the app isn't running, or isn't reachable over USB or
   Bluetooth, the knob now shows **Not connected** and "Open Revo1 on your
-  PC" above a large icon in the centre, instead of the dashboard or any other screen, and goes back to its screen
+  PC" around a large icon in the centre (the heading above it, the hint
+  below, in the same type), instead of the dashboard or any other screen, and goes back to its screen
   when the app returns. The app answers each `HELLO` with a new `APP`
   heartbeat, so update the app and the firmware together: an older app would
   leave the knob showing Not connected.

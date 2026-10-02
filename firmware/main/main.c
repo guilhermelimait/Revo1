@@ -1339,10 +1339,11 @@ static const icon_part_t icon_offline[] = {
     {PART_SEG, {-14, -13, 14, 13, 2.4f}},
 };
 static const menu_icon_t offline_icon = {icon_offline, ICON_COUNT(icon_offline)};
-/* The icon fills the cap; the words sit above it, between the cap and the ring. */
+/* The icon fills the cap; the heading sits above it and the hint below, mirrored
+   in the band between the cap and the ring. */
 #define OFFLINE_ICON_SIZE 2.0f
-#define OFFLINE_HEAD_Y (-114)
-#define OFFLINE_HINT_Y (-92)
+#define OFFLINE_HEAD_Y (-104)
+#define OFFLINE_HINT_Y 104
 /* Mute, under the level on Volume and Mic: the plain icon while on, crossed
    out while muted. */
 static const icon_part_t icon_volume_muted[] = {
@@ -1885,8 +1886,10 @@ static void apply_labels(void)
         lv_obj_align(value_label, LV_ALIGN_CENTER, 0, OFFLINE_HEAD_Y);
         lv_obj_set_style_text_font(value_label, &lv_font_montserrat_16, 0);
         lv_obj_set_style_text_color(value_label, lv_color_hex(0x2A2A34), 0);
-        lv_label_set_text(value_label, "NOT CONNECTED");
+        lv_label_set_text(value_label, "Not connected");
         lv_obj_align(artist_label, LV_ALIGN_CENTER, 0, OFFLINE_HINT_Y);
+        lv_obj_set_style_text_font(artist_label, &lv_font_montserrat_16, 0);
+        lv_obj_set_width(artist_label, 220);
         lv_obj_set_style_text_color(artist_label, lv_color_hex(0x5A5A6A), 0);
         lv_label_set_text(artist_label, "Open Revo1 on your PC");
         lv_obj_clear_flag(value_label, LV_OBJ_FLAG_HIDDEN);
@@ -1896,6 +1899,8 @@ static void apply_labels(void)
         return;
     }
     lv_obj_align(value_label, LV_ALIGN_CENTER, 0, 0);
+    lv_obj_set_style_text_font(artist_label, &lv_font_montserrat_12, 0);
+    lv_obj_set_width(artist_label, 160);
     /* Games move the labels: onto the card, or the title into the cap above
        the score. */
     const bool games = !show_menu && selected_mode == GAMES_MODE;
