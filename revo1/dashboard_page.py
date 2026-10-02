@@ -7,7 +7,8 @@ from revo1 import config, dial, pomodoro, ui
 from revo1.layout import CARD_WIDTH
 
 TILE_GAP = 10
-TILE_WIDTH = (CARD_WIDTH - TILE_GAP) // 2
+TILE_COLUMNS = 3
+TILE_WIDTH = (CARD_WIDTH - TILE_GAP * (TILE_COLUMNS - 1)) // TILE_COLUMNS
 TILE_HEIGHT = 84
 # The switch in a tile's top-right corner, in layout units from that corner.
 SWITCH_W, SWITCH_H = 34, 20
@@ -35,8 +36,9 @@ class DashboardPage:
                              lambda hover, key=key: self.paint_tile(key, hover),
                              lambda: None)
             tile.bind("<Button-1>", lambda event, key=key: self.click_tile(key, event))
-            tile.grid(row=index // 2, column=index % 2,
-                      padx=(0, k.px(TILE_GAP) if index % 2 == 0 else 0),
+            column = index % TILE_COLUMNS
+            tile.grid(row=index // TILE_COLUMNS, column=column,
+                      padx=(0, k.px(TILE_GAP) if column < TILE_COLUMNS - 1 else 0),
                       pady=(0, k.px(TILE_GAP)))
             self.dashboard_tiles[key] = tile
         self.levels_pending = False

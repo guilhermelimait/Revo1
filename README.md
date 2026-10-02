@@ -187,12 +187,13 @@ The knob has no push button.
 
 **In the app**
 
-The dial in the window mirrors the device and accepts clicks the same way.
-The app opens on the **Dashboard**: click a tile to open that screen, or its
-switch to show or hide it on the knob (at least one stays on). Pick a control
+The dial in the window mirrors the device and accepts clicks the same way;
+beside it are the screen's name, a short note on using it and its buttons.
+The app opens on the **Dashboard**, a 3 by 3 grid of tiles: click a tile to
+open that screen, or its switch to show or hide it on the knob (at least one stays on). Pick a control
 in the left sidebar.
 
-- **Volume and Mic:** the **Mute sound** / **Mute microphone** button under
+- **Volume and Mic:** the **Mute sound** / **Mute microphone** button beside
   the dial (or a click on its centre) mutes the PC; it turns red with
   **Unmute** while muted. Muting from Windows shows up here and on the knob.
 - **Pomodoro:** set the focus and break minutes with **-** / **+** (or turn

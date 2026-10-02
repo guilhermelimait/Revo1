@@ -20,8 +20,8 @@ from revo1.bridge import DeviceBridge, find_devices
 from revo1.dashboard_page import DashboardPage
 from revo1.games_page import GamesPage
 from revo1.dial import DialRenderer
-from revo1.layout import (CARD_WIDTH, MAIN_WIDTH, NAV_HEIGHT, NAV_WIDTH, PANEL_BG,
-                          SIDEBAR_WIDTH, WINDOW_HEIGHT)
+from revo1.layout import (CARD_WIDTH, DIAL_GAP, MAIN_WIDTH, NAV_HEIGHT, NAV_WIDTH,
+                          PANEL_BG, SIDE_WIDTH, SIDEBAR_WIDTH, WINDOW_HEIGHT)
 from revo1.media import MediaSession
 from revo1.screensaver import Library
 from revo1.screensaver_page import TIME_RESEND_S, ScreensaverPage
@@ -29,6 +29,25 @@ from revo1.screensaver_page import TIME_RESEND_S, ScreensaverPage
 LEVEL_MODES = ("Volume", "Mic", "Brightness")
 MUTE_MODES = ("Volume", "Mic")
 MUTED_RED = "#E5484D"
+# Beside the dial: what the knob does on each screen.
+SCREEN_HELP = {
+    "Volume": ("Turn the knob to set the PC volume.",
+               "Tap the speaker in the centre to mute."),
+    "Scroll": ("Turn the knob to scroll the window",
+               "under the mouse pointer."),
+    "Brightness": ("Turn the knob to set the brightness",
+                   "of your screen."),
+    "Mic": ("Turn the knob to set the microphone level.",
+            "Tap the microphone in the centre to mute."),
+    "Zoom": ("Turn the knob to zoom in or out",
+             "(the same as Ctrl and + or -)."),
+    "Media": ("Shows what is playing on the PC.",
+              "Tap play/pause, previous or next."),
+    "Pomodoro": ("A focus and break timer.",
+                 "Tap the dial to start or pause it."),
+}
+MENU_HELP = ("Turn to choose a screen,", "then tap to open it.")
+SIDE_BAR_GAP = 20
 KOFI_RED = "#FF5E5B"
 DEVICE_ROW_HEIGHT = 36
 DEVICE_SCAN_MS = 2000
@@ -185,18 +204,21 @@ class App(DashboardPage, ScreensaverPage, GamesPage):
         k = self.kit
         page = tk.Frame(self.root, bg=ui.MAIN_BG)
         # Games swap the dial for their cards; the knob's menu still shows the dial.
+        # The dial on the left; its name, help and buttons on the right.
         self.dial_box = tk.Frame(page, bg=ui.MAIN_BG)
-        self.dial_box.pack()
+        self.dial_box.pack(expand=True)
         self.canvas = tk.Canvas(self.dial_box, width=self.dial.size, height=self.dial.size,
                                 bg=ui.MAIN_BG, highlightthickness=0)
         self.canvas.bind("<Button-1>", self.canvas_click)
-        self.canvas.pack(pady=(k.px(30), k.px(12)))
-        self.label = ui.Picture(self.dial_box, ui.MAIN_BG)
-        self.label.pack()
+        self.canvas.pack(side="left")
+        side = tk.Frame(self.dial_box, bg=ui.MAIN_BG)
+        side.pack(side="left", padx=(k.px(DIAL_GAP), 0))
+        self.label = ui.Picture(side, ui.MAIN_BG)
+        self.label.pack(anchor="w")
         # Timer lengths and buttons, shown only on the Pomodoro screen.
-        self.pomodoro_bar = tk.Frame(page, bg=ui.MAIN_BG)
+        self.pomodoro_bar = tk.Frame(side, bg=ui.MAIN_BG)
         self.pomodoro_buttons = []
-        widths = self.fill_widths([0, 0])
+        widths = self.fill_widths([0, 0], total=SIDE_WIDTH)
         for keys in (("focus", "break"), ("start", "reset")):
             row = tk.Frame(self.pomodoro_bar, bg=ui.MAIN_BG)
             row.pack(pady=(0, k.px(8)))
@@ -220,14 +242,14 @@ class App(DashboardPage, ScreensaverPage, GamesPage):
             self.pack_row(buttons)
             self.pomodoro_buttons += buttons
         if self.mode == "Pomodoro":
-            self.pomodoro_bar.pack(pady=(k.px(12), 0))
-        # Mute for the speakers or the microphone, under the Volume and Mic dials.
-        self.mute_bar = tk.Frame(page, bg=ui.MAIN_BG)
+            self.pomodoro_bar.pack(anchor="w", pady=(k.px(SIDE_BAR_GAP), 0))
+        # Mute for the speakers or the microphone, beside the Volume and Mic dials.
+        self.mute_bar = tk.Frame(side, bg=ui.MAIN_BG)
         self.mute_button = ui.Button(self.mute_bar, ui.MAIN_BG, self.paint_mute_button,
                                      self.toggle_mute)
         self.mute_button.pack()
         if self.mode in MUTE_MODES:
-            self.mute_bar.pack(pady=(k.px(12), 0))
+            self.mute_bar.pack(anchor="w", pady=(k.px(SIDE_BAR_GAP), 0))
         self.build_games_panel(page)
         self.control_page = page
 
@@ -415,13 +437,13 @@ class App(DashboardPage, ScreensaverPage, GamesPage):
         return body
 
     @staticmethod
-    def fill_widths(naturals, gap=8):
+    def fill_widths(naturals, gap=8, total=CARD_WIDTH):
         """Widths (layout units) that stretch buttons to span the full row:
         the spare room is shared out and the last one takes the remainder."""
-        extra = max(CARD_WIDTH - sum(naturals) - gap * (len(naturals) - 1), 0)
+        extra = max(total - sum(naturals) - gap * (len(naturals) - 1), 0)
         share = extra // len(naturals)
         widths = [int(width) + share for width in naturals]
-        widths[-1] = CARD_WIDTH - gap * (len(naturals) - 1) - sum(widths[:-1])
+        widths[-1] = total - gap * (len(naturals) - 1) - sum(widths[:-1])
         return widths
 
     def pack_row(self, buttons, gap=8):
@@ -645,7 +667,7 @@ class App(DashboardPage, ScreensaverPage, GamesPage):
         k = self.kit
         mode = self.mode if self.mode in MUTE_MODES else "Volume"
         muted = self.muted.get(mode, False)
-        width, height = 180, 34
+        width, height = SIDE_WIDTH, 34
         image = k.canvas(width, height, ui.MAIN_BG)
         if muted:
             k.rounded(image, (0, 0, width, height), 17, "#D93F45" if hover else MUTED_RED)
@@ -1243,11 +1265,24 @@ class App(DashboardPage, ScreensaverPage, GamesPage):
         icons.draw(pixels, name, x, y, ui.rgb(colour),
                    self.scale, size)
 
-    def set_heading(self, text, colour):
-        """The heading under the dial, rendered like the dial text."""
-        image = self.kit.canvas(MAIN_WIDTH - 40, 30, ui.MAIN_BG)
-        self.kit.text(image, (MAIN_WIDTH - 40) / 2, 15, text, "semibold", 15, colour,
-                      anchor="mm")
+    def place_side_bars(self):
+        """The Pomodoro or Mute buttons beside the dial; none while the menu is open."""
+        for bar, shown in ((self.pomodoro_bar, self.mode == "Pomodoro"),
+                           (self.mute_bar, self.mode in MUTE_MODES)):
+            if shown and not self.menu:
+                if not bar.winfo_manager():
+                    bar.pack(anchor="w", pady=(self.kit.px(SIDE_BAR_GAP), 0))
+            elif bar.winfo_manager():
+                bar.pack_forget()
+
+    def set_heading(self, text, colour, lines=()):
+        """The screen's name beside the dial, with a few lines on using it."""
+        k = self.kit
+        image = k.canvas(SIDE_WIDTH, 40 + 20 * len(lines), ui.MAIN_BG)
+        k.text(image, 0, 18, text, "semibold", 18, colour, width=SIDE_WIDTH)
+        for index, line in enumerate(lines):
+            k.text(image, 0, 52 + 20 * index, line, "regular", 10, ui.SUBTLE_INK,
+                   width=SIDE_WIDTH)
         self.label.show(image)
 
     def render(self):
@@ -1263,12 +1298,8 @@ class App(DashboardPage, ScreensaverPage, GamesPage):
         if self.games_panel.winfo_manager():
             self.games_panel.pack_forget()
         if not self.dial_box.winfo_manager():
-            bar = next((bar for bar in (self.pomodoro_bar, self.mute_bar)
-                        if bar.winfo_manager()), None)
-            if bar:
-                self.dial_box.pack(before=bar)
-            else:
-                self.dial_box.pack()
+            self.dial_box.pack(expand=True)
+        self.place_side_bars()
 
         if self.menu:
             screens = self.settings["screens"]
@@ -1281,14 +1312,14 @@ class App(DashboardPage, ScreensaverPage, GamesPage):
                 ink = dial.label_ink(accent) if index == slot else dial.MENU_INK
                 self.draw_icon(pixels, mode, c + dial.MENU_LABEL_R * math.cos(radians),
                                c - dial.MENU_LABEL_R * math.sin(radians), ink)
-            self.set_heading("Turn to choose, tap to confirm", ui.MUTED_INK)
+            self.set_heading("Menu", ui.INK, MENU_HELP)
             image = Image.fromarray(pixels)
             self.put_text(ImageDraw.Draw(image), c, c, chosen.upper(),
                           16, dial.label_ink(accent))
             self.show_dial(image)
             return
 
-        self.set_heading(self.mode, dial.label_ink(accent))
+        self.set_heading(self.mode, dial.label_ink(accent), SCREEN_HELP.get(self.mode, ()))
         if self.mode == "Media":
             state = self.media_state or {}
             duration = state.get("duration", 0)
@@ -1448,14 +1479,7 @@ class App(DashboardPage, ScreensaverPage, GamesPage):
         self.settings["mode"] = self.mode
         config.save(self.settings)
         self.refresh_nav()
-        if mode == "Pomodoro":
-            self.pomodoro_bar.pack(pady=(self.kit.px(12), 0))
-        else:
-            self.pomodoro_bar.pack_forget()
-        if mode in MUTE_MODES:
-            self.mute_bar.pack(pady=(self.kit.px(12), 0))
-        else:
-            self.mute_bar.pack_forget()
+        self.place_side_bars()
         self.reset_comet()
         try:
             self.refresh_value()

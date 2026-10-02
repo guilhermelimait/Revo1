@@ -15,7 +15,7 @@ from revo1.layout import CARD_WIDTH, PANEL_BG
 from revo1.screensaver import DEFAULT_CAPACITY, FILE_TYPES, MediaError
 
 THUMB = 48
-THUMB_COLUMNS = 7
+THUMB_COLUMNS = 13
 THUMB_ROWS_SHOWN = 2
 THUMB_ROW = THUMB + 10
 IDLE_LABELS = {1: "1 min", 2: "2 min", 5: "5 min", 10: "10 min", 30: "30 min"}

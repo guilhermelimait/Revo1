@@ -7,7 +7,8 @@ from revo1 import dial, ui
 from revo1.layout import CARD_WIDTH
 
 CARD_GAP = 10
-CARD_W = (CARD_WIDTH - CARD_GAP) // 2
+CARD_COLUMNS = 3
+CARD_W = (CARD_WIDTH - CARD_GAP * (CARD_COLUMNS - 1)) // CARD_COLUMNS
 CARD_H = 176
 ART_Y = 52
 ART_SIZE = 1.6
@@ -36,8 +37,9 @@ class GamesPage:
         self.game_cards = []
         for index in range(len(GAMES)):
             card = ui.Picture(grid, ui.MAIN_BG)
-            card.grid(row=index // 2, column=index % 2,
-                      padx=(0, k.px(CARD_GAP) if index % 2 == 0 else 0),
+            column = index % CARD_COLUMNS
+            card.grid(row=index // CARD_COLUMNS, column=column,
+                      padx=(0, k.px(CARD_GAP) if column < CARD_COLUMNS - 1 else 0),
                       pady=(0, k.px(CARD_GAP)))
             self.game_cards.append(card)
         self.games_panel = panel
