@@ -74,6 +74,10 @@ TIME_INK = "#3C3C4A"
 # Volume and Mic while muted, as the knob draws them.
 MUTED_VALUE_INK = "#A4A4B0"
 MUTED_INK = "#E5484D"
+# The mute icon under the level, and MUTED above it (offsets from the centre).
+MUTE_ICON_Y = 46
+MUTE_ICON_SIZE = 0.8
+MUTE_LABEL_Y = -46
 FOOTER_INK = "#8A8A98"
 MENU_INK = "#8A8A9A"
 ICON_INK = "#5A5A68"

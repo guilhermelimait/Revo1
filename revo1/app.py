@@ -1326,13 +1326,18 @@ class App(DashboardPage, ScreensaverPage, GamesPage):
             for side, name in ((-1, "ChevronLeft"), (1, "ChevronRight")):
                 self.draw_icon(pixels, name, c + side * dial.CHEVRON_X, c,
                                dial.CHEVRON_INK, size=1.0)
+            muted = self.muted.get(self.mode, False)
+            if self.mode in MUTE_MODES:
+                self.draw_icon(pixels, self.mode + "Muted" if muted else self.mode,
+                               c, c + dial.MUTE_ICON_Y,
+                               dial.MUTED_INK if muted else dial.FOOTER_INK,
+                               size=dial.MUTE_ICON_SIZE)
             image = Image.fromarray(pixels)
             draw = ImageDraw.Draw(image)
-            muted = self.muted.get(self.mode, False)
             self.put_text(draw, c, c, str(self.value), self.settings["number_size"],
                           dial.MUTED_VALUE_INK if muted else dial.VALUE_INK)
             if muted:
-                self.put_text(draw, c, c + dial.MEDIA_TIME_Y, "MUTED", 12, dial.MUTED_INK)
+                self.put_text(draw, c, c + dial.MUTE_LABEL_Y, "MUTED", 12, dial.MUTED_INK)
         else:
             image = self.dial.comet(accent, (self.comet_q8 >> 8) & dial.MASK,
                                     self.comet_direction)

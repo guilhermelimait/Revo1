@@ -222,13 +222,18 @@ class ScreensaverPage:
         k.dot(image, cx, cy, r, "#101014")
         k.dot(image, cx, cy, r - 3, accent)
         k.dot(image, cx, cy, r - 6, "#101014")
+        # The knob's layout scaled down: 96 px time, 24 px AM/PM and date.
+        f = (r - 6) / 180
         now = time.localtime()
-        clock = time.strftime("%H:%M" if uses_24_hour_clock() else "%I:%M", now).lstrip("0")
-        if len(clock) == 4 and clock[0] == ":":
-            clock = "0" + clock
-        k.text(image, cx, cy - 6, clock, "device", 22, "#FFFFFF", anchor="mm")
-        k.text(image, cx, cy + 20, time.strftime("%a %d %b", now), "regular", 8.5,
-               "#C8C8D2", anchor="mm")
+        hour = now.tm_hour if uses_24_hour_clock() else (now.tm_hour % 12 or 12)
+        k.text(image, cx, cy - 8 * f, f"{hour}:{now.tm_min:02d}", "device",
+               96 * f * 0.75, "#F2F2F5", anchor="mm")
+        if not uses_24_hour_clock():
+            k.text(image, cx, cy - 76 * f, "AM" if now.tm_hour < 12 else "PM", "device",
+                   24 * f * 0.75, "#C8C8D2", anchor="mm")
+        k.text(image, cx, cy + 64 * f, f"{time.strftime('%a', now)} {now.tm_mday} "
+               f"{time.strftime('%b', now)}", "device", 24 * f * 0.75, "#C8C8D2",
+               anchor="mm")
         x = cx + r + 22
         lines = (("Nothing else to set up", "semibold", 10, ui.INK),
                  ("The time and date, in your", "regular", 8.5, ui.SUBTLE_INK),

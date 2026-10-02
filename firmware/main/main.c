@@ -56,6 +56,10 @@
    face covering the whole disc, a raised cap at its middle, and a shallow
    channel just inside the rim carrying the arc. */
 #define DIAL_CAP_R 76
+/* Screensaver clock: the time big in the middle, the date below. */
+#define CLOCK_TIME_Y -8
+#define CLOCK_AMPM_Y -76
+#define CLOCK_DATE_Y 64
 #define DIAL_ARC_R 164
 #define DIAL_GROOVE 9
 /* Half thickness repainted each frame: wider than the channel so the arc's
@@ -293,6 +297,9 @@ static int saver_kind = SAVER_PICTURES;
 static bool saver_clock;
 static int64_t clock_second_shown = -1;
 static lv_obj_t *clock_label;
+static lv_obj_t *ampm_label;
+/* Montserrat Medium at 96 px, digits and colon only (revo1_clock_96.c). */
+LV_FONT_DECLARE(revo1_clock_96);
 static lv_obj_t *date_label;
 static int saver_idle_s = 300;
 static int saver_interval_s = 30;
@@ -1154,6 +1161,26 @@ static const icon_part_t icon_back[] = {
     {PART_SEG, {-3.5f, 0, 2.5f, 7, 2.6f}},
 };
 static const menu_icon_t back_button = {icon_back, ICON_COUNT(icon_back)};
+/* Mute, under the level on Volume and Mic: the plain icon while on, crossed
+   out while muted. */
+static const icon_part_t icon_volume_muted[] = {
+    {PART_POLY, {-13, -4.5f, -8, -4.5f, -8, 4.5f, -13, 4.5f}},
+    {PART_POLY, {-8, -4.5f, -1, -11, -1, 11, -8, 4.5f}},
+    {PART_SEG, {4, -5, 12, 5, 2.4f}},
+    {PART_SEG, {12, -5, 4, 5, 2.4f}},
+};
+static const icon_part_t icon_mic_muted[] = {
+    {PART_SEG, {0, -9, 0, -1, 9}},
+    {PART_ARC, {0, -3, 8.5f, 2.4f, 0, 180}},
+    {PART_SEG, {0, 5.5f, 0, 11, 2.4f}},
+    {PART_SEG, {-5, 11.5f, 5, 11.5f, 2.4f}},
+    {PART_SEG, {-11, -12, 11, 12, 2.4f}},
+};
+static const menu_icon_t volume_muted_icon = {icon_volume_muted, ICON_COUNT(icon_volume_muted)};
+static const menu_icon_t mic_muted_icon = {icon_mic_muted, ICON_COUNT(icon_mic_muted)};
+#define MUTE_ICON_Y 46
+#define MUTE_ICON_SIZE 0.8f
+#define MUTE_LABEL_Y -46
 
 #define MENU_ICON_R 120
 #define MENU_ICON_SIZE 1.25f
@@ -1547,6 +1574,19 @@ static void render_canvas(void)
                 draw_media_icons(accent_of(MEDIA_MODE));
             } else if (mode_is_level(selected_mode)) {
                 draw_chevrons();
+                if (mode_can_mute(selected_mode)) {
+                    const bool muted = mode_muted(selected_mode);
+                    const menu_icon_t *icon =
+                        muted ? (selected_mode == 0 ? &volume_muted_icon : &mic_muted_icon)
+                              : &menu_icons[selected_mode];
+                    if (muted) {
+                        draw_menu_icon(icon, SCREEN_CENTER, SCREEN_CENTER + MUTE_ICON_Y,
+                                       MUTE_ICON_SIZE, 0xE5, 0x48, 0x4D);
+                    } else {
+                        draw_menu_icon(icon, SCREEN_CENTER, SCREEN_CENTER + MUTE_ICON_Y,
+                                       MUTE_ICON_SIZE, 0x8A, 0x8A, 0x98);
+                    }
+                }
             } else if (selected_mode == GAMES_MODE) {
                 if (game_state == GAME_LOBBY) {
                     draw_game_cards();
@@ -1746,6 +1786,7 @@ static void apply_labels(void)
         lv_obj_set_style_text_color(value_label, lv_color_hex(0xA4A4B0), 0);
         lv_obj_set_style_text_color(time_label, lv_color_hex(0xE5484D), 0);
         lv_label_set_text(time_label, "MUTED");
+        lv_obj_align(time_label, LV_ALIGN_CENTER, 0, MUTE_LABEL_Y);
         lv_obj_clear_flag(time_label, LV_OBJ_FLAG_HIDDEN);
     } else {
         lv_obj_add_flag(time_label, LV_OBJ_FLAG_HIDDEN);
@@ -2358,7 +2399,8 @@ static void handle_command(char *line)
         if (volume_muted != (bool)volume || mic_muted != (bool)mic) {
             volume_muted = volume;
             mic_muted = mic;
-            if (!show_menu && mode_can_mute(selected_mode)) refresh_text();
+            /* The icon is part of the chrome, so the whole dial is redrawn. */
+            if (!show_menu && mode_can_mute(selected_mode)) refresh_screen();
         }
         return;
     }
@@ -2847,13 +2889,18 @@ static void initialize_lvgl(void)
     lv_label_set_text(time_label, "");
     clock_label = lv_label_create(lv_scr_act());
     lv_obj_set_style_text_color(clock_label, lv_color_hex(0xF2F2F5), 0);
-    lv_obj_set_style_text_font(clock_label, &lv_font_montserrat_48, 0);
-    lv_obj_align(clock_label, LV_ALIGN_CENTER, 0, -10);
+    lv_obj_set_style_text_font(clock_label, &revo1_clock_96, 0);
+    lv_obj_align(clock_label, LV_ALIGN_CENTER, 0, CLOCK_TIME_Y);
     lv_obj_add_flag(clock_label, LV_OBJ_FLAG_HIDDEN);
+    ampm_label = lv_label_create(lv_scr_act());
+    lv_obj_set_style_text_color(ampm_label, lv_color_hex(0xC8C8D2), 0);
+    lv_obj_set_style_text_font(ampm_label, &lv_font_montserrat_24, 0);
+    lv_obj_align(ampm_label, LV_ALIGN_CENTER, 0, CLOCK_AMPM_Y);
+    lv_obj_add_flag(ampm_label, LV_OBJ_FLAG_HIDDEN);
     date_label = lv_label_create(lv_scr_act());
-    lv_obj_set_style_text_color(date_label, lv_color_hex(0x8A8A98), 0);
-    lv_obj_set_style_text_font(date_label, &lv_font_montserrat_16, 0);
-    lv_obj_align(date_label, LV_ALIGN_CENTER, 0, 34);
+    lv_obj_set_style_text_color(date_label, lv_color_hex(0xC8C8D2), 0);
+    lv_obj_set_style_text_font(date_label, &lv_font_montserrat_24, 0);
+    lv_obj_align(date_label, LV_ALIGN_CENTER, 0, CLOCK_DATE_Y);
     lv_obj_add_flag(date_label, LV_OBJ_FLAG_HIDDEN);
     /* Sits on the upper face, between the cap and the ring. */
     refresh_screen();
@@ -2981,12 +3028,15 @@ static void clock_tick(int64_t now)
         static const char *months[] = {"Jan", "Feb", "Mar", "Apr", "May", "Jun",
                                        "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"};
         char text[24];
+        /* The big font has only digits and a colon; AM or PM goes above. */
         if (clock_24h) {
-            snprintf(text, sizeof(text), "%02d:%02d", fields.tm_hour, fields.tm_min);
+            snprintf(text, sizeof(text), "%d:%02d", fields.tm_hour, fields.tm_min);
+            lv_obj_add_flag(ampm_label, LV_OBJ_FLAG_HIDDEN);
         } else {
             const int hour = fields.tm_hour % 12 ? fields.tm_hour % 12 : 12;
-            snprintf(text, sizeof(text), "%d:%02d %s", hour, fields.tm_min,
-                     fields.tm_hour < 12 ? "AM" : "PM");
+            snprintf(text, sizeof(text), "%d:%02d", hour, fields.tm_min);
+            lv_label_set_text(ampm_label, fields.tm_hour < 12 ? "AM" : "PM");
+            lv_obj_clear_flag(ampm_label, LV_OBJ_FLAG_HIDDEN);
         }
         lv_label_set_text(clock_label, text);
         snprintf(text, sizeof(text), "%s %d %s", days[fields.tm_wday], fields.tm_mday,
@@ -3029,6 +3079,7 @@ static void stop_saver(void)
     saver_active = false;
     if (lvgl_mutex) xSemaphoreTake(lvgl_mutex, portMAX_DELAY);
     lv_obj_add_flag(clock_label, LV_OBJ_FLAG_HIDDEN);
+    lv_obj_add_flag(ampm_label, LV_OBJ_FLAG_HIDDEN);
     lv_obj_add_flag(date_label, LV_OBJ_FLAG_HIDDEN);
     if (lvgl_mutex) xSemaphoreGive(lvgl_mutex);
     refresh_screen();

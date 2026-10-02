@@ -10,8 +10,11 @@
 - The app window is taller so the sidebar fits all eight screens.
 - Whack-a-Mole is aimed with the knob only; touching a hole no longer picks it.
 - Mute for the PC's sound and microphone: a button under the Volume and Mic
-  dials in the app, or a tap on the centre of the knob. Muted controls show
-  **MUTED** on both, and muting from Windows is picked up.
+  dials in the app, or a tap on the mute icon at the centre of the knob.
+  Muted controls show a red crossed-out icon and **MUTED** on both, and
+  muting from Windows is picked up.
+- The date and time screensaver is much bigger: the time in 96 px Montserrat
+  Medium (the app's font), with a larger date and AM/PM.
 - The Screensaver page is one page instead of two tabs: when it starts, two
   cards for what it shows (Pictures or Date and time), then that choice's
   settings: the picture timing and library, or a clock preview.

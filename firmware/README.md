@@ -90,8 +90,11 @@ On Volume (mode 0) and Mic (mode 3) a tap on the centre cap sends
 `MUTE,TOGGLE` instead of opening the menu; the back icon still opens it. The
 PC owns the state: it mutes the speakers or microphone and answers with
 `MUTE,<speakers>,<microphone>`, which it also sends on connect and whenever
-Windows changes either one. While the shown control is muted, `apply_labels`
-greys the number and puts a red `MUTED` in the cap (`time_label`).
+Windows changes either one. The cap shows the control's icon under the
+number (`MUTE_ICON_Y`); while muted the icon is crossed out in red,
+`apply_labels` greys the number, and a red `MUTED` sits above it
+(`time_label` at `MUTE_LABEL_Y`). The icon is part of the chrome, so a mute
+change redraws the whole dial.
 
 ## Games
 
@@ -171,8 +174,12 @@ the dial labels; the waking touch or turn is swallowed and prints
 item is skipped.
 
 With the last `SAVER` field set to 1 the screensaver shows the date and time
-instead: the time in Montserrat 48, the date below it, and sixty second marks
-on the rim that fill in the accent colour through each minute. The clock
+instead: the time in Montserrat Medium at 96 px (`revo1_clock_96.c`, the
+same TTF the app uses, digits and colon only, made with
+`npx lv_font_conv --font revo1/fonts/Montserrat-Medium.ttf -r 0x30-0x3A --size 96
+--bpp 4 --format lvgl --no-compress --lv-include lvgl.h --lv-font-name revo1_clock_96`),
+the date below it and, on a 12-hour PC, AM or PM above it, both in Montserrat
+24; and sixty second marks on the rim that fill in the accent colour through each minute. The clock
 comes from `TIME,<local seconds>,<24h>`, sent by the app on connect and every
 hour; until then the clock screensaver doesn't start.
 

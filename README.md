@@ -165,7 +165,9 @@ once the knob answers.
 - **Tap the back icon** at the top (or the centre) to open the menu. Turn to
   move the highlight, then tap to confirm, or tap an icon directly.
 - On the **Volume** and **Mic** screens, tap the centre to mute or unmute the
-  PC's sound or microphone; the dial greys the number and shows **MUTED**.
+  PC's sound or microphone. A speaker or microphone icon under the number
+  marks the spot; while muted it turns into a red crossed-out icon, the
+  number greys and **MUTED** shows above it.
   The back icon still opens the menu.
 - On the **Pomodoro** screen, tap the dial to start or pause the timer.
 - The **Games** screen opens on the game cards. Turn the knob to pick a
