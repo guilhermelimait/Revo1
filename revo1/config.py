@@ -84,42 +84,42 @@ def load(path=None):
     data = json.loads(path.read_text(encoding="utf-8"))
     if not isinstance(data, dict):
         raise ValueError("Settings must be a JSON object")
-    mode = data.get("mode", "Volume")
-    orientation = data.get("orientation", 0)
-    port = data.get("port", "")
-    name = data.get("name", DEFAULT_NAME)
-    accent = data.get("accent", STANDARD_ACCENT)
-    number_size = data.get("number_size", 32)
-    flags = {key: data.get(key, DEFAULTS[key]) for key in FLAGS}
+    # A value this version doesn't accept (written by a newer or older Revo1,
+    # or edited by hand) falls back to its default rather than stopping the
+    # app, so the rest of the settings, the pairing included, are kept.
+    def pick(key, valid):
+        value = data.get(key, DEFAULTS[key])
+        return value if valid(value) else DEFAULTS[key]
+
+    def number_in(choices):
+        return lambda value: type(value) is int and value in choices
+
+    mode = pick("mode", lambda value: value in MODES)
+    orientation = pick("orientation", number_in(ORIENTATIONS))
+    port = pick("port", lambda value: isinstance(value, str))
+    name = pick("name", lambda value: isinstance(value, str))
+    accent = pick("accent", valid_accent)
+    number_size = pick("number_size", number_in(NUMBER_SIZES))
+    flags = {key: pick(key, lambda value: isinstance(value, bool)) for key in FLAGS}
     screens = data.get("screens", list(MODES))
+    if isinstance(screens, list):
+        # Screens this version doesn't have are dropped; the rest are kept.
+        screens = [item for item in dict.fromkeys(screens) if item in MODES]
+    if not valid_screens(screens):
+        screens = list(MODES)
     known = data.get("known_screens", list(LEGACY_SCREENS))
-    saver_show = data.get("saver_show", DEFAULTS["saver_show"])
-    clock_format = data.get("clock_format", DEFAULTS["clock_format"])
-    saver_ring = data.get("saver_ring", DEFAULTS["saver_ring"])
-    wireless = {key: data.get(key, DEFAULTS[key]) for key in WIRELESS_TEXT}
-    colours = {key: data.get(key, DEFAULTS[key]) for key in CLOCK_COLOURS}
-    numbers = {key: data.get(key, DEFAULTS[key])
-               for key in ("backlight", "focus_minutes", "break_minutes",
-                           "saver_idle", "saver_interval")}
-    if (mode not in MODES or orientation not in ORIENTATIONS or not isinstance(port, str)
-            or not isinstance(name, str) or not valid_accent(accent)
-            or number_size not in NUMBER_SIZES
-            or not all(isinstance(flag, bool) for flag in flags.values())
-            or not valid_screens(screens)
-            or not all(isinstance(value, str) for value in wireless.values())
-            or not isinstance(known, list)
-            or not all(isinstance(item, str) for item in known)
-            or saver_show not in SAVER_SHOW_CHOICES
-            or clock_format not in CLOCK_FORMATS
-            or saver_ring not in RING_STYLES
-            or not all(valid_colour(value) for value in colours.values())
-            or not all(type(value) is int for value in numbers.values())
-            or numbers["backlight"] not in BACKLIGHT_RANGE
-            or numbers["focus_minutes"] not in POMODORO_MINUTES
-            or numbers["break_minutes"] not in POMODORO_MINUTES
-            or numbers["saver_idle"] not in SAVER_IDLE_CHOICES
-            or numbers["saver_interval"] not in SAVER_INTERVAL_CHOICES):
-        raise ValueError(f"Invalid settings in {path}")
+    if not isinstance(known, list) or not all(isinstance(item, str) for item in known):
+        known = list(LEGACY_SCREENS)
+    saver_show = pick("saver_show", lambda value: value in SAVER_SHOW_CHOICES)
+    clock_format = pick("clock_format", lambda value: value in CLOCK_FORMATS)
+    saver_ring = pick("saver_ring", lambda value: value in RING_STYLES)
+    wireless = {key: pick(key, lambda value: isinstance(value, str)) for key in WIRELESS_TEXT}
+    colours = {key: pick(key, valid_colour) for key in CLOCK_COLOURS}
+    numbers = {"backlight": pick("backlight", number_in(BACKLIGHT_RANGE)),
+               "focus_minutes": pick("focus_minutes", number_in(POMODORO_MINUTES)),
+               "break_minutes": pick("break_minutes", number_in(POMODORO_MINUTES)),
+               "saver_idle": pick("saver_idle", number_in(SAVER_IDLE_CHOICES)),
+               "saver_interval": pick("saver_interval", number_in(SAVER_INTERVAL_CHOICES))}
     # Keep the menu order fixed whatever order the file lists them in.
     screens = [candidate for candidate in MODES
                if candidate in screens or candidate not in known]

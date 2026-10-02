@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- Fixed: Revo1 could refuse to start ("Invalid settings") when its settings
+  file held a value it didn't know, for example one written by a newer
+  version. Such a value now falls back to its default, and every other
+  setting, the wireless pairing included, is kept.
 - When the app isn't running, or isn't reachable over USB, Wi-Fi or
   Bluetooth, the knob now shows **Not connected** ("Open Revo1 on your PC")
   instead of the dashboard or any other screen, and goes back to its screen
