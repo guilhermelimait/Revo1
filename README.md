@@ -202,8 +202,8 @@ in the left sidebar.
 - **Screensaver:** one page, top to bottom. Switch it on, turn **Dim the
   screen when idle** on or off and pick **Start after** (idle minutes). Under
   **What the knob shows**, pick one of two cards: **Pictures** or **Date and
-  time** (which follows the PC's clock and its 12/24-hour format, with a
-  preview). With **Pictures** chosen, the page below shows **Each picture**
+  time** (the PC's time with a preview; pick **24-hour** or **AM/PM** under
+  **Time**, 24-hour by default). With **Pictures** chosen, the page below shows **Each picture**
   (how long each one stays) and your pictures and clips; click **Add
   pictures or videos...** to add more. Hover a thumbnail
   and click the cross to remove it. **Send to knob** copies the collection

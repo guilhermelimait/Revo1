@@ -5,7 +5,6 @@ import calendar
 import threading
 import time
 import tkinter as tk
-import winreg
 from pathlib import Path
 from tkinter import filedialog, messagebox
 
@@ -21,6 +20,7 @@ THUMB_ROWS_SHOWN = 2
 THUMB_ROW = THUMB + 10
 IDLE_LABELS = {1: "1 min", 2: "2 min", 5: "5 min", 10: "10 min", 30: "30 min"}
 INTERVAL_LABELS = {10: "10 s", 30: "30 s", 60: "1 min", 300: "5 min"}
+CLOCK_LABELS = {"24h": "24-hour", "12h": "AM/PM"}
 SHOW_LABELS = {"pictures": "Pictures and videos", "clock": "Date and time"}
 SHOW_DETAILS = {"pictures": "Your photos and videos",
                 "clock": "Big clock and the date"}
@@ -31,15 +31,6 @@ ROW_LABEL = 86
 ROW_GAP = 6
 # How often the knob's clock is set again while connected.
 TIME_RESEND_S = 3600
-
-
-def uses_24_hour_clock():
-    """Follows the Windows short time format (H is 24-hour, h is 12-hour)."""
-    try:
-        with winreg.OpenKey(winreg.HKEY_CURRENT_USER, r"Control Panel\International") as key:
-            return "H" in winreg.QueryValueEx(key, "sShortTime")[0]
-    except OSError:
-        return True
 
 
 def local_clock():
@@ -137,8 +128,10 @@ class ScreensaverPage:
         self.pack_row(self.saver_buttons)
         self.saver_status = ui.Picture(box, PANEL_BG)
         self.saver_status.pack(anchor="w", pady=(k.px(6), 0))
+        self.saver_choice_row(self.saver_clock_box, "Time", "clock_format",
+                              CLOCK_LABELS).pack(anchor="w")
         self.saver_clock_preview = ui.Picture(self.saver_clock_box, PANEL_BG)
-        self.saver_clock_preview.pack(anchor="w")
+        self.saver_clock_preview.pack(anchor="w", pady=(k.px(12), 0))
         self.library_crc = self.library.checksum()
         self.screensaver_page = page
         self.refresh_screensaver()
@@ -225,21 +218,22 @@ class ScreensaverPage:
         # The knob's layout scaled down: 96 px time, 24 px AM/PM and date.
         f = (r - 6) / 180
         now = time.localtime()
-        hour = now.tm_hour if uses_24_hour_clock() else (now.tm_hour % 12 or 12)
+        h24 = self.uses_24_hour_clock()
+        hour = now.tm_hour if h24 else (now.tm_hour % 12 or 12)
         k.text(image, cx, cy - 8 * f, f"{hour}:{now.tm_min:02d}", "device",
                96 * f * 0.75, "#F2F2F5", anchor="mm")
-        if not uses_24_hour_clock():
+        if not h24:
             k.text(image, cx, cy - 76 * f, "AM" if now.tm_hour < 12 else "PM", "device",
                    24 * f * 0.75, "#C8C8D2", anchor="mm")
         k.text(image, cx, cy + 64 * f, f"{time.strftime('%a', now)} {now.tm_mday} "
                f"{time.strftime('%b', now)}", "device", 24 * f * 0.75, "#C8C8D2",
                anchor="mm")
         x = cx + r + 22
-        lines = (("Nothing else to set up", "semibold", 10, ui.INK),
+        lines = (("Big clock on the knob", "semibold", 10, ui.INK),
                  ("The time and date, in your", "regular", 8.5, ui.SUBTLE_INK),
                  ("accent colour.", "regular", 8.5, ui.SUBTLE_INK),
-                 ("Follows the Windows clock", "regular", 8.5, ui.MUTED_INK),
-                 ("(24-hour or AM/PM).", "regular", 8.5, ui.MUTED_INK))
+                 ("Shown in " + ("24-hour time." if h24 else "AM/PM time."),
+                  "regular", 8.5, ui.MUTED_INK),)
         for index, (text, weight, size, ink) in enumerate(lines):
             line_y = cy - 36 + index * 16 + (6 if index >= 1 else 0) + (6 if index >= 3 else 0)
             k.text(image, x, line_y, text, weight, size, ink, width=width - x)
@@ -420,11 +414,16 @@ class ScreensaverPage:
     def set_saver_choice(self, key, value):
         self.settings[key] = value
         config.save(self.settings)
+        if key == "clock_format" and self.connected:
+            self.push_time()
         self.push_saver()
+
+    def uses_24_hour_clock(self):
+        return self.settings["clock_format"] == "24h"
 
     def push_time(self):
         self.time_pushed = time.monotonic()
-        self.bridge.send_time(local_clock(), uses_24_hour_clock())
+        self.bridge.send_time(local_clock(), self.uses_24_hour_clock())
 
     def push_saver(self):
         if self.connected:

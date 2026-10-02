@@ -178,7 +178,7 @@ instead: the time in Montserrat Medium at 96 px (`revo1_clock_96.c`, the
 same TTF the app uses, digits and colon only, made with
 `npx lv_font_conv --font revo1/fonts/Montserrat-Medium.ttf -r 0x30-0x3A --size 96
 --bpp 4 --format lvgl --no-compress --lv-include lvgl.h --lv-font-name revo1_clock_96`),
-the date below it and, on a 12-hour PC, AM or PM above it, both in Montserrat
+the date below it and, when the app is set to AM/PM, AM or PM above it, both in Montserrat
 24; and sixty second marks on the rim that fill in the accent colour through each minute. The clock
 comes from `TIME,<local seconds>,<24h>`, sent by the app on connect and every
 hour; until then the clock screensaver doesn't start.

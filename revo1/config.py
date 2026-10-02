@@ -19,7 +19,7 @@ DEFAULTS = {"mode": "Volume", "orientation": 0, "port": "", "name": DEFAULT_NAME
             "screens": list(MODES), "known_screens": list(MODES), "backlight": 100,
             "focus_minutes": 25, "break_minutes": 5,
             "saver_enabled": False, "saver_idle": 5, "saver_interval": 30,
-            "saver_show": "pictures", "dim_idle": True}
+            "saver_show": "pictures", "clock_format": "24h", "dim_idle": True}
 FLAGS = ("minimize_to_tray", "invert_scroll", "invert_zoom", "swipe_screens",
          "saver_enabled", "dim_idle")
 # Screensaver: minutes without touching the knob, and seconds per picture.
@@ -27,6 +27,8 @@ SAVER_IDLE_CHOICES = (1, 2, 5, 10, 30)
 SAVER_INTERVAL_CHOICES = (10, 30, 60, 300)
 # What the screensaver shows: the stored pictures, or the date and time.
 SAVER_SHOW_CHOICES = ("pictures", "clock")
+# The screensaver clock: 24-hour first (and the default), then AM/PM.
+CLOCK_FORMATS = ("24h", "12h")
 POMODORO_MINUTES = range(1, 181)
 BACKLIGHT_RANGE = range(5, 101)
 
@@ -74,6 +76,7 @@ def load(path=None):
     screens = data.get("screens", list(MODES))
     known = data.get("known_screens", list(LEGACY_SCREENS))
     saver_show = data.get("saver_show", DEFAULTS["saver_show"])
+    clock_format = data.get("clock_format", DEFAULTS["clock_format"])
     numbers = {key: data.get(key, DEFAULTS[key])
                for key in ("backlight", "focus_minutes", "break_minutes",
                            "saver_idle", "saver_interval")}
@@ -85,6 +88,7 @@ def load(path=None):
             or not isinstance(known, list)
             or not all(isinstance(item, str) for item in known)
             or saver_show not in SAVER_SHOW_CHOICES
+            or clock_format not in CLOCK_FORMATS
             or not all(type(value) is int for value in numbers.values())
             or numbers["backlight"] not in BACKLIGHT_RANGE
             or numbers["focus_minutes"] not in POMODORO_MINUTES
@@ -102,6 +106,7 @@ def load(path=None):
             "accent": accent if accent == STANDARD_ACCENT else accent.upper(),
             "number_size": number_size, "screens": screens,
             "known_screens": list(MODES), "saver_show": saver_show,
+            "clock_format": clock_format,
             **numbers, **flags}
 
 

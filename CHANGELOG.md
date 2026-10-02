@@ -15,6 +15,8 @@
   muting from Windows is picked up.
 - The date and time screensaver is much bigger: the time in 96 px Montserrat
   Medium (the app's font), with a larger date and AM/PM.
+- Choose **24-hour** (the default) or **AM/PM** for the screensaver clock on
+  the Screensaver page, instead of following the Windows time format.
 - The Screensaver page is one page instead of two tabs: when it starts, two
   cards for what it shows (Pictures or Date and time), then that choice's
   settings: the picture timing and library, or a clock preview.
