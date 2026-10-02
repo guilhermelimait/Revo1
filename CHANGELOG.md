@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+- The screensaver's seconds ring now follows the **Time colour**, on the knob
+  and in the preview.
+- Five animated seconds ring styles, laid out in a second row: **Walker** (a
+  little man walking round the edge, lighting the minute behind him),
+  **Snake**, **Sparkle** (a comet shedding twinkling sparks), **Orbit** (a
+  planet with a moon circling it) and **Heartbeat** (a monitor trace). `SAVER`
+  accepts ring values 6 to 10 for them. The knob redraws only the parts that
+  move, so each frame stays within about 5 to 13 ms.
+
 - Pomodoro on the knob and in the preview: **FOCUS** or **BREAK** moved above
   the time, and the timer icon sits below it like the other screens.
 

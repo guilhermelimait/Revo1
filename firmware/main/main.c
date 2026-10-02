@@ -309,7 +309,9 @@ static bool saver_enabled;
 enum { SAVER_PICTURES, SAVER_CLOCK, SAVER_BOTH };
 static int saver_kind = SAVER_PICTURES;
 /* How the seconds ring around the screensaver clock is drawn. */
-enum { RING_DOTS, RING_BAR, RING_WAVE, RING_TICKS, RING_COMET, RING_NONE };
+/* The animated styles come after "none" so stored numbers keep their meaning. */
+enum { RING_DOTS, RING_BAR, RING_WAVE, RING_TICKS, RING_COMET, RING_NONE,
+       RING_WALKER, RING_SNAKE, RING_SPARKLE, RING_ORBIT, RING_PULSE, RING_COUNT };
 static int saver_ring = RING_DOTS;
 /* The second the ring shows, or -1 before the clock has ticked. */
 static int ring_second = -1;
@@ -320,6 +322,10 @@ static int64_t ring_now_us;
 static int64_t ring_next_us;
 /* Set when the ring style changes, so the next draw clears the old one. */
 static bool ring_wipe;
+/* Set when the whole canvas under the ring was repainted (a new screensaver,
+   a new picture frame or a new look), so the animated styles redraw every
+   pixel once rather than just the parts that changed. */
+static bool ring_full = true;
 /* How many seconds behind the tip still ripple; the body before that is still. */
 #define WAVE_HEAD_S 3.0f
 /* What the running screensaver shows (one of the SAVER_ kinds). */
@@ -571,7 +577,7 @@ static void load_settings(void)
         if (nvs_get_u8(handle, "swipe", &byte) == ESP_OK) swipe_enabled = byte != 0;
         if (nvs_get_u8(handle, "show", &byte) == ESP_OK && byte <= SAVER_BOTH) saver_kind = byte;
         if (nvs_get_u8(handle, "dim", &byte) == ESP_OK) dim_enabled = byte != 0;
-        if (nvs_get_u8(handle, "ring", &byte) == ESP_OK && byte <= RING_NONE) saver_ring = byte;
+        if (nvs_get_u8(handle, "ring", &byte) == ESP_OK && byte < RING_COUNT) saver_ring = byte;
         if (nvs_get_u8(handle, "shade", &byte) == ESP_OK) clock_shade = byte != 0;
         if (nvs_get_u32(handle, "ink", &accent) == ESP_OK && accent <= 0xFFFFFF) {
             set_rgb(clock_ink, accent);
@@ -2756,7 +2762,7 @@ static void handle_command(char *line)
             !parse_integer(idle_text, 10, 7200, &idle) ||
             !parse_integer(interval_text, 1, 3600, &interval) ||
             (kind_text && !parse_integer(kind_text, SAVER_PICTURES, SAVER_BOTH, &kind)) ||
-            (ring_text && !parse_integer(ring_text, RING_DOTS, RING_NONE, &ring))) {
+            (ring_text && !parse_integer(ring_text, RING_DOTS, RING_COUNT - 1, &ring))) {
             return;
         }
         saver_enabled = enabled;
@@ -3413,6 +3419,7 @@ static bool show_saver_frame(uint32_t offset, uint32_t length)
     if (saver_shown == SAVER_BOTH && clock_valid && clock_shade) shade_for_clock(frame_pixels);
     if (lvgl_mutex) xSemaphoreTake(lvgl_mutex, portMAX_DELAY);
     memcpy(canvas_pixels, frame_pixels, (size_t)LCD_WIDTH * LCD_HEIGHT * sizeof(uint16_t));
+    ring_full = true;
     if (saver_shown == SAVER_BOTH && clock_valid && ring_second >= 0) {
         draw_seconds_ring(ring_second, frame_pixels);
     }
@@ -3445,6 +3452,14 @@ static inline float coverage(float value)
 #define RING_REACH 11
 #define WAVE_REACH 8
 #define COMET_REACH 5
+/* The animated figures: how far from the groove centre each one reaches. */
+#define WALKER_REACH 15
+#define SNAKE_REACH 9
+#define SPARKLE_REACH 12
+#define ORBIT_REACH 8
+#define PULSE_REACH 14
+/* Internal RAM left free for Wi-Fi and Bluetooth when a ring list is built. */
+#define RING_INTERNAL_RESERVE (64 * 1024)
 static uint32_t *ring_pixels;
 static uint8_t *ring_bytes;
 static int ring_count;
@@ -3485,6 +3500,16 @@ static float ring_shape(int style, float off, int segment)
         return fabsf(off) < WAVE_REACH ? 1.0f : 0.0f;
     case RING_COMET:
         return fabsf(off) < COMET_REACH ? 1.0f : 0.0f;
+    case RING_WALKER:
+        return fabsf(off) < WALKER_REACH ? 1.0f : 0.0f;
+    case RING_SNAKE:
+        return fabsf(off) < SNAKE_REACH ? 1.0f : 0.0f;
+    case RING_SPARKLE:
+        return fabsf(off) < SPARKLE_REACH ? 1.0f : 0.0f;
+    case RING_ORBIT:
+        return fabsf(off) < ORBIT_REACH ? 1.0f : 0.0f;
+    case RING_PULSE:
+        return fabsf(off) < PULSE_REACH ? 1.0f : 0.0f;
     default:
         return 0.0f;
     }
@@ -3507,11 +3532,15 @@ static bool build_ring_list(int style)
     int count = 0;
     for (int i = 0; i < band_count; ++i) {
         const float off = (float)band_offset[i] * (1.0f / 64.0f);
-        if (fabsf(off) < RING_REACH && ring_shape(style, off, band_segment[i]) > 0.0f) ++count;
+        if (fabsf(off) < DIAL_ARC_BAND && ring_shape(style, off, band_segment[i]) > 0.0f) ++count;
     }
     if (count == 0) return false;
-    ring_pixels = heap_caps_malloc(count * sizeof(uint32_t), MALLOC_CAP_INTERNAL);
-    ring_bytes = heap_caps_malloc(count, MALLOC_CAP_INTERNAL);
+    /* Internal memory is used only while enough stays free for the radios. */
+    const size_t need = (size_t)count * (sizeof(uint32_t) + 1);
+    if (heap_caps_get_free_size(MALLOC_CAP_INTERNAL) >= need + RING_INTERNAL_RESERVE) {
+        ring_pixels = heap_caps_malloc(count * sizeof(uint32_t), MALLOC_CAP_INTERNAL);
+        ring_bytes = heap_caps_malloc(count, MALLOC_CAP_INTERNAL);
+    }
     if (!ring_pixels || !ring_bytes) {
         /* Short of internal memory the list still works from PSRAM, slower. */
         free(ring_pixels);
@@ -3524,13 +3553,16 @@ static bool build_ring_list(int style)
         }
     }
     const bool moving = style == RING_WAVE || style == RING_COMET;
+    /* The animated figures reach further, so their offsets are kept in 1/8 px. */
+    const bool figure = style > RING_NONE;
     for (int i = 0; i < band_count; ++i) {
         const float off = (float)band_offset[i] * (1.0f / 64.0f);
-        if (fabsf(off) >= RING_REACH) continue;
+        if (fabsf(off) >= DIAL_ARC_BAND) continue;
         const float shape = ring_shape(style, off, band_segment[i]);
         if (shape <= 0.0f) continue;
         ring_pixels[ring_count] = band_pixel[i] | ((uint32_t)band_segment[i] << 17);
-        ring_bytes[ring_count] = moving ? (uint8_t)(int8_t)(band_offset[i] / 4)
+        ring_bytes[ring_count] = figure ? (uint8_t)(int8_t)(band_offset[i] / 8)
+                               : moving ? (uint8_t)(int8_t)(band_offset[i] / 4)
                                         : (uint8_t)lroundf(shape * 255.0f);
         ++ring_count;
     }
@@ -3577,6 +3609,418 @@ static void invalidate_ring(int reach)
     }
 }
 
+/* Seconds from `from` to `to` going clockwise round, folded into -30..30. */
+static inline float ring_gap(float from, float to)
+{
+    return fmodf(to - from + 90.0f, 60.0f) - 30.0f;
+}
+
+/* Where a figure stands on the ring, `seconds` clockwise from 12. */
+typedef struct {
+    float cos_t, sin_t;
+} ring_place_t;
+
+static inline ring_place_t ring_place(float seconds)
+{
+    const float angle = seconds * (6.28318531f / 60.0f);
+    return (ring_place_t){cosf(angle), sinf(angle)};
+}
+
+/* A pixel seen from a figure: `u` along the ring (clockwise ahead) and `v`
+   away from the groove centre (outwards), both in pixels. */
+static inline void ring_local(ring_place_t place, uint32_t index, float *u, float *v)
+{
+    const float dx = (float)((int)(index % LCD_WIDTH) - SCREEN_CENTER);
+    const float dy = (float)((int)(index / LCD_WIDTH) - SCREEN_CENTER);
+    *u = dx * place.cos_t + dy * place.sin_t;
+    *v = dx * place.sin_t - dy * place.cos_t - (float)DIAL_ARC_R;
+}
+
+/* Distance from (x, y) to the line from (ax, ay) to (bx, by). */
+static float line_distance(float x, float y, float ax, float ay, float bx, float by)
+{
+    const float px = x - ax, py = y - ay, ex = bx - ax, ey = by - ay;
+    float t = (px * ex + py * ey) / (ex * ex + ey * ey + 1e-6f);
+    t = t < 0.0f ? 0.0f : (t > 1.0f ? 1.0f : t);
+    const float qx = px - ex * t, qy = py - ey * t;
+    return sqrtf(qx * qx + qy * qy);
+}
+
+/* One heartbeat on a monitor, 0 to 1 through the beat: a small P wave, the
+   sharp QRS spike and a rounded T wave. About 1 at the top of the spike. */
+static float heartbeat_trace(float x)
+{
+#define BEAT_BUMP(height, centre, width) \
+    ((height) * expf(-((x - (centre)) * (x - (centre))) / (2.0f * (width) * (width))))
+    return BEAT_BUMP(0.14f, 0.16f, 0.045f) + BEAT_BUMP(-0.16f, 0.33f, 0.02f) +
+           BEAT_BUMP(1.0f, 0.40f, 0.022f) + BEAT_BUMP(-0.30f, 0.47f, 0.022f) +
+           BEAT_BUMP(0.30f, 0.68f, 0.06f);
+#undef BEAT_BUMP
+}
+
+/* Seconds of ring per heartbeat on the pulse style, and its height in px. */
+#define PULSE_PERIOD_S 5.0f
+#define PULSE_HEIGHT 12.0f
+/* The snake: its length in seconds of ring and the waves along the ring. */
+#define SNAKE_LENGTH_S 9.0f
+#define SNAKE_WAVES 22
+#define SPARKS_PER_SECOND 3
+
+/* The segment at `seconds` clockwise from 12 (the inverse of segment_seconds). */
+static inline int seconds_segment(float seconds)
+{
+    return (ARC_SEGMENTS / 4 - (int)lroundf(seconds * (ARC_SEGMENTS / 60.0f))) & ARC_MASK;
+}
+
+/* The animated styles: a little figure travels round once a minute, moving
+   on smoothly 25 times a second, over a faint track. `now_s` is the seconds
+   into the minute with their fraction. To fit the frame budget only the
+   segments that changed are redrawn: those near the figure (now or a frame
+   ago) and those whose trail brightness moved on; the figure's exact shape
+   is worked out only near it. */
+static void draw_figure_ring(int style, int second, float fraction, int fade,
+                             const uint16_t *under, uint16_t *pixels, const uint8_t *accent)
+{
+    const float step = 6.28318531f * DIAL_ARC_R / 60.0f;
+    const float now_s = (float)second + fraction;
+    static float previous_s = -1.0f;
+    static int previous_style = -1;
+    /* The trail brightness each segment was last drawn with, out of 255. */
+    static uint8_t drawn[ARC_SEGMENTS];
+    static uint8_t dirty[ARC_SEGMENTS];
+    static float trail[ARC_SEGMENTS];
+    /* Paths fixed along the ring, worked out once per style: the snake's
+       centre line, slope and scales, and the heartbeat's low and high. */
+    static int16_t path_a[ARC_SEGMENTS], path_b[ARC_SEGMENTS];
+    static uint8_t path_shade[ARC_SEGMENTS];
+    bool full = ring_full;
+    ring_full = false;
+    if (previous_style != style) {
+        full = true;
+        for (int segment = 0; segment < ARC_SEGMENTS; ++segment) {
+            const float at = segment_seconds(segment);
+            if (style == RING_SNAKE) {
+                const float phase = at * (6.28318531f * SNAKE_WAVES / 60.0f);
+                const float slope =
+                    3.5f * (6.28318531f * SNAKE_WAVES / 60.0f) / step * cosf(phase);
+                path_a[segment] = (int16_t)lroundf(3.5f * sinf(phase) * 16.0f);
+                path_b[segment] = (int16_t)lroundf(256.0f / sqrtf(1.0f + slope * slope));
+                /* Darker bands across the back, like scales. */
+                path_shade[segment] = (uint8_t)lroundf(
+                    255.0f * (0.78f + 0.22f * cosf(at * 6.28318531f * 3.0f)));
+            } else if (style == RING_PULSE) {
+                /* The lowest and highest the trace reaches within a stroke's
+                   width either side, so steep strokes stay as thick as flat
+                   ones without overshooting the peaks. */
+                const float x = fmodf(at, PULSE_PERIOD_S) / PULSE_PERIOD_S;
+                const float side = 1.2f / (step * PULSE_PERIOD_S);
+                const float before = heartbeat_trace(x - side), middle = heartbeat_trace(x);
+                const float after = heartbeat_trace(x + side);
+                path_a[segment] = (int16_t)lroundf(
+                    PULSE_HEIGHT * fminf(middle, fminf(before, after)) * 16.0f);
+                path_b[segment] = (int16_t)lroundf(
+                    PULSE_HEIGHT * fmaxf(middle, fmaxf(before, after)) * 16.0f);
+            }
+        }
+    }
+    if (full || previous_s < 0.0f) previous_s = now_s;
+    previous_style = style;
+
+    /* How far either side of the figure, in seconds of ring, its shape reaches. */
+    float near_s = 0.6f;
+    if (style == RING_SNAKE) near_s = 0.7f;
+    if (style == RING_ORBIT) near_s = 1.0f;
+    for (int segment = 0; segment < ARC_SEGMENTS; ++segment) {
+        const float at = segment_seconds(segment);
+        /* How long ago the figure passed this point, in seconds. */
+        const float behind = fmodf(now_s - at + 60.0f, 60.0f);
+        float t;
+        int level;
+        if (style == RING_WALKER || style == RING_ORBIT) {
+            /* What has passed this minute is lit, fading out in second 59. */
+            t = coverage((now_s - at) * step + 0.5f);
+            if (at >= 1.0f) t = t * (float)fade * (1.0f / 256.0f);
+            level = (int)(t * 255.0f + 0.5f);
+        } else if (style == RING_SNAKE) {
+            t = behind < SNAKE_LENGTH_S ? 1.0f - behind / SNAKE_LENGTH_S : -1.0f;
+            level = t < 0.0f ? 255 : (int)(t * 63.0f);
+        } else if (style == RING_SPARKLE) {
+            t = behind < 20.0f ? 1.0f - behind / 20.0f : 0.0f;
+            level = (int)(t * 63.0f + 0.5f);
+        } else {
+            /* The heartbeat trace fades the way a monitor's does. */
+            t = behind < 30.0f ? 1.0f - behind / 30.0f : 0.0f;
+            level = (int)(t * 63.0f + 0.5f);
+        }
+        trail[segment] = t;
+        const bool near = fabsf(ring_gap(now_s, at)) < near_s ||
+                          fabsf(ring_gap(previous_s, at)) < near_s;
+        /* 1: redraw the trail only; 2: also work out the figure here. */
+        dirty[segment] = near ? 2 : ((full || level != drawn[segment]) ? 1 : 0);
+        drawn[segment] = (uint8_t)level;
+    }
+    previous_s = now_s;
+    const ring_place_t place = ring_place(now_s);
+
+    if (style == RING_WALKER) {
+        /* A stick figure walking on the outside of the ring, head outwards,
+           leaving the minute lit on the ground behind it. Its stride fits its
+           speed, so the feet do not slide. */
+        const float swing = 6.28318531f * (64.0f / 60.0f) * now_s;
+        const float sp = sinf(swing), cp = cosf(swing);
+        const float bob = 0.7f * fabsf(sp);
+        const float hip_v = -3.0f - bob, neck_v = 5.5f - bob, shoulder_v = 4.5f - bob;
+        const float foot_a = 4.0f * sp, lift_a = 1.8f * fmaxf(0.0f, cp);
+        const float foot_b = -4.0f * sp, lift_b = 1.8f * fmaxf(0.0f, -cp);
+        const float knee_a = 0.5f * foot_a + 1.5f * fmaxf(0.0f, cp);
+        const float knee_b = 0.5f * foot_b + 1.5f * fmaxf(0.0f, -cp);
+        const float knee_v_a = 0.5f * (hip_v - 12.0f + lift_a);
+        const float knee_v_b = 0.5f * (hip_v - 12.0f + lift_b);
+        const float ground = -13.4f;
+        for (int i = 0; i < ring_count; ++i) {
+            const uint32_t packed = ring_pixels[i];
+            const int segment = (int)(packed >> 17);
+            if (!dirty[segment]) continue;
+            const uint32_t index = packed & 0x1FFFF;
+            const float off = (float)(int8_t)ring_bytes[i] * 0.125f;
+            const float line = coverage(1.3f - fabsf(off - ground));
+            int lit = (int)(256.0f * line * trail[segment]);
+            if (dirty[segment] == 2) {
+                float u, v;
+                ring_local(place, index, &u, &v);
+                if (u > -8.0f && u < 8.0f) {
+                    float d = line_distance(u, v, 0.0f, hip_v, 0.3f, neck_v);
+                    d = fminf(d, line_distance(u, v, 0.0f, hip_v, knee_a, knee_v_a));
+                    d = fminf(d, line_distance(u, v, knee_a, knee_v_a, foot_a, -12.0f + lift_a));
+                    d = fminf(d, line_distance(u, v, 0.0f, hip_v, knee_b, knee_v_b));
+                    d = fminf(d, line_distance(u, v, knee_b, knee_v_b, foot_b, -12.0f + lift_b));
+                    d = fminf(d, line_distance(u, v, 0.2f, shoulder_v, 3.6f * sp, -2.0f - bob));
+                    d = fminf(d, line_distance(u, v, 0.2f, shoulder_v, -3.6f * sp, -2.0f - bob));
+                    const float hu = u - 0.6f, hv = v - (9.8f - bob);
+                    const float figure = fmaxf(coverage(1.9f - d),
+                                               coverage(3.9f - sqrtf(hu * hu + hv * hv)));
+                    const int body = (int)(256.0f * figure);
+                    if (body > lit) lit = body;
+                }
+            }
+            const int dim = ((int)(256.0f * line) * (256 - lit)) >> 8;
+            pixels[index] = ring_pixel(under, index, lit, dim, accent);
+        }
+    } else if (style == RING_SNAKE) {
+        /* A snake slithering round with its head at the second: the body
+           follows a fixed wavy path, so it winds like a real one, tapering to
+           the tail. Its tongue flicks out once a second. */
+        const float phase = now_s * (6.28318531f * SNAKE_WAVES / 60.0f);
+        const float head_v = 3.5f * sinf(phase);
+        const float head_slope =
+            3.5f * (6.28318531f * SNAKE_WAVES / 60.0f) / step * cosf(phase);
+        const float head_len = sqrtf(1.0f + head_slope * head_slope);
+        const float dir_u = 1.0f / head_len, dir_v = head_slope / head_len;
+        const float flick = fraction < 0.35f ? sinf(fraction * (3.14159265f / 0.35f)) : 0.0f;
+        for (int i = 0; i < ring_count; ++i) {
+            const uint32_t packed = ring_pixels[i];
+            const int segment = (int)(packed >> 17);
+            if (!dirty[segment]) continue;
+            const uint32_t index = packed & 0x1FFFF;
+            const float off = (float)(int8_t)ring_bytes[i] * 0.125f;
+            const float t = trail[segment];
+            int lit = 0;
+            float track = coverage(1.5f - fabsf(off));
+            if (t >= 0.0f) {
+                const float half = 0.9f + 2.4f * sqrtf(t);
+                const float d = fabsf(off - (float)path_a[segment] * (1.0f / 16.0f)) *
+                                (float)path_b[segment] * (1.0f / 256.0f);
+                lit = (int)(coverage(half + 0.5f - d) * (float)path_shade[segment] + 0.5f);
+                track = 0.0f;
+            }
+            if (dirty[segment] == 2) {
+                float u, v;
+                ring_local(place, index, &u, &v);
+                v -= head_v;
+                /* Turned along the path the body follows. */
+                const float a = u * dir_u + v * dir_v, b = v * dir_u - u * dir_v;
+                const float head = coverage(0.5f + 3.9f * (1.0f - sqrtf((a * a) / 30.0f + (b * b) / 15.0f)));
+                if (head > 0.0f && head * 256.0f > (float)lit) {
+                    const float eu = a - 1.4f, ev = b - 1.7f;
+                    const float eye = coverage(1.6f - sqrtf(eu * eu + ev * ev));
+                    lit = (int)(256.0f * head * (1.0f - eye));
+                }
+                if (flick > 0.0f && a > 4.0f) {
+                    const float reach = 5.0f + 3.5f * flick;
+                    float d = line_distance(a, b, 5.0f, 0.0f, reach, 0.0f);
+                    d = fminf(d, line_distance(a, b, reach, 0.0f, reach + 1.3f, 1.0f));
+                    d = fminf(d, line_distance(a, b, reach, 0.0f, reach + 1.3f, -1.0f));
+                    const int tongue = (int)(256.0f * coverage(1.1f - d));
+                    if (tongue > lit) lit = tongue;
+                }
+            }
+            const int dim = ((int)(256.0f * track) * (256 - lit)) >> 8;
+            pixels[index] = ring_pixel(under, index, lit, dim, accent);
+        }
+    } else if (style == RING_SPARKLE) {
+        /* The comet scatters little stars that twinkle and fade behind it.
+           Each segment keeps the few stars that can reach it; the segments
+           a star covers now or covered a frame ago are redrawn. */
+#define SPARKS (60 * SPARKS_PER_SECOND)
+#define SPARKS_PER_SEGMENT 3
+        static float spark_x[SPARKS], spark_y[SPARKS], spark_size[SPARKS];
+        static int16_t nearby[ARC_SEGMENTS][SPARKS_PER_SEGMENT];
+        static uint8_t starred[ARC_SEGMENTS];
+        for (int segment = 0; segment < ARC_SEGMENTS; ++segment) {
+            if (starred[segment]) {
+                if (!dirty[segment]) dirty[segment] = 1;
+                starred[segment] = 0;
+            }
+            for (int k = 0; k < SPARKS_PER_SEGMENT; ++k) nearby[segment][k] = -1;
+        }
+        for (int n = 0; n < SPARKS; ++n) {
+            const uint32_t hash = (uint32_t)(n + 1) * 2654435761u;
+            const float at = (float)(n / SPARKS_PER_SECOND) + 0.5f +
+                             0.9f * ((float)(hash & 255) / 255.0f - 0.5f);
+            const float behind = fmodf(now_s - at + 60.0f, 60.0f);
+            spark_size[n] = 0.0f;
+            if (behind > 18.0f) continue;
+            const float lift = 14.0f * ((float)((hash >> 8) & 255) / 255.0f - 0.5f);
+            const float twinkle_at = (float)((hash >> 16) & 255) / 255.0f;
+            const float life = 1.0f - behind / 18.0f;
+            const float twinkle = 0.5f + 0.5f * sinf(6.28318531f * (now_s * 1.7f + twinkle_at));
+            const float size = life * (1.4f + 3.2f * twinkle * twinkle);
+            spark_size[n] = size;
+            const ring_place_t at_place = ring_place(at);
+            spark_x[n] = (float)SCREEN_CENTER + ((float)DIAL_ARC_R + lift) * at_place.sin_t;
+            spark_y[n] = (float)SCREEN_CENTER - ((float)DIAL_ARC_R + lift) * at_place.cos_t;
+            /* The segments the star can touch, with a little to spare. */
+            const int centre = seconds_segment(at);
+            const int spread = 1 + (int)((size + 1.0f) / step * (ARC_SEGMENTS / 60.0f));
+            for (int s = -spread; s <= spread; ++s) {
+                const int segment = (centre + s) & ARC_MASK;
+                starred[segment] = 1;
+                if (!dirty[segment]) dirty[segment] = 1;
+                for (int k = 0; k < SPARKS_PER_SEGMENT; ++k) {
+                    if (nearby[segment][k] < 0) {
+                        nearby[segment][k] = (int16_t)n;
+                        break;
+                    }
+                }
+            }
+        }
+        for (int i = 0; i < ring_count; ++i) {
+            const uint32_t packed = ring_pixels[i];
+            const int segment = (int)(packed >> 17);
+            if (!dirty[segment]) continue;
+            const uint32_t index = packed & 0x1FFFF;
+            const float off = (float)(int8_t)ring_bytes[i] * 0.125f;
+            const float t = trail[segment];
+            const float distance = fabsf(off);
+            float lit = t > 0.0f ? coverage(0.5f + 3.0f * t - distance) * t : 0.0f;
+            if (nearby[segment][0] >= 0) {
+                const float x = (float)(index % LCD_WIDTH), y = (float)(index / LCD_WIDTH);
+                for (int k = 0; k < SPARKS_PER_SEGMENT; ++k) {
+                    const int n = nearby[segment][k];
+                    if (n < 0) break;
+                    const float size = spark_size[n];
+                    const float dx = fabsf(x - spark_x[n]), dy = fabsf(y - spark_y[n]);
+                    if (dx > size + 0.5f || dy > size + 0.5f) continue;
+                    /* A four-pointed star: a cross with a round middle. */
+                    float star = fmaxf(coverage(size + 0.5f - dx) * coverage(0.9f - dy),
+                                       coverage(size + 0.5f - dy) * coverage(0.9f - dx));
+                    const float core = size * 0.55f + 0.5f;
+                    if (dx * dx + dy * dy < core * core) {
+                        star = fmaxf(star, coverage(core - sqrtf(dx * dx + dy * dy)));
+                    }
+                    if (star > lit) lit = star;
+                }
+            }
+            if (dirty[segment] == 2) {
+                float u, v;
+                ring_local(place, index, &u, &v);
+                const float head = coverage(4.5f - sqrtf(u * u + v * v));
+                if (head > lit) lit = head;
+            }
+            const int bright = (int)(256.0f * lit);
+            const int dim = (clamp_256((int)((1.5f - distance) * 256.0f)) * (256 - bright)) >> 8;
+            pixels[index] = ring_pixel(under, index, bright, dim, accent);
+        }
+#undef SPARKS
+#undef SPARKS_PER_SEGMENT
+    } else if (style == RING_ORBIT) {
+        /* A planet travels the minute with a moon circling it every two
+           seconds, passing behind it on the far side. */
+        const float spin = now_s * 3.14159265f;
+        const float moon_u = 11.0f * cosf(spin), moon_v = 4.2f * sinf(spin);
+        const bool moon_front = sinf(spin) < 0.0f;
+        for (int i = 0; i < ring_count; ++i) {
+            const uint32_t packed = ring_pixels[i];
+            const int segment = (int)(packed >> 17);
+            if (!dirty[segment]) continue;
+            const uint32_t index = packed & 0x1FFFF;
+            const float off = (float)(int8_t)ring_bytes[i] * 0.125f;
+            const float line = coverage(1.7f - fabsf(off));
+            int lit = (int)(256.0f * line * trail[segment] * 0.75f);
+            if (dirty[segment] == 2) {
+                float u, v;
+                ring_local(place, index, &u, &v);
+                const float planet_d = sqrtf(u * u + v * v);
+                const float planet = coverage(5.2f - planet_d);
+                const float mu = u - moon_u, mv = v - moon_v;
+                const float moon_d = sqrtf(mu * mu + mv * mv);
+                const float moon = coverage(2.7f - moon_d);
+                float shape;
+                if (moon_front) {
+                    /* A thin dark gap round the moon sets it off the planet. */
+                    const float gap = coverage(3.7f - moon_d);
+                    shape = fmaxf(moon, planet * (1.0f - gap));
+                    lit = (lit * (256 - (int)(256.0f * gap * planet))) >> 8;
+                } else {
+                    shape = fmaxf(planet, moon * (1.0f - coverage(6.2f - planet_d)));
+                }
+                const int value = (int)(256.0f * shape);
+                if (value > lit) lit = value;
+            }
+            const int dim = ((int)(256.0f * line) * (256 - lit)) >> 8;
+            pixels[index] = ring_pixel(under, index, lit, dim, accent);
+        }
+    } else {
+        /* A heart monitor: the head writes a heartbeat trace that fades
+           behind it, and glows with a beat every second. */
+        const float beat = fraction < 0.08f ? fraction / 0.08f : expf(-(fraction - 0.08f) * 5.0f);
+        const float x = fmodf(now_s, PULSE_PERIOD_S) / PULSE_PERIOD_S;
+        const float head_v = PULSE_HEIGHT * heartbeat_trace(x);
+        const float glow_r = 3.0f + 4.0f * beat;
+        for (int i = 0; i < ring_count; ++i) {
+            const uint32_t packed = ring_pixels[i];
+            const int segment = (int)(packed >> 17);
+            if (!dirty[segment]) continue;
+            const uint32_t index = packed & 0x1FFFF;
+            const float off = (float)(int8_t)ring_bytes[i] * 0.125f;
+            const float t = trail[segment];
+            float lit = 0.0f;
+            if (t > 0.0f) {
+                const float low = (float)path_a[segment] * (1.0f / 16.0f);
+                const float high = (float)path_b[segment] * (1.0f / 16.0f);
+                const float d = off < low ? low - off : (off > high ? off - high : 0.0f);
+                lit = coverage(1.7f - d) * (0.25f + 0.75f * t);
+            }
+            if (dirty[segment] == 2) {
+                float u, v;
+                ring_local(place, index, &u, &v);
+                v -= head_v;
+                const float d2 = u * u + v * v;
+                if (d2 < glow_r * glow_r) {
+                    const float d = sqrtf(d2);
+                    const float glow = 0.55f * beat * (1.0f - d / glow_r);
+                    lit = fmaxf(lit, fmaxf(coverage(2.8f - d), glow));
+                }
+            }
+            const int bright = (int)(256.0f * lit);
+            /* Ahead of the head the monitor is a flat, faint line. */
+            const float track = t > 0.0f ? 0.0f : coverage(1.2f - fabsf(off));
+            const int dim = ((int)(256.0f * track) * (256 - bright)) >> 8;
+            pixels[index] = ring_pixel(under, index, bright, dim, accent);
+        }
+    }
+}
+
 /* Redraws the seconds ring around the screensaver clock in the chosen style:
    the seconds passed this minute in the accent, the rest as a faint track.
    Everything moves on smoothly through each second: a bullet or tick fades
@@ -3589,12 +4033,14 @@ static void draw_seconds_ring(int second, const uint16_t *under)
 {
     /* Pixels per second along the ring. */
     const float step = 6.28318531f * DIAL_ARC_R / 60.0f;
-    const uint8_t *accent = accent_of(selected_mode);
+    /* The ring is drawn in the time's colour, so the clock reads as one piece. */
+    const uint8_t *accent = clock_ink;
     uint16_t *pixels = (uint16_t *)canvas_pixels;
     int reach = RING_REACH;
     if (ring_wipe) {
         /* A new style: clear the whole band once so the old one leaves nothing. */
         ring_wipe = false;
+        ring_full = true;
         const uint16_t face = pack_pixel(clock_bg[0], clock_bg[1], clock_bg[2]);
         for (int i = 0; i < band_count; ++i) {
             const uint32_t index = band_pixel[i];
@@ -3610,6 +4056,11 @@ static void draw_seconds_ring(int second, const uint16_t *under)
     const float fraction = (float)(ring_now_us % 1000000) * 1e-6f;
     /* In second 59 the filled part fades out towards the new minute. */
     const int fade = second == 59 ? (int)lroundf(256.0f * (1.0f - ease(fraction))) : 256;
+    if (style > RING_NONE) {
+        draw_figure_ring(style, second, fraction, fade, under, pixels, accent);
+        invalidate_ring(DIAL_ARC_BAND);
+        return;
+    }
 
     if (style == RING_DOTS || style == RING_TICKS || style == RING_BAR) {
         /* How lit each segment is: whole seconds passed, plus the next one
@@ -3779,6 +4230,7 @@ static void start_saver(int64_t now)
     /* clock_tick shows the time and date on its first pass. */
     clock_second_shown = -1;
     ring_second = -1;
+    ring_full = true;
     if (lvgl_mutex) xSemaphoreGive(lvgl_mutex);
     /* Each time the screensaver starts it picks up with the next item. */
     if (saver_shown != SAVER_CLOCK) begin_saver_item(saver_item + 1, now);

@@ -23,7 +23,10 @@ IDLE_LABELS = {1: "1 min", 2: "2 min", 5: "5 min", 10: "10 min", 30: "30 min"}
 INTERVAL_LABELS = {10: "10 s", 30: "30 s", 60: "1 min", 180: "3 min", 300: "5 min"}
 CLOCK_LABELS = {"24h": "24-hour", "12h": "AM/PM"}
 RING_LABELS = {"dots": "Bullets", "bar": "Bar", "wave": "Wiggly", "ticks": "Ticks",
-               "comet": "Comet", "none": "None"}
+               "comet": "Comet", "walker": "Walker", "snake": "Snake",
+               "sparkle": "Sparkle", "orbit": "Orbit", "pulse": "Heartbeat", "none": "None"}
+# The ring choices sit in rows of this many.
+RING_PER_ROW = 6
 RING_GAP = 8
 RING_SWATCH_H = 72
 # The knob's faint track for the seconds still to come.
@@ -137,7 +140,145 @@ def ring_cover(size, radius, unit, marks, filled, style):
         head = clip(4 * unit + 0.5 - np.hypot(off, head_along))
         lit = np.maximum(head, clip(0.5 + 3 * unit * tail - np.abs(off)) * tail)
         dim = clip(unit + 0.5 - np.abs(off)) * (1 - lit)
+    elif style in FIGURE_STYLES:
+        lit, dim = figure_cover(style, dx, dy, off, at, radius, unit, marks, filled - 1)
     return lit, dim
+
+
+# The animated ring styles; they mirror draw_figure_ring in the firmware.
+FIGURE_STYLES = ("walker", "snake", "sparkle", "orbit", "pulse")
+
+
+def _line_distance(x, y, a, b):
+    ex, ey = b[0] - a[0], b[1] - a[1]
+    px, py = x - a[0], y - a[1]
+    t = np.clip((px * ex + py * ey) / (ex * ex + ey * ey + 1e-6), 0, 1)
+    return np.hypot(px - ex * t, py - ey * t)
+
+
+def heartbeat_trace(x):
+    """One heartbeat on a monitor, 0 to 1 through the beat."""
+    def bump(height, centre, width):
+        return height * np.exp(-((x - centre) ** 2) / (2 * width * width))
+    return (bump(0.14, 0.16, 0.045) + bump(-0.16, 0.33, 0.02) + bump(1.0, 0.40, 0.022) +
+            bump(-0.30, 0.47, 0.022) + bump(0.30, 0.68, 0.06))
+
+
+def figure_cover(style, dx, dy, off, at, radius, unit, marks, head):
+    """Lit and track coverage of an animated ring style with its figure
+    `head` marks round, as the knob draws it at the start of that second."""
+    def clip(value):
+        return np.clip(value, 0, 1)
+
+    def width(half, distance):
+        # A firmware half-width (knob px, anti-aliasing included) at this scale.
+        return clip((half - 0.5) * unit + 0.5 - distance)
+
+    seconds = 60 / marks
+    now_s = head * seconds
+    step = 2 * np.pi * radius / marks
+    angle = head / marks * 2 * np.pi
+    u = (dx * np.cos(angle) + dy * np.sin(angle)) / unit
+    v = (dx * np.sin(angle) - dy * np.cos(angle) - radius) / unit
+    behind = ((head - at) % marks) * seconds
+    passed = clip((head - at) * step + 0.5)
+    lit = np.zeros_like(off)
+    track = np.zeros_like(off)
+    if style == "walker":
+        swing = 2 * np.pi * 64 / 60 * now_s
+        sp, cp = np.sin(swing), np.cos(swing)
+        bob = 0.7 * abs(sp)
+        hip, neck, shoulder = (0, -3 - bob), (0.3, 5.5 - bob), (0.2, 4.5 - bob)
+        lift_a, lift_b = 1.8 * max(0, cp), 1.8 * max(0, -cp)
+        foot_a, foot_b = (4 * sp, -12 + lift_a), (-4 * sp, -12 + lift_b)
+        knee_a = (0.5 * foot_a[0] + 1.5 * max(0, cp), 0.5 * (hip[1] - 12 + lift_a))
+        knee_b = (0.5 * foot_b[0] + 1.5 * max(0, -cp), 0.5 * (hip[1] - 12 + lift_b))
+        lines = ((hip, neck), (hip, knee_a), (knee_a, foot_a), (hip, knee_b),
+                 (knee_b, foot_b), (shoulder, (3.6 * sp, -2 - bob)),
+                 (shoulder, (-3.6 * sp, -2 - bob)))
+        d = np.min([_line_distance(u, v, a, b) for a, b in lines], axis=0)
+        head_d = np.hypot(u - 0.6, v - (9.8 - bob))
+        figure = np.maximum(clip((1.9 - d) * unit + 0.5 * (1 - unit)),
+                            clip((3.9 - head_d) * unit + 0.5 * (1 - unit)))
+        track = width(1.3, np.abs(off - (-13.4 * unit)))
+        lit = np.maximum(track * passed, figure)
+    elif style == "snake":
+        waves = max(2, round(2 * np.pi * radius / (46.8 * unit)))
+        phase = 2 * np.pi * waves * at / marks
+        rise = 3.5 * unit * 2 * np.pi * waves / marks / step
+        centre = 3.5 * unit * np.sin(phase)
+        length = 9.0
+        body = behind < length
+        t = np.clip(1 - behind / length, 0, 1)
+        half = 0.9 + 2.4 * np.sqrt(t)
+        d = np.abs(off - centre) / np.sqrt(1 + (rise * np.cos(phase)) ** 2)
+        scales = 0.78 + 0.22 * np.cos(at * seconds * 2 * np.pi * 3)
+        lit = np.where(body, width(half, d) * scales, 0)
+        track = np.where(body, 0, width(1.5, np.abs(off)))
+        head_phase = 2 * np.pi * waves * head / marks
+        slope = rise * np.cos(head_phase)
+        norm = np.hypot(1, slope)
+        hv = v - 3.5 * np.sin(head_phase)
+        a, b = (u + hv * slope) / norm, (hv - u * slope) / norm
+        shape = clip(0.5 * (1 - unit) + 3.9 * unit * (1 - np.sqrt(a * a / 30 + b * b / 15)))
+        eye = clip((1.6 - np.hypot(a - 1.4, b - 1.7)) * unit)
+        lit = np.where(shape > lit, shape * (1 - eye), lit)
+    elif style == "sparkle":
+        t = np.where(behind < 20, 1 - behind / 20, 0)
+        lit = np.where(t > 0, clip(0.5 + 3 * unit * t - np.abs(off)) * t, 0)
+        size = dx.shape[0]
+        centre = (size - 1) / 2
+        for n in range(180):
+            spark = ((n + 1) * 2654435761) & 0xFFFFFFFF
+            at_s = n // 3 + 0.5 + 0.9 * ((spark & 255) / 255 - 0.5)
+            ago = (now_s - at_s) % 60
+            if ago > 18:
+                continue
+            twinkle = 0.5 + 0.5 * np.sin(2 * np.pi * (now_s * 1.7 + ((spark >> 16) & 255) / 255))
+            reach = (1 - ago / 18) * (1.4 + 3.2 * twinkle * twinkle) * unit
+            lift = 14 * ((spark >> 8) & 255) / 255 - 7
+            turn = at_s / 60 * 2 * np.pi
+            x = centre + (radius + lift * unit) * np.sin(turn)
+            y = centre - (radius + lift * unit) * np.cos(turn)
+            box = (slice(max(0, int(y - reach - 2)), int(y + reach + 3)),
+                   slice(max(0, int(x - reach - 2)), int(x + reach + 3)))
+            sx, sy = np.abs(dx[box] + centre - x), np.abs(dy[box] + centre - y)
+            star = np.maximum(clip(reach * 0.55 + 0.5 - np.hypot(sx, sy)),
+                              np.maximum(clip(reach + 0.5 - sx) * clip(0.9 * unit - sy),
+                                         clip(reach + 0.5 - sy) * clip(0.9 * unit - sx)))
+            lit[box] = np.maximum(lit[box], star)
+        lit = np.maximum(lit, clip((4.5 - np.hypot(u, v)) * unit))
+        track = width(1.5, np.abs(off))
+    elif style == "orbit":
+        spin = now_s * np.pi
+        track = width(1.7, np.abs(off))
+        lit = track * passed * 0.75
+        planet_d = np.hypot(u, v)
+        planet = clip((5.2 - planet_d) * unit + 0.5 * (1 - unit))
+        moon_d = np.hypot(u - 11 * np.cos(spin), v - 4.2 * np.sin(spin))
+        moon = clip((2.7 - moon_d) * unit + 0.5 * (1 - unit))
+        if np.sin(spin) < 0:
+            gap = clip((3.7 - moon_d) * unit)
+            shape = np.maximum(moon, planet * (1 - gap))
+            lit = lit * (1 - gap * planet)
+        else:
+            shape = np.maximum(planet, moon * (1 - clip((6.2 - planet_d) * unit)))
+        lit = np.maximum(lit, shape)
+    else:
+        t = np.where(behind < 30, 1 - behind / 30, 0)
+        x = (at * seconds % 5) / 5
+        side = 1.2 * unit / (step / seconds * 5)
+        samples = [12 * unit * heartbeat_trace(x + shift) for shift in (-side, 0, side)]
+        low, high = np.min(samples, axis=0), np.max(samples, axis=0)
+        trace = np.maximum(np.maximum(low - off, off - high), 0)
+        lit = np.where(t > 0, width(1.7, trace) * (0.25 + 0.75 * t), 0)
+        track = np.where(t > 0, 0, width(1.2, np.abs(off)))
+        beat = 0.9
+        head_d = np.hypot(u, v - 12 * heartbeat_trace((now_s % 5) / 5))
+        glow_r = 3 + 4 * beat
+        glow = np.where(head_d < glow_r, 0.55 * beat * (1 - head_d / glow_r), 0)
+        lit = np.maximum(lit, np.maximum(clip((2.8 - head_d) * unit), glow))
+    return lit, track * (1 - lit)
 
 
 def clock_tones(ink, face):
@@ -308,14 +449,19 @@ class ScreensaverPage:
 
         row, controls = self.display_row(box, "Seconds ring", RING_SWATCH_H)
         row.pack(anchor="w", pady=(k.px(ROW_GAP), 0))
-        widths = self.fill_widths([0] * len(RING_LABELS), RING_GAP, COLUMN_W - ROW_LABEL_W)
-        buttons = [ui.Button(
-            controls, PANEL_BG,
-            lambda hover, value=value, width=width: self.paint_ring_swatch(value, hover, width),
-            lambda value=value: self.set_saver_choice("saver_ring", value))
-            for value, width in zip(RING_LABELS, widths)]
-        self.pack_row(buttons, RING_GAP)
-        self.saver_choices += buttons
+        widths = self.fill_widths([0] * RING_PER_ROW, RING_GAP, COLUMN_W - ROW_LABEL_W)
+        values = list(RING_LABELS)
+        for start in range(0, len(values), RING_PER_ROW):
+            line = tk.Frame(controls, bg=PANEL_BG)
+            line.pack(anchor="w", pady=(k.px(RING_GAP) if start else 0, 0))
+            buttons = [ui.Button(
+                line, PANEL_BG,
+                lambda hover, value=value, width=width:
+                    self.paint_ring_swatch(value, hover, width),
+                lambda value=value: self.set_saver_choice("saver_ring", value))
+                for value, width in zip(values[start:start + RING_PER_ROW], widths)]
+            self.pack_row(buttons, RING_GAP)
+            self.saver_choices += buttons
 
         row, controls = self.display_row(box, "Time colour")
         row.pack(anchor="w", pady=(k.px(ROW_GAP), 0))
@@ -580,10 +726,16 @@ class ScreensaverPage:
         k.dot(image, cx, cy, 21, "#101014")
         if value == "none":
             k.rounded(image, (cx - 6, cy - 1, cx + 6, cy + 1), 1, "#6E6E78")
-        paint_ring(image, (k.px(cx), k.px(cy)), k.scale * 16, k.scale * 0.62, 20, 13,
-                   value, accent, False)
-        k.text(image, cx, height - 12, RING_LABELS[value], "semibold" if chosen else "regular",
-               9, ui.INK if chosen else ui.SUBTLE_INK, anchor="mm")
+        if value in FIGURE_STYLES:
+            # The figures move by the real second, and need a smaller scale to fit.
+            paint_ring(image, (k.px(cx), k.px(cy)), k.scale * 16, k.scale * 0.42, 60, 40,
+                       value, accent, False)
+        else:
+            paint_ring(image, (k.px(cx), k.px(cy)), k.scale * 16, k.scale * 0.62, 20, 13,
+                       value, accent, False)
+        label = RING_LABELS[value]
+        k.text(image, cx, height - 12, label, "semibold" if chosen else "regular",
+               9 if len(label) < 9 else 8, ui.INK if chosen else ui.SUBTLE_INK, anchor="mm")
         return image
 
     def preview_picture(self):
@@ -608,10 +760,9 @@ class ScreensaverPage:
         show = self.settings["saver_show"]
         size = PREVIEW
         image = k.canvas(size, size + 30, PANEL_BG)
-        accent = self.accent(self.mode)
         c = size / 2
         r = c - 1
-        # A thin neutral bezel only: the seconds ring is the knob's one accent.
+        # A thin neutral bezel only; the seconds ring takes the time's colour.
         ink, face = self.settings["clock_ink"], self.settings["clock_face"]
         soft, track = clock_tones(ink, face)
         k.dot(image, c, c, r, "#2A2A32")
@@ -638,7 +789,7 @@ class ScreensaverPage:
             now = time.localtime()
             g = k.scale * f
             paint_ring(image, (k.px(c), k.px(c)), 164 * g, g, 60, now.tm_sec + 1,
-                       self.settings["saver_ring"], accent,
+                       self.settings["saver_ring"], self.settings["clock_ink"],
                        show == "both" and self.preview_picture() is not None, track)
             h24 = self.uses_24_hour_clock()
             hour = now.tm_hour if h24 else (now.tm_hour % 12 or 12)

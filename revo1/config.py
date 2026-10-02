@@ -49,7 +49,9 @@ SAVER_SHOW_CHOICES = ("pictures", "clock", "both")
 CLOCK_FORMATS = ("24h", "12h")
 # The seconds ring around the screensaver clock; the order is the number sent
 # to the knob.
-RING_STYLES = ("dots", "bar", "wave", "ticks", "comet", "none")
+# New styles go on the end: the knob stores and receives the position.
+RING_STYLES = ("dots", "bar", "wave", "ticks", "comet", "none",
+               "walker", "snake", "sparkle", "orbit", "pulse")
 # The screensaver clock's colours ("#RRGGBB"): the time, and the face behind
 # it when only the date and time show.
 CLOCK_COLOURS = ("clock_ink", "clock_face")

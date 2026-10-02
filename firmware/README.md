@@ -198,8 +198,8 @@ centre, easing back to full at 180 px) so the white text stays readable. Until
 the clock is set it shows the pictures alone.
 
 `SAVERLOOK,<shade 0|1>,<time RRGGBB>,<background RRGGBB>` sets the clock's
-look and answers `SAVERLOOK_OK`. The time is drawn in the time colour; the
-date and AM/PM mix 82% of it into the background, and the ring's empty track
+look and answers `SAVERLOOK_OK`. The time and the seconds ring are drawn in
+the time colour; the date and AM/PM mix 82% of it into the background, and the ring's empty track
 20%. The background fills the clock face (Date and time only; over pictures
 the track stays a shadow). With shade 0 `shade_for_clock` is skipped and the
 pictures show at full brightness. A running screensaver is redrawn in place.
@@ -208,7 +208,12 @@ The defaults are shade on, F2F2F5 text and a black face.
 An optional sixth `SAVER` field picks the seconds ring drawn round the clock:
 0 bullets (the sixty dots), 1 bar, 2 wiggly (a wave up to the current second,
 a flat line after it), 3 ticks (watch-style marks), 4 comet (a head on the
-current second with a fading tail) or 5 none. `draw_seconds_ring` paints the
+current second with a fading tail), 5 none, or one of the animated figures:
+6 walker (a stick man walking on the outside of the ring, leaving the minute
+lit behind him), 7 snake (a tapering, scaled snake winding along a fixed wave
+path), 8 sparkle (a comet shedding twinkling sparks), 9 orbit (a planet with
+a moon circling it over the passed minute) or 10 heartbeat (a P-QRS-T trace
+that fades like a monitor's). `draw_seconds_ring` paints the
 ring over the black face or the current picture (kept in `frame_pixels`), and
 again after each new frame, so it never leaves traces.
 It is saved as `ring`; a new style is drawn in place on a running screensaver,
@@ -224,6 +229,19 @@ their segment and a precomputed shape coverage or offset, in internal RAM;
 `free_ring_list` frees it when the screensaver ends. Each frame works in
 integer arithmetic over that list and invalidates only the narrow ring, so a
 frame costs about 1.5 ms (bullets) to 8.5 ms (wiggly).
+
+The animated styles reach 8 to 15 px from the ring, so their list (up to
+about 31k pixels) goes in internal RAM only if `RING_INTERNAL_RESERVE`
+(64 KB) stays free for the radios, and in PSRAM otherwise.
+`draw_figure_ring` redraws only the segments that changed: those within
+about a second of the figure (now or a frame ago) get its exact shape in the
+figure's own frame (`ring_local`), and the rest only when their trail
+brightness moved on. Paths fixed along the ring (the snake's wave and the
+heartbeat's low/high band) are worked out once per style, and sparkle keeps
+per-segment candidate lists for its sparks. `ring_full` forces a whole
+redraw after anything repaints the canvas (a new screensaver, picture frame,
+look or style). Measured frame costs are about 5 ms (orbit) to 13 ms
+(sparkle).
 
 The wiggly tip creeps on through each second. Only the last `WAVE_HEAD_S` (3) seconds behind the
 tip ripple: they sway back and forth once a second (a periodic sway, so
