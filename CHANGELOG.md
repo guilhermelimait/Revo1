@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- Dashboard tiles are taller and show only what matters: the value, plus
+  **Muted**, **Paused** or **Break** when that applies. Gone: the screensaver
+  picture count, Pomodoro's "Focus · ready", and Media's "Playing".
+- On the knob (and its preview in the app), Scroll and Zoom show the
+  screen's icon in the middle with its name below, like the other screens.
 - The top of the sidebar shows a small knob next to the name, with a ring
   that lights green while connected. Below the name, an icon and label show
   the link in use: USB cable, Wi-Fi or Bluetooth.

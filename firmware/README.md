@@ -260,8 +260,9 @@ cap and the ring; a tap within 30 px of it opens the menu.
   at 100% the colour meets itself as a full ring.
   The colour runs from a deep tail to the full accent at the head, and a bright
   tick marks the live end.
-- **Scroll and zoom** show the mode name in the cap and a comet that follows
-  the knob. Each detent moves `arc_target` by `COMET_STEP_Q8` (32 segments),
+- **Scroll and zoom** show the mode's icon in the middle of the cap, its name
+  below (`MODE_ICON_*`, `MODE_LABEL_Y`, both in the accent), and a comet that
+  follows the knob. Each detent moves `arc_target` by `COMET_STEP_Q8` (32 segments),
   and the head eases a quarter of the remaining distance per 40 ms frame,
   snapping within two segments. The PC app runs the same integer maths
   (`dial.COMET_*`) on the same `ROT` stream, so it stays in step. Both reset

@@ -77,6 +77,10 @@ MUTED_INK = "#E5484D"
 MUTE_ICON_Y = 46
 MUTE_ICON_SIZE = 0.8
 MUTE_LABEL_Y = -46
+# Scroll and Zoom: the screen's icon in the cap, its name below.
+MODE_ICON_Y = -10
+MODE_ICON_SIZE = 1.8
+MODE_LABEL_Y = 42
 FOOTER_INK = "#8A8A98"
 MENU_INK = "#8A8A9A"
 ICON_INK = "#5A5A68"

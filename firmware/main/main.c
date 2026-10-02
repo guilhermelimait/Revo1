@@ -1317,6 +1317,10 @@ static const menu_icon_t mic_muted_icon = {icon_mic_muted, ICON_COUNT(icon_mic_m
 #define MUTE_ICON_Y 46
 #define MUTE_ICON_SIZE 0.8f
 #define MUTE_LABEL_Y -46
+/* Scroll and Zoom: the screen's icon in the cap, its name below. */
+#define MODE_ICON_Y (-10)
+#define MODE_ICON_SIZE 1.8f
+#define MODE_LABEL_Y 42
 
 #define MENU_ICON_R 120
 #define MENU_ICON_SIZE 1.25f
@@ -1743,6 +1747,12 @@ static void render_canvas(void)
                 } else {
                     draw_whack_board();
                 }
+            } else if (selected_mode != POMODORO_MODE) {
+                const uint8_t *accent = accent_of(selected_mode);
+                draw_menu_icon(&menu_icons[selected_mode], SCREEN_CENTER,
+                               SCREEN_CENTER + MODE_ICON_Y,
+                               MODE_ICON_SIZE, accent[0] * 3 / 4, accent[1] * 3 / 4,
+                               accent[2] * 3 / 4);
             }
         }
         capture_arc_backdrop();
@@ -1941,6 +1951,11 @@ static void apply_labels(void)
     } else {
         snprintf(value, sizeof(value), "%s", mode_titles[selected_mode]);
         lv_obj_set_style_text_font(value_label, &lv_font_montserrat_16, 0);
+        const uint8_t *accent = accent_of(selected_mode);
+        lv_obj_set_style_text_color(value_label,
+                                    lv_color_make(accent[0] * 3 / 4, accent[1] * 3 / 4,
+                                                  accent[2] * 3 / 4), 0);
+        lv_obj_align(value_label, LV_ALIGN_CENTER, 0, MODE_LABEL_Y);
     }
     lv_label_set_text(value_label, value);
     lv_obj_clear_flag(value_label, LV_OBJ_FLAG_HIDDEN);

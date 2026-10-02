@@ -204,7 +204,10 @@ The knob has no push button.
 The dial in the window mirrors the device and accepts clicks the same way;
 beside it are the screen's name, a short note on using it and its buttons.
 The app opens on the **Dashboard**, a 3 by 3 grid of tiles: click a tile to
-open that screen, or its switch to show or hide it on the knob (at least one stays on). Pick a control
+open that screen, or its switch to show or hide it on the knob (at least one stays on).
+Each tile shows just its live value: the level (with **Muted** in red when
+muted), the song playing (or **Paused**), the Pomodoro time left (with
+**Break** during a break), and when the screensaver starts. Pick a control
 in the left sidebar.
 
 - **Volume and Microphone:** the **Mute sound** / **Mute microphone** button beside

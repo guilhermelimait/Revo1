@@ -1243,6 +1243,8 @@ class App(DashboardPage, ScreensaverPage, GamesPage, WirelessTab):
             self.muted = state
             if self.connected:
                 self.bridge.send_mute(state["Volume"], state["Mic"])
+            self.refresh_dashboard_tile("Volume")
+            self.refresh_dashboard_tile("Mic")
             if self.page == "control" and not self.menu and self.mode in MUTE_MODES:
                 self.render()
 
@@ -1412,8 +1414,12 @@ class App(DashboardPage, ScreensaverPage, GamesPage, WirelessTab):
         else:
             image = self.dial.comet(accent, (self.comet_q8 >> 8) & dial.MASK,
                                     self.comet_direction)
-            draw = ImageDraw.Draw(image)
-            self.put_text(draw, c, c, config.title(self.mode).upper(), 16, dial.VALUE_INK)
+            pixels = np.array(image.convert("RGB"))
+            self.draw_icon(pixels, self.mode, c, c + dial.MODE_ICON_Y, dial.label_ink(accent),
+                           size=dial.MODE_ICON_SIZE)
+            image = Image.fromarray(pixels)
+            self.put_text(ImageDraw.Draw(image), c, c + dial.MODE_LABEL_Y,
+                          config.title(self.mode).upper(), 16, dial.label_ink(accent))
         pixels = np.array(image.convert("RGB"))
         self.draw_icon(pixels, "Back", c, c + dial.FOOTER_Y, dial.FOOTER_INK,
                        size=dial.BACK_ICON_SIZE)
