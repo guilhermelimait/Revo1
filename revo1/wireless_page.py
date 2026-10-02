@@ -57,8 +57,8 @@ class WirelessTab:
         self.knob_net = None
         self.pairing = None
         self.wireless_note = None
-        self.bridge.set_wireless(self.link_key, self.settings["wireless"],
-                                 self.settings["knob_ip"], self.settings["knob_ble"])
+        self.bridge.set_wireless(self.link_key, self.settings["knob_ip"],
+                                 self.settings["knob_ble"])
 
     def build_wireless_tab(self, tab):
         k = self.kit
@@ -73,13 +73,13 @@ class WirelessTab:
             self.link_tiles.append((tile, key, icon, title))
         self.wireless_summary = ui.Picture(body, PANEL_BG)
         self.wireless_summary.pack(anchor="w", pady=(k.px(10), 0))
-        self.wireless_toggle = ui.Button(
-            body, PANEL_BG,
-            lambda hover: self.paint_toggle(
-                self.settings["wireless"], "Use wireless when the cable is unplugged",
-                "USB always takes over as soon as it is plugged in", hover),
-            self.toggle_wireless)
-        self.wireless_toggle.pack(anchor="w", pady=(k.px(12), 0))
+        auto = ui.Picture(body, PANEL_BG)
+        image = k.canvas(CARD_WIDTH, 18, PANEL_BG)
+        k.text(image, 0, 9, "With the cable unplugged, Revo1 finds the knob over Wi-Fi or "
+               "Bluetooth on its own. USB takes over as soon as it is plugged in.",
+               "regular", 8.5, ui.MUTED_INK, width=CARD_WIDTH)
+        auto.show(image)
+        auto.pack(anchor="w", pady=(k.px(8), 0))
 
         body = self.section(tab)
         self.caption(body, "PAIR OVER USB").pack(anchor="w")
@@ -230,7 +230,6 @@ class WirelessTab:
         for tile, key, icon, title in self.link_tiles:
             tile.show(self.paint_link_tile(key, icon, title))
         self.wireless_summary.show(self.paint_wireless_summary())
-        self.wireless_toggle.refresh()
         self.pair_note.show(self.paint_pair_note())
         for child in self.pair_actions.winfo_children():
             child.destroy()
@@ -259,12 +258,6 @@ class WirelessTab:
         self.pack_row(buttons)
 
     # ----- actions ----------------------------------------------------------
-
-    def toggle_wireless(self):
-        self.settings["wireless"] = not self.settings["wireless"]
-        config.save(self.settings)
-        self.bridge.set_wireless(self.link_key, self.settings["wireless"])
-        self.refresh_wireless()
 
     def pair_knob(self):
         if self.pairing:
@@ -313,8 +306,7 @@ class WirelessTab:
         if ssid is not None:
             self.settings["wifi_ssid"] = ssid
         config.save(self.settings)
-        self.bridge.set_wireless(key, self.settings["wireless"],
-                                 self.settings["knob_ip"], self.settings["knob_ble"])
+        self.bridge.set_wireless(key, self.settings["knob_ip"], self.settings["knob_ble"])
 
     def on_wireless_event(self, kind, payload):
         if kind == "net":
@@ -323,8 +315,7 @@ class WirelessTab:
             if payload["ip"] and payload["ip"] != self.settings["knob_ip"]:
                 self.settings["knob_ip"] = payload["ip"]
                 config.save(self.settings)
-                self.bridge.set_wireless(self.link_key, self.settings["wireless"],
-                                         payload["ip"])
+                self.bridge.set_wireless(self.link_key, payload["ip"])
             if changed:
                 self.refresh_wireless()
         elif kind == "pair_done":

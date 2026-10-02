@@ -2,13 +2,16 @@
 
 ## Unreleased
 
+- Wireless is now automatic: once the knob is paired, unplugging the cable
+  is enough for Revo1 to find it over Wi-Fi or Bluetooth. The **Use
+  wireless when the cable is unplugged** switch is gone.
 - Fixed: Revo1 could refuse to start ("Invalid settings") when its settings
   file held a value it didn't know, for example one written by a newer
   version. Such a value now falls back to its default, and every other
   setting, the wireless pairing included, is kept.
 - When the app isn't running, or isn't reachable over USB, Wi-Fi or
-  Bluetooth, the knob now shows **Not connected** ("Open Revo1 on your PC")
-  instead of the dashboard or any other screen, and goes back to its screen
+  Bluetooth, the knob now shows **Not connected** and "Open Revo1 on your
+  PC" above a large icon in the centre, instead of the dashboard or any other screen, and goes back to its screen
   when the app returns. The app answers each `HELLO` with a new `APP`
   heartbeat, so update the app and the firmware together: an older app would
   leave the knob showing Not connected.

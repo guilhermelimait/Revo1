@@ -920,7 +920,8 @@ class App(DashboardPage, ScreensaverPage, GamesPage, WirelessTab):
         if not self.devices:
             note = ui.Picture(self.device_list, PANEL_BG)
             image = k.canvas(CARD_WIDTH, 22, PANEL_BG)
-            k.text(image, 0, 11, "No Revo1 found. Check the USB cable.", "regular", 9,
+            k.text(image, 0, 11, "No knob on USB. Once paired, Revo1 reaches it over Wi-Fi or "
+                   "Bluetooth instead.", "regular", 9,
                    ui.MUTED_INK)
             note.show(image)
             note.pack(anchor="w", pady=(k.px(6), 0))

@@ -47,16 +47,15 @@ class DeviceBridge:
         self.key_id = ""
         self.knob_ip = ""
         self.knob_ble = ""
-        self.wireless_enabled = True
         self.link_kind = None
 
-    def set_wireless(self, key, enabled=True, knob_ip="", knob_ble=""):
+    def set_wireless(self, key, knob_ip="", knob_ble=""):
         """The pairing key (None when not paired) and the last known Wi-Fi
-        address and Bluetooth address of the knob."""
-        changed = (key != self.link_key or enabled != self.wireless_enabled)
+        address and Bluetooth address of the knob. Once paired, the knob is
+        reached over Wi-Fi or Bluetooth whenever the cable is unplugged."""
+        changed = key != self.link_key
         self.link_key = key
         self.key_id = secure.key_id(key) if key else ""
-        self.wireless_enabled = enabled
         self.knob_ip = knob_ip or self.knob_ip
         self.knob_ble = knob_ble or self.knob_ble
         if changed and self.link_kind in ("wifi", "ble"):
@@ -226,7 +225,7 @@ class DeviceBridge:
             self.reconnect_event.wait(WIRELESS_RETRY_S if self._wireless_ready() else 2)
 
     def _wireless_ready(self):
-        return bool(self.link_key) and self.wireless_enabled
+        return bool(self.link_key)
 
     def _open_wireless(self):
         """Wi-Fi first (faster), then Bluetooth; None if neither answers."""

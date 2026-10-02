@@ -28,10 +28,10 @@ DEFAULTS = {"mode": "Volume", "orientation": 0, "port": "", "name": DEFAULT_NAME
             "saver_enabled": False, "saver_idle": 5, "saver_interval": 30,
             "saver_show": "pictures", "clock_format": "24h", "saver_ring": "dots",
             "clock_ink": "#F2F2F5", "clock_face": "#000000", "clock_shade": True,
-            "dim_idle": True, "wireless": True, "link_key": "", "wifi_ssid": "",
+            "dim_idle": True, "link_key": "", "wifi_ssid": "",
             "knob_ip": "", "knob_ble": ""}
 FLAGS = ("minimize_to_tray", "invert_scroll", "invert_zoom", "swipe_screens",
-         "saver_enabled", "dim_idle", "wireless", "clock_shade")
+         "saver_enabled", "dim_idle", "clock_shade")
 # The wireless pairing: the key (protected with Windows DPAPI, see
 # secure.protect_key), the network the knob joins, and where it was last seen.
 # The Wi-Fi password is only ever sent to the knob, never stored here.

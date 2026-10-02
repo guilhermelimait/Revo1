@@ -268,10 +268,10 @@ in the left sidebar.
   use Bluetooth only. The password goes to the knob over the cable and is
   never saved on the PC; the pairing key is stored protected by Windows for
   your user account. **Update Wi-Fi** changes the network later without a
-  new key, and **Forget pairing** clears it on both sides. **Use wireless
-  when the cable is unplugged** turns wireless off without unpairing.
-  With the cable out, Revo1 looks for the knob on Wi-Fi first and then over
-  Bluetooth; it takes a few seconds to connect.
+  new key, and **Forget pairing** clears it on both sides. Once paired,
+  unplugging the cable is all it takes: Revo1 looks for the knob on Wi-Fi
+  first and then over Bluetooth on its own, and connects in a few seconds.
+  USB takes over again as soon as it is plugged in.
 - **About:** links to GitHub, the releases, the licence and Ko-fi; the app
   version, the firmware version on the knob, and the latest release on
   GitHub. When the release has newer firmware than the knob, **Update

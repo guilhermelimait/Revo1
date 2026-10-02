@@ -1293,9 +1293,10 @@ static const icon_part_t icon_offline[] = {
     {PART_SEG, {-14, -13, 14, 13, 2.4f}},
 };
 static const menu_icon_t offline_icon = {icon_offline, ICON_COUNT(icon_offline)};
-#define OFFLINE_ICON_Y (-24)
-#define OFFLINE_ICON_SIZE 1.25f
-#define OFFLINE_HEAD_Y 18
+/* The icon fills the cap; the words sit above it, between the cap and the ring. */
+#define OFFLINE_ICON_SIZE 2.0f
+#define OFFLINE_HEAD_Y (-114)
+#define OFFLINE_HINT_Y (-92)
 /* Mute, under the level on Volume and Mic: the plain icon while on, crossed
    out while muted. */
 static const icon_part_t icon_volume_muted[] = {
@@ -1701,7 +1702,7 @@ static void render_canvas(void)
         if (force_full_redraw) {
             render_dial_chrome();
             draw_gauge_track();
-            draw_menu_icon(&offline_icon, SCREEN_CENTER, SCREEN_CENTER + OFFLINE_ICON_Y,
+            draw_menu_icon(&offline_icon, SCREEN_CENTER, SCREEN_CENTER,
                            OFFLINE_ICON_SIZE, 0xE5, 0x48, 0x4D);
             mark_dirty(0, 0, LCD_WIDTH - 1, LCD_HEIGHT - 1);
             force_full_redraw = false;
@@ -1819,14 +1820,12 @@ static void apply_labels(void)
         lv_obj_set_style_text_font(value_label, &lv_font_montserrat_16, 0);
         lv_obj_set_style_text_color(value_label, lv_color_hex(0x2A2A34), 0);
         lv_label_set_text(value_label, "NOT CONNECTED");
-        lv_obj_align(title_label, LV_ALIGN_CENTER, 0, MEDIA_TITLE_Y);
-        lv_label_set_text(title_label, "Open Revo1 on your PC");
-        lv_obj_align(artist_label, LV_ALIGN_CENTER, 0, MEDIA_ARTIST_Y);
-        lv_obj_set_style_text_color(artist_label, lv_color_hex(0x76768A), 0);
-        lv_label_set_text(artist_label, "USB, Wi-Fi or Bluetooth");
+        lv_obj_align(artist_label, LV_ALIGN_CENTER, 0, OFFLINE_HINT_Y);
+        lv_obj_set_style_text_color(artist_label, lv_color_hex(0x5A5A6A), 0);
+        lv_label_set_text(artist_label, "Open Revo1 on your PC");
         lv_obj_clear_flag(value_label, LV_OBJ_FLAG_HIDDEN);
-        lv_obj_clear_flag(title_label, LV_OBJ_FLAG_HIDDEN);
         lv_obj_clear_flag(artist_label, LV_OBJ_FLAG_HIDDEN);
+        lv_obj_add_flag(title_label, LV_OBJ_FLAG_HIDDEN);
         lv_obj_add_flag(time_label, LV_OBJ_FLAG_HIDDEN);
         return;
     }
