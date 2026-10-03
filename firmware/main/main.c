@@ -29,6 +29,7 @@
 #include "esp_lcd_sh8601.h"
 #include "freertos/semphr.h"
 #include "wireless.h"
+#include "power_save.h"
 
 #define LCD_WIDTH 360
 #define LCD_HEIGHT 360
@@ -259,10 +260,8 @@ static int backlight_percent = 100;
 /* When the knob is left alone the backlight fades: DIM_STEP_PERCENT less
    after DIM_AFTER_S, and again every DIM_STEP_S, until it is off. Any touch
    or turn brings it straight back. */
-#define DIM_AFTER_S 600
-#define DIM_STEP_S 300
-#define DIM_STEP_PERCENT 10
 static bool dim_enabled = true;
+static bool power_save_enabled;
 static int backlight_applied = -1;
 
 /* Local wall-clock time from the app (TIME), kept as an offset from the
@@ -474,6 +473,7 @@ typedef struct {
     uint32_t ink;
     uint32_t face;
     uint8_t bar;
+    uint8_t power_save;
 } stored_settings_t;
 
 static uint32_t rgb_word(const uint8_t rgb[3])
@@ -513,6 +513,7 @@ static stored_settings_t current_settings(void)
         .ink = rgb_word(clock_ink),
         .face = rgb_word(clock_bg),
         .bar = (uint8_t)bar_style,
+        .power_save = power_save_enabled,
     };
     static const int sizes[] = {24, 32, 40, 48};
     for (size_t index = 0; index < sizeof(sizes) / sizeof(sizes[0]); index++) {
@@ -530,7 +531,7 @@ static bool same_settings(const stored_settings_t *a, const stored_settings_t *b
            a->interval_s == b->interval_s && a->swipe == b->swipe &&
            a->saver_kind == b->saver_kind && a->dim == b->dim &&
            a->ring == b->ring && a->shade == b->shade && a->ink == b->ink &&
-           a->face == b->face && a->bar == b->bar;
+           a->face == b->face && a->bar == b->bar && a->power_save == b->power_save;
 }
 
 static void load_settings(void)
@@ -577,6 +578,7 @@ static void load_settings(void)
         if (nvs_get_u8(handle, "swipe", &byte) == ESP_OK) swipe_enabled = byte != 0;
         if (nvs_get_u8(handle, "show", &byte) == ESP_OK && byte <= SAVER_BOTH) saver_kind = byte;
         if (nvs_get_u8(handle, "dim", &byte) == ESP_OK) dim_enabled = byte != 0;
+        if (nvs_get_u8(handle, "power_save", &byte) == ESP_OK) power_save_enabled = byte != 0;
         if (nvs_get_u8(handle, "ring", &byte) == ESP_OK && byte < RING_COUNT) saver_ring = byte;
         if (nvs_get_u8(handle, "shade", &byte) == ESP_OK) clock_shade = byte != 0;
         if (nvs_get_u32(handle, "ink", &accent) == ESP_OK && accent <= 0xFFFFFF) {
@@ -612,6 +614,7 @@ static void save_settings(void)
                     nvs_set_u8(handle, "swipe", settings.swipe) == ESP_OK &&
                     nvs_set_u8(handle, "show", settings.saver_kind) == ESP_OK &&
                     nvs_set_u8(handle, "dim", settings.dim) == ESP_OK &&
+                    nvs_set_u8(handle, "power_save", settings.power_save) == ESP_OK &&
                     nvs_set_u8(handle, "ring", settings.ring) == ESP_OK &&
                     nvs_set_u8(handle, "shade", settings.shade) == ESP_OK &&
                     nvs_set_u32(handle, "ink", settings.ink) == ESP_OK &&
@@ -2677,6 +2680,19 @@ static void handle_command(char *line)
         return;
     }
 
+    if (strncmp(line, "POWERSAVE,", 10) == 0) {
+        int enabled;
+        if (!parse_integer(line + 10, 0, 1, &enabled)) {
+            host_printf("POWERSAVE_ERR,FORMAT\n");
+            return;
+        }
+        power_save_enabled = enabled;
+        apply_backlight();
+        save_settings();
+        host_printf("POWERSAVE_OK,%d\n", enabled);
+        return;
+    }
+
     if (strncmp(line, "DIM,", 4) == 0) {
         int enabled;
         if (!parse_integer(line + 4, 0, 1, &enabled)) return;
@@ -3099,10 +3115,8 @@ static void poll_touch(void)
 static int backlight_level(int64_t now)
 {
     const int64_t idle_s = (now - last_input_us) / 1000000;
-    if (!dim_enabled || idle_s < DIM_AFTER_S) return backlight_percent;
-    const int64_t steps = 1 + (idle_s - DIM_AFTER_S) / DIM_STEP_S;
-    const int64_t level = backlight_percent - steps * DIM_STEP_PERCENT;
-    return level > 0 ? (int)level : 0;
+    return screen_power_level(backlight_percent, dim_enabled, power_save_enabled,
+                              saver_active, idle_s);
 }
 
 /* Percent to PWM on a square law, so equal steps look like equal steps.
@@ -3111,6 +3125,11 @@ static void apply_backlight(void)
 {
     const int level = backlight_level(esp_timer_get_time());
     if (level == backlight_applied) return;
+    if ((level > 0) != (backlight_applied > 0)) {
+        if (lvgl_mutex) xSemaphoreTake(lvgl_mutex, portMAX_DELAY);
+        ESP_ERROR_CHECK(esp_lcd_panel_disp_on_off(panel, level > 0));
+        if (lvgl_mutex) xSemaphoreGive(lvgl_mutex);
+    }
     backlight_applied = level;
     int duty = 0;
     if (level > 0) {
@@ -4275,6 +4294,7 @@ static void saver_tick(int64_t now)
         stop_saver();
         return;
     }
+    if (backlight_applied == 0) return;
     if (!saver_active) {
         if (saver_enabled && saver_ready() && !touch_active &&
             now - last_input_us >= (int64_t)saver_idle_s * 1000000) {
@@ -4287,7 +4307,7 @@ static void saver_tick(int64_t now)
     if (saver_shown != SAVER_PICTURES && clock_valid && saver_ring != RING_NONE &&
         ring_second >= 0 && now >= ring_next_us) {
         /* About 25 frames a second, so every style moves smoothly between seconds. */
-        ring_next_us = now + 40000;
+        ring_next_us = now + (int64_t)screensaver_frame_ms(40, power_save_enabled) * 1000;
         ring_now_us = now;
         if (lvgl_mutex) xSemaphoreTake(lvgl_mutex, portMAX_DELAY);
         draw_seconds_ring(ring_second,
@@ -4330,7 +4350,7 @@ static void saver_tick(int64_t now)
         }
         const int frame_ms = entry->frame_ms ? entry->frame_ms : 100;
         /* Keep to the clip's own pace, time spent decoding included. */
-        saver_next_frame += (int64_t)frame_ms * 1000;
+        saver_next_frame += (int64_t)screensaver_frame_ms(frame_ms, power_save_enabled) * 1000;
         if (saver_next_frame < now) saver_next_frame = now;
     } else {
         /* A still stays until it is time for the next item. */
@@ -4453,6 +4473,7 @@ void app_main(void)
             /* The turn that lights a dark screen does nothing else. */
             encoder_accumulator = 0;
             detents = 0;
+            if (saver_active) stop_saver();
         }
         if (app_offline) {
             /* Nothing to drive without the app; the turn only wakes the screen. */
@@ -4504,7 +4525,8 @@ void app_main(void)
             }
         }
         whack_tick(now);
-        if (now - last_frame >= 40000) {
+        apply_backlight();
+        if (backlight_applied > 0 && now - last_frame >= 40000) {
             if (dial_advance()) draw_frame();
             if (selected_mode == POMODORO_MODE && pomo_running && !show_menu &&
                 !saver_active && pomo_remaining_now() != pomo_shown) {
@@ -4517,12 +4539,13 @@ void app_main(void)
         if (now - last_hello >= 1000000) {
             host_printf("HELLO,REVO1,1\n");
             host_printf("VERSION,%s\n", REVO1_VERSION);
+            host_printf("POWER,%d,%d\n", power_save_enabled, backlight_applied);
             if (!state_received) host_printf("SYNC\n");
             char network[96];
             wireless_status(network, sizeof(network));
             host_printf("%s\n", network);
             last_hello = now;
         }
-        vTaskDelay(1);
+        vTaskDelay(power_save_enabled ? pdMS_TO_TICKS(10) : 1);
     }
 }

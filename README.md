@@ -263,6 +263,16 @@ in the left sidebar.
   list of connected knobs
   (refreshed automatically every two seconds; pick one or leave it on
   **Automatic**).
+  **Battery Saver** is a manual switch, for battery or USB use. It caps the
+  backlight at 40% (20% in the screensaver), dims to at most 10% after
+  30 seconds without touching or turning the knob, and switches the display
+  off after five minutes. A touch or turn wakes it without triggering a
+  control. Screensaver rings and videos run at up to five frames per second;
+  decoding and animation stop while the display is off. Your normal
+  brightness setting is kept, and the mode survives a device restart.
+  Battery percentage and charging detection are not available yet: the
+  published board schematic connects `BATT_ADC` to the regulated 5 V rail,
+  not directly to the battery.
 - **Controls:** the screen orientation (0, 90, 180 or 270 degrees) and
   **Knob direction**: **Invert scroll** and **Invert zoom** swap what a
   clockwise turn does (the comet on the dial still follows your hand). Under

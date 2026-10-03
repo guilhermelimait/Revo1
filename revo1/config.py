@@ -31,10 +31,10 @@ DEFAULTS = {"mode": "Volume", "orientation": 0, "port": "", "name": DEFAULT_NAME
             "saver_enabled": False, "saver_idle": 5, "saver_interval": 30,
             "saver_show": "pictures", "clock_format": "24h", "saver_ring": "dots",
             "clock_ink": "#F2F2F5", "clock_face": "#000000", "clock_shade": True,
-            "dim_idle": True, "link_key": "", "knob_ble": "",
+            "dim_idle": True, "battery_saver": False, "link_key": "", "knob_ble": "",
             "whack_best": 0, "whack_last": -1}
 FLAGS = ("minimize_to_tray", "invert_scroll", "invert_zoom", "swipe_screens",
-         "saver_enabled", "dim_idle", "clock_shade")
+         "saver_enabled", "dim_idle", "clock_shade", "battery_saver")
 # The wireless pairing: the key (protected with Windows DPAPI, see
 # secure.protect_key) and the knob's last known Bluetooth address.
 WIRELESS_TEXT = ("link_key", "knob_ble")

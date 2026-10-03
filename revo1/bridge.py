@@ -158,6 +158,9 @@ class DeviceBridge:
     def send_dim(self, enabled):
         self.outbound.put(f"DIM,{int(bool(enabled))}\n".encode("ascii"))
 
+    def send_power_save(self, enabled):
+        self.outbound.put(f"POWERSAVE,{int(bool(enabled))}\n".encode("ascii"))
+
     def send_time(self, local_seconds, h24=True):
         """local_seconds is the local wall-clock time counted as if it were UTC."""
         self.outbound.put(f"TIME,{int(local_seconds)},{int(bool(h24))}\n".encode("ascii"))
@@ -352,6 +355,18 @@ class DeviceBridge:
             version = line[8:]
             if version and len(version) <= 32:
                 self.events.put(("version", version))
+        elif line.startswith("POWER,"):
+            try:
+                enabled, brightness = (int(part) for part in line[6:].split(","))
+            except ValueError:
+                self.events.put(("status", f"Invalid power status: {line[:80]}"))
+            else:
+                if enabled in (0, 1) and 0 <= brightness <= 100:
+                    self.events.put(("power", (bool(enabled), brightness)))
+                else:
+                    self.events.put(("status", f"Invalid power status: {line[:80]}"))
+        elif line.startswith("POWERSAVE_ERR,"):
+            self.events.put(("status", f"Battery Saver rejected by the knob: {line[14:80]}"))
         elif line.startswith("ROT,"):
             try:
                 steps = int(line[4:])

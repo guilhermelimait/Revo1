@@ -105,6 +105,7 @@ class App(DashboardPage, ScreensaverPage, GamesPage, WirelessTab):
         # Reported by the firmware after HELLO; None until then, and for
         # firmware older than 1.0.0 that doesn't report one.
         self.device_version = None
+        self.device_power = None
         self.release = None
         self.release_state = "idle"
         self.release_error = ""
@@ -173,6 +174,10 @@ class App(DashboardPage, ScreensaverPage, GamesPage, WirelessTab):
     @connected.setter
     def connected(self, value):
         self._connected = value
+        if hasattr(self, "power_status"):
+            if not value:
+                self.device_power = None
+            self.refresh_power_status()
         if hasattr(self, "identity"):
             self.refresh_identity()
 
@@ -290,16 +295,44 @@ class App(DashboardPage, ScreensaverPage, GamesPage, WirelessTab):
 
     def build_device_tab(self, tab):
         k = self.kit
-        body = self.section(tab)
-        self.caption(body, "SCREEN BACKLIGHT").pack(anchor="w")
+        primary = tk.Frame(tab, bg=PANEL_BG)
+        primary.pack(side="left", anchor="n")
+        secondary = tk.Frame(tab, bg=PANEL_BG)
+        secondary.pack(side="left", anchor="n", padx=(0, k.px(24)))
+        body = self.section(primary, FORM_WIDTH)
+        self.caption(body, "SCREEN BACKLIGHT", FORM_WIDTH).pack(anchor="w")
         self.backlight_slider = ui.Button(body, PANEL_BG, self.paint_backlight, lambda: None)
         for sequence in ("<Button-1>", "<B1-Motion>"):
             self.backlight_slider.bind(sequence, self.drag_backlight)
         self.backlight_slider.bind("<ButtonRelease-1>", self.release_backlight)
         self.backlight_slider.pack(anchor="w", pady=(k.px(6), 0))
 
-        body = self.section(tab)
-        self.caption(body, "DEVICE NAME").pack(anchor="w")
+        body = secondary
+        width = CARD_WIDTH - FORM_WIDTH - 24
+        self.caption(body, "BATTERY SAVER", width).pack(anchor="w")
+        self.battery_toggle = ui.Button(
+            body, PANEL_BG,
+            lambda hover: self.paint_toggle(
+                self.settings["battery_saver"], "Save device power",
+                "Manual: battery or USB", hover, width),
+            lambda: self.toggle_setting("battery_saver"))
+        self.battery_toggle.pack(anchor="w", pady=(k.px(6), 0))
+        self.power_status = ui.Picture(body, PANEL_BG)
+        self.power_status.pack(anchor="w", pady=(k.px(6), 0))
+        self.refresh_power_status()
+        note = ui.Picture(body, PANEL_BG)
+        image = k.canvas(width, 100, PANEL_BG)
+        for y, text in ((10, "Brightness: 40% max; screensaver: 20%."),
+                        (26, "Idle: 10% after 30 seconds."),
+                        (42, "Display off after 5 min; touch or turn to wake."),
+                        (58, "Screensaver animations: up to 5 fps."),
+                        (82, "Battery percentage is not available yet.")):
+            k.text(image, 0, y, text, "regular", 8.5, ui.MUTED_INK, width=width)
+        note.show(image)
+        note.pack(anchor="w", pady=(k.px(6), 0))
+
+        body = self.section(primary, FORM_WIDTH)
+        self.caption(body, "DEVICE NAME", FORM_WIDTH).pack(anchor="w")
         self.name_entry = tk.Entry(body, font=(ui.TK_FAMILY, 11), bg="#FFFFFF", fg=ui.INK,
                                    relief="flat", highlightthickness=1,
                                    highlightbackground=ui.CARD_EDGE,
@@ -309,7 +342,7 @@ class App(DashboardPage, ScreensaverPage, GamesPage, WirelessTab):
         self.name_entry.bind("<FocusOut>", self.save_name)
         self.name_entry.config(width=24)
         self.name_entry.pack(anchor="w", pady=(k.px(6), k.px(12)), ipady=k.px(4), ipadx=k.px(6))
-        self.caption(body, "DEVICES").pack(anchor="w")
+        self.caption(body, "DEVICES", FORM_WIDTH).pack(anchor="w")
         self.connection_text = ui.Picture(body, PANEL_BG)
         self.connection_text.pack(anchor="w", pady=(k.px(2), 0))
         self.device_list = tk.Frame(body, bg=PANEL_BG)
@@ -440,14 +473,14 @@ class App(DashboardPage, ScreensaverPage, GamesPage, WirelessTab):
         self.about_actions.pack(anchor="w", pady=(k.px(10), 0))
         self.refresh_about()
 
-    def section(self, tab):
+    def section(self, tab, width=CARD_WIDTH):
         """One group of settings. Groups after the first are set off by a
         hairline rather than each sitting in its own rounded box."""
         k = self.kit
         if tab.winfo_children():
             rule = ui.Picture(tab, PANEL_BG)
-            image = k.canvas(CARD_WIDTH, 1, PANEL_BG)
-            k.rounded(image, (0, 0, CARD_WIDTH, 1), 0.1, ui.CARD_EDGE)
+            image = k.canvas(width, 1, PANEL_BG)
+            k.rounded(image, (0, 0, width, 1), 0.1, ui.CARD_EDGE)
             rule.show(image)
             rule.pack(padx=k.px(28), pady=(0, k.px(18)), anchor="w")
         body = tk.Frame(tab, bg=PANEL_BG)
@@ -476,9 +509,9 @@ class App(DashboardPage, ScreensaverPage, GamesPage, WirelessTab):
             button.pack(side="left",
                         padx=(0, 0 if index == len(buttons) - 1 else self.kit.px(gap)))
 
-    def caption(self, parent, text):
+    def caption(self, parent, text, width=CARD_WIDTH):
         picture = ui.Picture(parent, PANEL_BG)
-        image = self.kit.canvas(CARD_WIDTH, 16, PANEL_BG)
+        image = self.kit.canvas(width, 16, PANEL_BG)
         x = 0.0
         for ch in text:
             self.kit.text(image, x, 8, ch, "semibold", 8, ui.MUTED_INK)
@@ -641,9 +674,9 @@ class App(DashboardPage, ScreensaverPage, GamesPage, WirelessTab):
                                  "Minimise to the notification area",
                                  "Keeps Revo1 running next to the clock", hover)
 
-    def paint_toggle(self, on, title, detail, hover):
+    def paint_toggle(self, on, title, detail, hover, width=FORM_WIDTH):
         k = self.kit
-        width, height = FORM_WIDTH, 40
+        height = 40
         image = k.canvas(width, height, PANEL_BG)
         k.text(image, 0, 12, title, "semibold", 10, ui.INK)
         k.text(image, 0, 30, detail, "regular", 8.5, ui.MUTED_INK, width=width - 60)
@@ -830,12 +863,26 @@ class App(DashboardPage, ScreensaverPage, GamesPage, WirelessTab):
         image.paste(badge, (k.px(cx - radius), k.px(cy - radius)), badge)
 
     def refresh_status(self):
-        image = self.kit.canvas(CARD_WIDTH, 20, PANEL_BG)
+        image = self.kit.canvas(FORM_WIDTH, 20, PANEL_BG)
         self.kit.text(image, 0, 10, self.status.get(), "regular", 10, ui.SUBTLE_INK,
-                      width=CARD_WIDTH)
+                      width=FORM_WIDTH)
         self.connection_text.show(image)
         for button in self.device_rows:
             button.refresh()
+
+    def refresh_power_status(self):
+        width = CARD_WIDTH - FORM_WIDTH - 24
+        image = self.kit.canvas(width, 20, PANEL_BG)
+        if self.device_power is None:
+            text = ("Waiting for device power status." if self.connected else
+                    "Connect the knob to check its power mode.")
+        else:
+            enabled, brightness = self.device_power
+            mode = "Saver on" if enabled else "Saver off"
+            screen = f"Screen brightness: {brightness}%" if brightness else "Display off"
+            text = f"{mode} - {screen}"
+        self.kit.text(image, 0, 10, text, "regular", 8.5, ui.SUBTLE_INK, width=width)
+        self.power_status.show(image)
 
     def refresh_nav(self):
         for button in self.nav.values():
@@ -923,7 +970,8 @@ class App(DashboardPage, ScreensaverPage, GamesPage, WirelessTab):
 
     def apply_style(self):
         for button in (self.accent_buttons + self.size_buttons + self.device_rows
-                       + self.tab_buttons + self.pomodoro_buttons + [self.backlight_slider]):
+                       + self.tab_buttons + self.pomodoro_buttons
+                       + [self.backlight_slider, self.battery_toggle]):
             button.refresh()
         self.refresh_nav()
         self.refresh_dashboard()
@@ -974,7 +1022,7 @@ class App(DashboardPage, ScreensaverPage, GamesPage, WirelessTab):
             self.device_rows.append(button)
         if not self.devices:
             note = ui.Picture(self.device_list, PANEL_BG)
-            image = k.canvas(CARD_WIDTH, 22, PANEL_BG)
+            image = k.canvas(FORM_WIDTH, 22, PANEL_BG)
             k.text(image, 0, 11, "No knob on USB. Once paired, Revo1 reaches it over "
                    "Bluetooth instead.", "regular", 9,
                    ui.MUTED_INK)
@@ -1048,7 +1096,7 @@ class App(DashboardPage, ScreensaverPage, GamesPage, WirelessTab):
     def toggle_setting(self, key):
         self.settings[key] = not self.settings[key]
         config.save(self.settings)
-        for toggle in [self.tray_toggle] + self.invert_toggles:
+        for toggle in [self.tray_toggle, self.battery_toggle] + self.invert_toggles:
             toggle.refresh()
         if key == "saver_enabled":
             self.push_saver()
@@ -1058,6 +1106,8 @@ class App(DashboardPage, ScreensaverPage, GamesPage, WirelessTab):
             if self.connected:
                 self.bridge.send_dim(self.settings["dim_idle"])
             self.refresh_screensaver()
+        elif key == "battery_saver" and self.connected:
+            self.bridge.send_power_save(self.settings["battery_saver"])
 
     def on_unmap(self, event):
         if (event.widget is self.root and self.tray and self.settings["minimize_to_tray"]
@@ -1687,6 +1737,7 @@ class App(DashboardPage, ScreensaverPage, GamesPage, WirelessTab):
         self.bridge.send_backlight(self.settings["backlight"])
         self.bridge.send_swipes(self.settings["swipe_screens"])
         self.bridge.send_dim(self.settings["dim_idle"])
+        self.bridge.send_power_save(self.settings["battery_saver"])
         self.push_time()
         self.push_saver()
         self.push_pomodoro()
@@ -1716,11 +1767,17 @@ class App(DashboardPage, ScreensaverPage, GamesPage, WirelessTab):
                     self.link_kind = None
                     self.refresh_wireless()
                     self.device_version = None
+                    self.device_power = None
+                    self.refresh_power_status()
                     self.device_library = None
                     if self.upload_state and self.upload_state[0] == "busy":
                         self.upload_state = ("error", "The knob was disconnected")
                     self.refresh_about()
                     self.refresh_screensaver()
+                elif kind == "power":
+                    if payload != self.device_power:
+                        self.device_power = payload
+                        self.refresh_power_status()
                 elif kind == "version":
                     if payload != self.device_version:
                         self.device_version = payload

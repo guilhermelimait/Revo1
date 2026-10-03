@@ -67,10 +67,31 @@ LVGL 8.4 and the panel driver are declared in `main\idf_component.yml`.
 The native USB Serial/JTAG console runs at 115200 baud and implements the
 `HELLO,REVO1,1`, `APP`, `VERSION`, `SYNC`, `ROT`, `MENU`, `CURSOR`, `TAP`, `SWIPE`, `MEDIA`, `STATE`,
 `SHOWMENU`, `COMETRESET`, `STYLE`, `TRACK`, `ARTIST`, `PLAY`, `SCREENS`,
-`BACKLIGHT`, `DIM`, `SWIPES`, `TIME`, `POMO`, `SAVER`, `LIBRARY`, `GAME` and media upload lines used by
+`BACKLIGHT`, `DIM`, `POWERSAVE`, `SWIPES`, `TIME`, `POMO`, `SAVER`, `LIBRARY`, `GAME` and media upload lines used by
 `revo1\bridge.py`. The menu has one sector per enabled screen (`SCREENS`
 mask), in the host mode order; `CURSOR` and `TAP` report the mode index, not
 the sector.
+
+## Battery Saver
+
+`POWERSAVE,<0 or 1>` sets a manual power-saving mode and answers with
+`POWERSAVE_OK,<0 or 1>` (invalid values answer `POWERSAVE_ERR,FORMAT`).
+The NVS key `power_save` stores it; the app sends its saved choice on connect.
+`POWER,<0 or 1>,<applied brightness percent>` reports the actual mode and
+backlight level once per second; zero means the display is off. This is
+screen brightness, not battery charge.
+`power_save.h` defines the policy: cap active brightness at 40%, screensaver
+brightness at 20%, dim to at most 10% after 30 seconds of physical inactivity,
+and disable the backlight and panel after five minutes. Normal idle dimming
+and the chosen backlight setting remain unchanged when the mode is disabled.
+Touch and encoder polling and Bluetooth remain active; this is display
+power saving, not deep sleep. The wake gesture is consumed. Screensaver rings
+and video frames are limited to 5 fps, and stop rendering while dark.
+
+No battery percentage is fabricated. The published schematic routes
+`BATT_ADC` (GPIO 1) through a 10k/10k divider from the system 5 V rail.
+Battery voltage, USB power detection and charging status need verified
+access to the charging board before they can be reported.
 
 The USB Serial/JTAG driver is installed with an 8 KB receive buffer, and
 `serial_reader_task` reads lines of up to 4200 bytes. Media upload lines are

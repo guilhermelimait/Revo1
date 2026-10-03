@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+- Manual Battery Saver in Settings > Device: cap brightness at 40% (20% in
+  the screensaver), dim after 30 seconds and turn the display off after five
+  minutes. Touch or turn to wake; screensaver animations run at up to 5 fps
+  and stop while dark. The mode survives restarts and the app shows the
+  device's actual screen brightness. Battery percentage is deferred until
+  access to battery voltage and charging status is verified.
 - Wi-Fi is removed from the app and the firmware: wireless use is Bluetooth
   only. Pairing no longer asks for a network or password (`PAIR,<key hex>`),
   `NET` drops the Wi-Fi fields (`NET,<key id>,<name>,<0 or 1>`), the firmware
