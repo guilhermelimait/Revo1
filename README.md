@@ -173,12 +173,15 @@ firmware.)
 Then start Revo1 from the Start Menu. The ring on the little knob beside
 the name always shows your bar colour. Once the knob answers, the line
 below it shows how the knob is linked: **On USB cable** or **On Bluetooth**.
-Below **On Bluetooth**, **Battery ~N%** shows a voltage-based charge estimate.
+Below **On Bluetooth**, a battery icon and percentage show a voltage-based charge estimate.
 It is hidden on USB, when disconnected, or if the reading is unavailable or
 stale. The knob shows the same estimate near the bottom of control screens,
 not in its home menu, offline screen, screensaver or during active gameplay.
-The `~` means approximate: this is not a fuel gauge, and load, temperature
+The percentage is approximate: this is not a fuel gauge, and load, temperature
 and battery condition affect the reading.
+On USB, a lightning icon and **USB power** replace the battery estimate,
+also on device control screens. This identifies the app's USB connection,
+not verified charging status.
 
 ## Using it
 

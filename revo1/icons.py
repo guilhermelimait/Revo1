@@ -67,6 +67,18 @@ ICONS = {
 # Shapes the PC window also draws, in the same distance-field style; the
 # firmware draws its own versions of these, so they are not mirrored there.
 SHAPES = {
+    "Power": [
+        ("poly", 2, -11, -7, 1, 0, 1, 2, -11),
+        ("poly", 0, -1, 7, -1, -2, 11, 0, -1),
+    ],
+    "Battery": [
+        ("seg", -10, -6, 8, -6, 2),
+        ("seg", -10, 6, 8, 6, 2),
+        ("seg", -10, -6, -10, 6, 2),
+        ("seg", 8, -6, 8, 6, 2),
+        ("seg", 11, -2, 11, 2, 2),
+        ("poly", -7, -3, -3, -3, -3, 3, -7, 3),
+    ],
     "Prev": [
         ("poly", 15, -13, 15, 13, -7, 0, -7, 0),
         ("poly", -14, -13, -12, -13, -12, 13, -14, 13),

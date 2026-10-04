@@ -356,6 +356,7 @@ static bool saver_active;
 #define APP_TIMEOUT_MS 3500
 static volatile uint32_t last_host_ms;
 static volatile bool host_seen;
+static volatile bool host_usb;
 static bool app_offline = true;
 static bool touch_swallowed;
 static int64_t last_input_us;
@@ -1890,12 +1891,22 @@ static void apply_battery_label(void)
 {
     if (!app_offline && !show_menu && !saver_active &&
         !(selected_mode == GAMES_MODE && game_state == GAME_PLAYING) &&
-        wireless_connected() && battery_percent >= 0) {
+        (host_usb || (wireless_connected() && battery_percent >= 0))) {
         char text[16];
-        snprintf(text, sizeof(text), "~%d%%", battery_percent);
+        const char *icon = battery_percent <= 10 ? LV_SYMBOL_BATTERY_EMPTY :
+                           battery_percent <= 35 ? LV_SYMBOL_BATTERY_1 :
+                           battery_percent <= 65 ? LV_SYMBOL_BATTERY_2 :
+                           battery_percent <= 90 ? LV_SYMBOL_BATTERY_3 :
+                                                  LV_SYMBOL_BATTERY_FULL;
+        if (host_usb) {
+            snprintf(text, sizeof(text), "%s USB power", LV_SYMBOL_CHARGE);
+        } else {
+            snprintf(text, sizeof(text), "%s %d%%", icon, battery_percent);
+        }
         lv_label_set_text(battery_label, text);
         lv_obj_set_style_text_color(battery_label,
-                                   lv_color_hex(battery_percent <= 20 ? 0xA83232 : 0x5A5A6A), 0);
+                                   lv_color_hex(!host_usb && battery_percent <= 20 ?
+                                                0xA83232 : 0x5A5A6A), 0);
         lv_obj_clear_flag(battery_label, LV_OBJ_FLAG_HIDDEN);
     } else {
         lv_obj_add_flag(battery_label, LV_OBJ_FLAG_HIDDEN);
@@ -2550,8 +2561,9 @@ static void dispatch_unlocked(char *line, size_t length)
 }
 
 /* Any whole line from the app shows it is there. */
-static void note_host(void)
+static void note_host(bool usb)
 {
+    host_usb = usb;
     last_host_ms = (uint32_t)(esp_timer_get_time() / 1000);
     host_seen = true;
 }
@@ -2572,7 +2584,7 @@ static void serial_reader_task(void *argument)
             if (character == '\n' || character == '\r') {
                 if (length && !overflow) {
                     line[length] = '\0';
-                    note_host();
+                    note_host(true);
                     if (!handle_pairing(line)) dispatch_line(line, length);
                 }
                 length = 0;
@@ -2589,7 +2601,7 @@ static void serial_reader_task(void *argument)
 /* Lines from an authenticated wireless session; pairing stays USB-only. */
 static void wireless_line(char *line, size_t length)
 {
-    note_host();
+    note_host(false);
     if (strncmp(line, "PAIR,", 5) == 0 || strcmp(line, "UNPAIR") == 0) {
         host_printf("PAIR_ERR,USB\n");
         return;
@@ -4398,6 +4410,13 @@ static void saver_tick(int64_t now)
 
 static void battery_tick(int64_t now)
 {
+    static bool shown_usb;
+    if (shown_usb != host_usb) {
+        shown_usb = host_usb;
+        if (lvgl_mutex) xSemaphoreTake(lvgl_mutex, portMAX_DELAY);
+        apply_battery_label();
+        if (lvgl_mutex) xSemaphoreGive(lvgl_mutex);
+    }
     static int64_t next_read;
     static esp_err_t reported_error = ESP_OK;
     if (!wireless_connected() || app_offline) {

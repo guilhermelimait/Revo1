@@ -2,8 +2,11 @@
 
 ## Unreleased
 
-- Estimated battery charge during Bluetooth use: `Battery ~N%` below the
-  connection line in the app, and `~N%` on device control screens, not the
+- Battery indicators now show an icon beside the percentage, without `~`.
+  On an app USB connection, a lightning icon and `USB power` appear instead.
+  This indicates USB use, not verified battery charging status.
+- Estimated battery charge during Bluetooth use: a battery icon and `N%` below the
+  connection line in the app, and on device control screens, not the
   menu. Calibrated ADC readings on this unit change from about 4.33 V on USB
   to 3.60 V on battery. A generic LiPo curve supplies an approximate charge
   estimate; invalid and stale readings are hidden. `VOLTAGE` provides an

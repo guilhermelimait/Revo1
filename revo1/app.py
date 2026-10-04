@@ -826,7 +826,7 @@ class App(DashboardPage, ScreensaverPage, GamesPage, WirelessTab):
 
     def refresh_identity(self):
         k = self.kit
-        battery = self.battery_text()
+        battery = self.identity_power_text()
         image = k.canvas(NAV_WIDTH, 68 if battery else 50, ui.SIDEBAR_BG)
         self.paint_knob_badge(image, 24, 25, 17)
         k.text(image, 50, 15, self.settings["name"], "semibold", 14, ui.INK, width=NAV_WIDTH - 54)
@@ -841,14 +841,21 @@ class App(DashboardPage, ScreensaverPage, GamesPage, WirelessTab):
             k.text(image, 63, 38, "Connected" if self.connected else "Not connected",
                    "regular", 9, ui.SUBTLE_INK)
         if battery:
+            k.icon(image, "Power" if self.link_kind == "usb" else "Battery",
+                   55, 57, ui.SUBTLE_INK, 0.48)
             k.text(image, 64, 57, battery, "regular", 9, ui.SUBTLE_INK,
                    width=NAV_WIDTH - 66)
         self.identity.show(image)
 
+    def identity_power_text(self):
+        if self.connected and self.link_kind == "usb":
+            return "USB power"
+        return self.battery_text()
+
     def battery_text(self):
         if (self.connected and self.link_kind == "ble" and self.device_battery is not None
                 and time.monotonic() - self.battery_received < 45):
-            return f"Battery ~{self.device_battery[1]}%"
+            return f"{self.device_battery[1]}%"
         return ""
 
     def paint_knob_badge(self, image, cx, cy, radius):

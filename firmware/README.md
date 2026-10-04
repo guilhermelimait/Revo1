@@ -100,10 +100,14 @@ sampled every 15 seconds and smoothed with a 3:1 previous/new average.
 `BATTERY,<millivolts>,<estimated percent>` reports them; percent -1 is
 unavailable and both values -1 indicate a read error. Errors also report
 `BATTERY_ERR,<ESP error name>`. The app discards stale readings after 45 s.
-The device shows `~N%` near the bottom of control screens only, hidden in
-the menu, screensaver, offline screen and active gameplay; the app shows `Battery ~N%`
+The device shows a battery symbol and `N%` near the bottom of control screens only, hidden in
+the menu, screensaver, offline screen and active gameplay; the app shows a battery icon and `N%`
 below its Bluetooth connection line, never on USB. Neither represents
 charging status, and Bluetooth alone does not prove battery-only power.
+When the app communicates over USB, the device instead shows a lightning
+symbol and `USB power` in the same position. The app shows this under
+`On USB cable`. This reports the active host transport, not a charge-status
+signal: it does not distinguish charging from a full battery.
 
 `VOLTAGE` requests a diagnostic reading of GPIO 1 / ADC1 channel 0, over
 USB or authenticated Bluetooth. The reply is
