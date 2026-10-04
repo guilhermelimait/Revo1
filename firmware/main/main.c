@@ -30,6 +30,7 @@
 #include "freertos/semphr.h"
 #include "wireless.h"
 #include "power_save.h"
+#include "voltage.h"
 
 #define LCD_WIDTH 360
 #define LCD_HEIGHT 360
@@ -401,6 +402,9 @@ static lv_obj_t *title_label;
 static lv_obj_t *value_label;
 static lv_obj_t *artist_label;
 static lv_obj_t *time_label;
+static lv_obj_t *battery_label;
+static int battery_mv = -1;
+static int battery_percent = -1;
 static lv_color_t *canvas_pixels;
 static lv_color_t *draw_buffer_a;
 static lv_color_t *draw_buffer_b;
@@ -1882,8 +1886,25 @@ static void draw_frame(void)
 /* Decides which labels are shown and what they say. Kept off the animation
    path: re-setting label text every frame used to cost more than drawing the
    whole screen did. */
+static void apply_battery_label(void)
+{
+    if (!app_offline && !show_menu && !saver_active &&
+        !(selected_mode == GAMES_MODE && game_state == GAME_PLAYING) &&
+        wireless_connected() && battery_percent >= 0) {
+        char text[16];
+        snprintf(text, sizeof(text), "~%d%%", battery_percent);
+        lv_label_set_text(battery_label, text);
+        lv_obj_set_style_text_color(battery_label,
+                                   lv_color_hex(battery_percent <= 20 ? 0xA83232 : 0x5A5A6A), 0);
+        lv_obj_clear_flag(battery_label, LV_OBJ_FLAG_HIDDEN);
+    } else {
+        lv_obj_add_flag(battery_label, LV_OBJ_FLAG_HIDDEN);
+    }
+}
+
 static void apply_labels(void)
 {
+    apply_battery_label();
     if (saver_active) return;
     if (app_offline) {
         lv_obj_align(value_label, LV_ALIGN_CENTER, 0, OFFLINE_HEAD_Y);
@@ -2636,6 +2657,17 @@ static void confirm_menu(int mode)
 
 static void handle_command(char *line)
 {
+    if (strcmp(line, "VOLTAGE") == 0) {
+        int raw, adc_mv;
+        const esp_err_t err = voltage_read(&raw, &adc_mv);
+        if (err != ESP_OK) {
+            host_printf("VOLTAGE_ERR,%s\n", esp_err_to_name(err));
+        } else {
+            host_printf("VOLTAGE,%d,%d,%d\n", raw, adc_mv, adc_mv * 2);
+        }
+        return;
+    }
+
     if (strcmp(line, "SHOWMENU") == 0) {
         open_menu();
         refresh_screen();
@@ -3330,6 +3362,10 @@ static void initialize_lvgl(void)
     lv_obj_set_style_text_font(time_label, &lv_font_montserrat_12, 0);
     lv_obj_align(time_label, LV_ALIGN_CENTER, 0, MEDIA_TIME_Y);
     lv_label_set_text(time_label, "");
+    battery_label = lv_label_create(lv_scr_act());
+    lv_obj_set_style_text_font(battery_label, &lv_font_montserrat_12, 0);
+    lv_obj_align(battery_label, LV_ALIGN_CENTER, 0, 132);
+    lv_obj_add_flag(battery_label, LV_OBJ_FLAG_HIDDEN);
     clock_label = lv_label_create(lv_scr_act());
     lv_obj_set_style_text_color(clock_label, lv_color_hex(0xF2F2F5), 0);
     lv_obj_set_style_text_font(clock_label, &revo1_clock_96, 0);
@@ -4245,6 +4281,7 @@ static void start_saver(int64_t now)
     saver_active = true;
     saver_shown = saver_kind;
     if (lvgl_mutex) xSemaphoreTake(lvgl_mutex, portMAX_DELAY);
+    lv_obj_add_flag(battery_label, LV_OBJ_FLAG_HIDDEN);
     lv_obj_add_flag(title_label, LV_OBJ_FLAG_HIDDEN);
     lv_obj_add_flag(value_label, LV_OBJ_FLAG_HIDDEN);
     lv_obj_add_flag(artist_label, LV_OBJ_FLAG_HIDDEN);
@@ -4357,6 +4394,43 @@ static void saver_tick(int64_t now)
         saver_next_frame = media_header.count > 1 ? saver_item_start + interval
                                                   : INT64_MAX;
     }
+}
+
+static void battery_tick(int64_t now)
+{
+    static int64_t next_read;
+    static esp_err_t reported_error = ESP_OK;
+    if (!wireless_connected() || app_offline) {
+        if (next_read == 0) return;
+        next_read = 0;
+        battery_mv = battery_percent = -1;
+        reported_error = ESP_OK;
+    } else if (now >= next_read) {
+        next_read = now + 15000000;
+        int raw, adc_mv;
+        const esp_err_t err = voltage_read(&raw, &adc_mv);
+        if (err != ESP_OK) {
+            battery_mv = battery_percent = -1;
+            if (err != reported_error) host_printf("BATTERY_ERR,%s\n", esp_err_to_name(err));
+        } else {
+            const int measured_mv = adc_mv * 2;
+            if (voltage_estimated_percent(measured_mv) < 0) {
+                battery_mv = measured_mv;
+                battery_percent = -1;
+            } else {
+                battery_mv = battery_percent < 0 ? measured_mv :
+                             (battery_mv * 3 + measured_mv + 2) / 4;
+                battery_percent = voltage_estimated_percent(battery_mv);
+            }
+        }
+        reported_error = err;
+        host_printf("BATTERY,%d,%d\n", battery_mv, battery_percent);
+    } else {
+        return;
+    }
+    if (lvgl_mutex) xSemaphoreTake(lvgl_mutex, portMAX_DELAY);
+    apply_battery_label();
+    if (lvgl_mutex) xSemaphoreGive(lvgl_mutex);
 }
 
 /* Advances whatever is animating and reports whether the arc moved, so a still
@@ -4525,6 +4599,7 @@ void app_main(void)
             }
         }
         whack_tick(now);
+        battery_tick(now);
         apply_backlight();
         if (backlight_applied > 0 && now - last_frame >= 40000) {
             if (dial_advance()) draw_frame();

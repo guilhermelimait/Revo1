@@ -367,6 +367,20 @@ class DeviceBridge:
                     self.events.put(("status", f"Invalid power status: {line[:80]}"))
         elif line.startswith("POWERSAVE_ERR,"):
             self.events.put(("status", f"Battery Saver rejected by the knob: {line[14:80]}"))
+        elif line.startswith("BATTERY,"):
+            try:
+                millivolts, percent = (int(part) for part in line[8:].split(","))
+            except ValueError:
+                self.events.put(("status", f"Invalid battery reading: {line[:80]}"))
+            else:
+                if ((percent == -1 and (millivolts == -1 or 0 <= millivolts <= 6600))
+                        or (3000 <= millivolts <= 4250 and 0 <= percent <= 100)):
+                    self.events.put(("battery", None if percent == -1 else (millivolts, percent)))
+                else:
+                    self.events.put(("status", f"Invalid battery reading: {line[:80]}"))
+        elif line.startswith("BATTERY_ERR,"):
+            self.events.put(("battery", None))
+            self.events.put(("status", f"Battery reading unavailable: {line[12:80]}"))
         elif line.startswith("ROT,"):
             try:
                 steps = int(line[4:])

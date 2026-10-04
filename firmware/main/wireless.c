@@ -585,3 +585,8 @@ void wireless_status(char *out, size_t size)
 {
     snprintf(out, size, "NET,%s,%s,%d", key_id, device_name, ble_session.open ? 1 : 0);
 }
+
+bool wireless_connected(void)
+{
+    return ble_session.open;
+}

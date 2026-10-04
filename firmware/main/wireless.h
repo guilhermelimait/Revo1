@@ -24,3 +24,5 @@ void wireless_send(const char *text, size_t length);
 
 /* "NET,<key id|->,<name>,<1 if the app is linked over Bluetooth, else 0>". */
 void wireless_status(char *out, size_t size);
+
+bool wireless_connected(void);

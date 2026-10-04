@@ -173,6 +173,12 @@ firmware.)
 Then start Revo1 from the Start Menu. The ring on the little knob beside
 the name always shows your bar colour. Once the knob answers, the line
 below it shows how the knob is linked: **On USB cable** or **On Bluetooth**.
+Below **On Bluetooth**, **Battery ~N%** shows a voltage-based charge estimate.
+It is hidden on USB, when disconnected, or if the reading is unavailable or
+stale. The knob shows the same estimate near the bottom of control screens,
+not in its home menu, offline screen, screensaver or during active gameplay.
+The `~` means approximate: this is not a fuel gauge, and load, temperature
+and battery condition affect the reading.
 
 ## Using it
 
@@ -270,9 +276,8 @@ in the left sidebar.
   control. Screensaver rings and videos run at up to five frames per second;
   decoding and animation stop while the display is off. Your normal
   brightness setting is kept, and the mode survives a device restart.
-  Battery percentage and charging detection are not available yet: the
-  published board schematic connects `BATT_ADC` to the regulated 5 V rail,
-  not directly to the battery.
+  Battery charge is estimated from voltage during Bluetooth use; charging
+  detection and automatic battery-only activation are not available.
 - **Controls:** the screen orientation (0, 90, 180 or 270 degrees) and
   **Knob direction**: **Invert scroll** and **Invert zoom** swap what a
   clockwise turn does (the comet on the dial still follows your hand). Under

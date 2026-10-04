@@ -106,6 +106,8 @@ class App(DashboardPage, ScreensaverPage, GamesPage, WirelessTab):
         # firmware older than 1.0.0 that doesn't report one.
         self.device_version = None
         self.device_power = None
+        self.device_battery = None
+        self.battery_received = 0.0
         self.release = None
         self.release_state = "idle"
         self.release_error = ""
@@ -174,6 +176,9 @@ class App(DashboardPage, ScreensaverPage, GamesPage, WirelessTab):
     @connected.setter
     def connected(self, value):
         self._connected = value
+        if not value:
+            self.device_battery = None
+            self.battery_received = 0.0
         if hasattr(self, "power_status"):
             if not value:
                 self.device_power = None
@@ -326,7 +331,7 @@ class App(DashboardPage, ScreensaverPage, GamesPage, WirelessTab):
                         (26, "Idle: 10% after 30 seconds."),
                         (42, "Display off after 5 min; touch or turn to wake."),
                         (58, "Screensaver animations: up to 5 fps."),
-                        (82, "Battery percentage is not available yet.")):
+                        (82, "Battery charge is estimated on Bluetooth.")):
             k.text(image, 0, y, text, "regular", 8.5, ui.MUTED_INK, width=width)
         note.show(image)
         note.pack(anchor="w", pady=(k.px(6), 0))
@@ -821,7 +826,8 @@ class App(DashboardPage, ScreensaverPage, GamesPage, WirelessTab):
 
     def refresh_identity(self):
         k = self.kit
-        image = k.canvas(NAV_WIDTH, 50, ui.SIDEBAR_BG)
+        battery = self.battery_text()
+        image = k.canvas(NAV_WIDTH, 68 if battery else 50, ui.SIDEBAR_BG)
         self.paint_knob_badge(image, 24, 25, 17)
         k.text(image, 50, 15, self.settings["name"], "semibold", 14, ui.INK, width=NAV_WIDTH - 54)
         link = LINK_NAMES.get(self.link_kind) if self.connected else None
@@ -834,7 +840,16 @@ class App(DashboardPage, ScreensaverPage, GamesPage, WirelessTab):
             k.dot(image, 54, 38, 3.5, ui.OK_GREEN if self.connected else ui.IDLE_GREY)
             k.text(image, 63, 38, "Connected" if self.connected else "Not connected",
                    "regular", 9, ui.SUBTLE_INK)
+        if battery:
+            k.text(image, 64, 57, battery, "regular", 9, ui.SUBTLE_INK,
+                   width=NAV_WIDTH - 66)
         self.identity.show(image)
+
+    def battery_text(self):
+        if (self.connected and self.link_kind == "ble" and self.device_battery is not None
+                and time.monotonic() - self.battery_received < 45):
+            return f"Battery ~{self.device_battery[1]}%"
+        return ""
 
     def paint_knob_badge(self, image, cx, cy, radius):
         """A miniature of the knob: a light bezel round a dark screen, whose
@@ -1774,6 +1789,10 @@ class App(DashboardPage, ScreensaverPage, GamesPage, WirelessTab):
                         self.upload_state = ("error", "The knob was disconnected")
                     self.refresh_about()
                     self.refresh_screensaver()
+                elif kind == "battery":
+                    self.device_battery = payload if self.connected and self.link_kind == "ble" else None
+                    self.battery_received = time.monotonic()
+                    self.refresh_identity()
                 elif kind == "power":
                     if payload != self.device_power:
                         self.device_power = payload
@@ -1868,6 +1887,9 @@ class App(DashboardPage, ScreensaverPage, GamesPage, WirelessTab):
         except queue.Empty:
             pass
         # The knob's clock drifts and knows nothing of daylight saving.
+        if self.device_battery is not None and time.monotonic() - self.battery_received >= 45:
+            self.device_battery = None
+            self.refresh_identity()
         if self.connected and time.monotonic() - self.time_pushed > TIME_RESEND_S:
             self.push_time()
         self.root.after(80, self.poll)

@@ -88,10 +88,32 @@ Touch and encoder polling and Bluetooth remain active; this is display
 power saving, not deep sleep. The wake gesture is consumed. Screensaver rings
 and video frames are limited to 5 fps, and stop rendering while dark.
 
-No battery percentage is fabricated. The published schematic routes
-`BATT_ADC` (GPIO 1) through a 10k/10k divider from the system 5 V rail.
-Battery voltage, USB power detection and charging status need verified
-access to the charging board before they can be reported.
+The published schematic routes `BATT_ADC` (GPIO 1) through a 10k/10k
+divider from the rail labelled 5 V. On the tested device the calibrated
+reading was 4.31-4.36 V on USB and 3.58-3.61 V with USB unplugged, over
+Bluetooth. This supports a voltage-based estimate on that unit, but does
+not establish the charging circuit or calibrate against a multimeter.
+`voltage_estimated_percent` interpolates a generic single-cell LiPo curve;
+readings outside 3.00-4.25 V are unavailable, not clamped to 100%.
+While authenticated Bluetooth and the app are connected, readings are
+sampled every 15 seconds and smoothed with a 3:1 previous/new average.
+`BATTERY,<millivolts>,<estimated percent>` reports them; percent -1 is
+unavailable and both values -1 indicate a read error. Errors also report
+`BATTERY_ERR,<ESP error name>`. The app discards stale readings after 45 s.
+The device shows `~N%` near the bottom of control screens only, hidden in
+the menu, screensaver, offline screen and active gameplay; the app shows `Battery ~N%`
+below its Bluetooth connection line, never on USB. Neither represents
+charging status, and Bluetooth alone does not prove battery-only power.
+
+`VOLTAGE` requests a diagnostic reading of GPIO 1 / ADC1 channel 0, over
+USB or authenticated Bluetooth. The reply is
+`VOLTAGE,<averaged raw ADC>,<calibrated ADC millivolts>,<rail millivolts>`.
+Sixteen samples are averaged, and the rail reading uses the documented
+10k/10k divider (twice the ADC voltage). Initialization, calibration or
+sampling failures reply `VOLTAGE_ERR,<ESP error name>` rather than reporting
+a guessed voltage. Diagnostic measurements are on demand and not stored.
+Compare readings on USB and with USB unplugged before interpreting the
+measured rail on other hardware revisions.
 
 The USB Serial/JTAG driver is installed with an 8 KB receive buffer, and
 `serial_reader_task` reads lines of up to 4200 bytes. Media upload lines are

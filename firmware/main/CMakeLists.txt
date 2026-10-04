@@ -1,9 +1,9 @@
 idf_component_register(
-    SRCS "main.c" "revo1_clock_96.c" "wireless.c"
+    SRCS "main.c" "revo1_clock_96.c" "wireless.c" "voltage.c"
     INCLUDE_DIRS "."
     REQUIRES esp_lcd_sh8601 lvgl esp_driver_gpio esp_driver_spi esp_driver_i2c
              esp_driver_ledc esp_driver_usb_serial_jtag esp_timer nvs_flash
-             esp_partition esp_rom bt mbedtls
+             esp_partition esp_rom bt mbedtls esp_adc
 )
 
 # The per-pixel renderer is the frame budget; unrolling hides the load-to-use

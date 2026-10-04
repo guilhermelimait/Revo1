@@ -2,12 +2,17 @@
 
 ## Unreleased
 
+- Estimated battery charge during Bluetooth use: `Battery ~N%` below the
+  connection line in the app, and `~N%` on device control screens, not the
+  menu. Calibrated ADC readings on this unit change from about 4.33 V on USB
+  to 3.60 V on battery. A generic LiPo curve supplies an approximate charge
+  estimate; invalid and stale readings are hidden. `VOLTAGE` provides an
+  on-demand diagnostic without claiming battery charge or charging status.
 - Manual Battery Saver in Settings > Device: cap brightness at 40% (20% in
   the screensaver), dim after 30 seconds and turn the display off after five
   minutes. Touch or turn to wake; screensaver animations run at up to 5 fps
   and stop while dark. The mode survives restarts and the app shows the
-  device's actual screen brightness. Battery percentage is deferred until
-  access to battery voltage and charging status is verified.
+  device's actual screen brightness.
 - Wi-Fi is removed from the app and the firmware: wireless use is Bluetooth
   only. Pairing no longer asks for a network or password (`PAIR,<key hex>`),
   `NET` drops the Wi-Fi fields (`NET,<key id>,<name>,<0 or 1>`), the firmware
