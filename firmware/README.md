@@ -101,11 +101,12 @@ sampled every 15 seconds and smoothed with a 3:1 previous/new average.
 unavailable and both values -1 indicate a read error. Errors also report
 `BATTERY_ERR,<ESP error name>`. The app discards stale readings after 45 s.
 The device shows a battery symbol and `N%` near the bottom of control screens only, hidden in
-the menu, screensaver, offline screen and active gameplay; the app shows a battery icon and `N%`
+the menu, screensaver, offline screen and all Games views; Media places it above
+the playback controls so it cannot overlap the track or artist. The app shows a battery icon and `N%`
 below its Bluetooth connection line, never on USB. Neither represents
 charging status, and Bluetooth alone does not prove battery-only power.
-When the app communicates over USB, the device instead shows a lightning
-symbol and `USB power` in the same position. The app shows this under
+When the app communicates over USB, the device hides its power label entirely.
+Only the PC app shows a lightning symbol and `USB power` under
 `On USB cable`. This reports the active host transport, not a charge-status
 signal: it does not distinguish charging from a full battery.
 
@@ -123,6 +124,59 @@ The USB Serial/JTAG driver is installed with an 8 KB receive buffer, and
 `serial_reader_task` reads lines of up to 4200 bytes. Media upload lines are
 handled right there in the reader task (they write flash); every other line
 goes through a queue to the UI loop, which applies `SERIAL_LINE_MAX` (96).
+
+## App launcher
+
+Mode 8 (`LAUNCHER`) is a submenu of the main menu. A clockwise detent moves
+to the next configured app, wrapping and skipping empty slots. All configured
+icons appear at radius 120 px, clockwise after a reserved top Back position,
+at 44 x 44 pixels. Their original alpha blends directly over the device face,
+without a tile background, in either theme. The ring is segmented like the home menu, with the selected sector
+lit in the user's accent. The app name sits in the centre, truncated to two
+lines. Tapping the centre confirms the highlighted app; tapping a ring icon
+selects and launches that app directly. The separate back arrow at centre offset
+(0, -120) takes precedence over confirmation and opens the main menu; it is
+not part of rotary app selection. The ring has one extra sector reserved
+for Back, so app icons and their touch zones never occupy the top position.
+With no apps configured, the launcher symbol sits inside the centre cap at
+(0, -30), with "No apps yet" at y=8 and its hint at y=32, forming a
+centred stack inside the cap. Populated titles use their measured text
+height (up to two lines), rather than a top-aligned fixed-height box;
+the hint follows the actual title bottom. Launcher battery text sits
+at y=56, inside the cap's safe area.
+The hint sits just below the name (centre offset +30). Bluetooth battery
+charge appears below it (offset +68); USB power is hidden on this submenu.
+The launcher does not animate when idle and retains the normal Battery Saver
+wake behavior. Zero apps shows an explicit setup hint.
+
+The app synchronizes up to seven names and icons into PSRAM (not flash):
+
+- `LBEGIN,<8 lowercase hex token>,<slot mask 0..127>` starts staging.
+- `LITEM,<slot 0..6>,<base64 name>,RGB565A8` supplies up to 40 printable ASCII
+  bytes and selects the alpha-aware format.
+- `LDATA,<slot>,<byte offset>,<base64 pixels>` supplies sequential chunks of
+  the 12288-byte icon: each pixel contains big-endian RGB565 followed by an
+  8-bit straight alpha. Transparent pixels leave the face untouched; partial
+  alpha blends against the actual underlying pixel, including the selected sector.
+  The legacy `LITEM` without a format still accepts an opaque 8192-byte RGB565
+  icon, so older companions remain compatible. Older firmware rejects the new
+  format explicitly; update it together with the companion.
+- Each staging line answers `LAUNCHER_ACK`; malformed data answers
+  `LAUNCHER_ERR,FORMAT`, allocation failure `LAUNCHER_ERR,MEMORY`.
+- `LEND,<token>` validates every configured name and complete icon, then
+  atomically swaps snapshots on the UI task and answers `LAUNCHER_OK,<token>`.
+  Incomplete/rejected uploads leave the displayed snapshot unchanged.
+- `LAUNCH,<token>,<slot>` requests the PC launch, with a 700 ms repeat guard.
+  No path or command string is accepted from the device. The companion
+  validates the current acknowledged snapshot and resolves the slot locally.
+- `LRESULT,<token>,<slot>,<0 or 1>` displays failure or successful submission
+  to Windows, temporarily beneath the app name. It does not verify that the
+  launched application has finished loading.
+
+Names/icons are resent on reconnect; filesystem paths and Microsoft Store
+app identities remain on the PC.
+The screen mask is now 16-bit, persisted as `screens_v2`; the old 8-bit
+`screens` key is migrated without losing previous screen choices.
 
 ## Pomodoro
 
@@ -199,6 +253,19 @@ LEDC duty is 0. A touch or a turn restores the set level at once; on a dark
 screen that first touch or turn does nothing else.
 
 ## Screensaver storage and upload
+
+`THEME,LIGHT` / `THEME,DARK` applies the companion's resolved appearance
+to the dial face, menu, launcher, media, games and offline screen. It
+answers `THEME_OK,LIGHT|DARK` (invalid values: `THEME_ERR,FORMAT`) and
+persists `dark` in NVS. Missing settings default to light. Reconnecting
+resends the PC's resolved theme, including Windows System preference.
+Pictures, app icons and configured screensaver clock colours are not
+recoloured; an active screensaver is not interrupted by theme changes.
+
+The companion app supplies the default centred Moon picture (the moon2
+artwork, with its black margin). Pictures live in the media partition,
+not the firmware executable; send the app's library after a fresh install.
+Flashing only the firmware executable preserves an existing media library.
 
 `partitions.csv` has a `media` data partition of 0xCF0000 bytes (about
 12.9 MB) at 0x310000. Its layout:
@@ -323,12 +390,13 @@ Montserrat fonts have no wider coverage, and `SERIAL_LINE_MAX` caps a line at
 
 ## Dial renderer
 
-Every screen is a sculpted dial that uses the whole disc. There is no dark
-bezel: the full screen is a light face lit from the upper left, with a brighter
-centre cap (radius 76). A recessed channel at radius 164 hugs the edge and
+Every screen is a sculpted dial that uses the whole disc. There is no separate
+bezel: the full screen is a light or dark face lit from the upper left, with a
+brighter centre cap (radius 76). A recessed channel at radius 164 hugs the edge and
 carries the arc, and the outer rim rolls off over the last 4 px. On the light
 face the arc's halo is a tint blend rather than additive light, and the unlit
-track is a darker etched line. Text is dark on the face. A plain back chevron
+track is a darker etched line. Text is dark on the light face and bright on the
+dark face; app icons and screensaver artwork keep their original colours. A plain back chevron
 (`icon_back`, drawn with the chrome) sits on the upper face, between the
 cap and the ring; a tap within 30 px of it opens the menu.
 

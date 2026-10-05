@@ -8,13 +8,14 @@ import threading
 import time
 import tkinter as tk
 from pathlib import Path
-from tkinter import colorchooser, filedialog, messagebox
+from tkinter import colorchooser, filedialog
+from revo1 import dialogs as messagebox
 
 import numpy as np
 from PIL import Image, ImageDraw, ImageTk
 
-from revo1 import config, dial, screensaver, ui
-from revo1.layout import CARD_WIDTH, PANEL_BG
+from revo1 import config, screensaver, ui
+from revo1.layout import CARD_WIDTH
 from revo1.screensaver import DEFAULT_CAPACITY, FILE_TYPES, MediaError
 
 SAVER_TABS = (("general", "General"), ("timing", "Timing"), ("display", "Display"),
@@ -26,28 +27,27 @@ RING_LABELS = {"dots": "Bullets", "bar": "Bar", "wave": "Wiggly", "ticks": "Tick
                "comet": "Comet", "walker": "Walker", "snake": "Snake",
                "sparkle": "Sparkle", "orbit": "Orbit", "pulse": "Heartbeat", "none": "None"}
 # The ring choices sit in rows of this many.
-RING_PER_ROW = 6
-RING_GAP = 8
+RING_PER_ROW = 4
+RING_GAP = ui.GAP
 RING_SWATCH_H = 72
 # The knob's faint track for the seconds still to come.
 RING_TRACK = (0x34, 0x34, 0x3E)
 # Colours offered for the screensaver clock; a last swatch picks any other.
 CLOCK_INKS = ("#F2F2F5", "#FFE2B0", "#8ED8FF", "#9BEBB8", "#FFB3C6", "#FFD54F", "#16161A")
 CLOCK_FACES = ("#000000", "#0B1A33", "#0D2A1E", "#2A1235", "#3A2A20", "#2C2C33", "#F4F4F6")
-WARNING_INK = "#B54708"
 # Below this contrast between the time and its background the preview warns.
 MIN_CONTRAST = 3.0
 # The Display tab's settings are rows: a label on the left, controls after it.
 ROW_LABEL_W = 112
-ROW_H = 32
-ROW_GAP = 14
+ROW_H = ui.CONTROL_HEIGHT
+ROW_GAP = ui.HEADER_GAP
 SWATCH = 32
-SWATCH_GAP = 8
-RADIO_GAP = 24
+SWATCH_GAP = ui.GAP
+RADIO_GAP = ui.GAP
 # Every choice button on the page is one size, just roomy enough for "30 min".
 CHOICE_W = 84
-CHOICE_H = 34
-CHOICE_GAP = 8
+CHOICE_H = ui.CONTROL_HEIGHT
+CHOICE_GAP = ui.GAP
 SHOW_TITLES = {"pictures": "Pictures", "clock": "Date and time", "both": "Pictures and time"}
 SHOW_DETAILS = {"pictures": "Your photos and videos", "clock": "Big clock and the date",
                 "both": "The time over your photos"}
@@ -339,13 +339,13 @@ class ScreensaverPage:
         k = self.kit
         page = tk.Frame(self.root, bg=ui.MAIN_BG)
         title = ui.Picture(page, ui.MAIN_BG)
-        image = k.canvas(CARD_WIDTH, 44, ui.MAIN_BG)
-        k.text(image, 0, 22, "Screensaver", "semibold", 18, ui.INK)
-        title.show(image)
-        title.pack(padx=k.px(28), pady=(k.px(18), k.px(4)), anchor="w")
+        title.show(k.page_header("Screensaver", "Choose what the knob shows while it is idle.",
+                                 CARD_WIDTH))
+        title.pack(padx=k.px(ui.PAGE_INSET),
+                   pady=(k.px(ui.PAGE_TOP), k.px(ui.HEADER_GAP)), anchor="w")
 
         tabs = tk.Frame(page, bg=ui.MAIN_BG)
-        tabs.pack(padx=k.px(28), pady=(0, k.px(18)), anchor="w")
+        tabs.pack(padx=k.px(ui.PAGE_INSET), pady=(0, k.px(ui.HEADER_GAP)), anchor="w")
         self.saver_tab_buttons = []
         for key, label in SAVER_TABS:
             button = ui.Button(
@@ -354,9 +354,17 @@ class ScreensaverPage:
                     key, label, hover, SAVER_TABS, self.saver_tab),
                 lambda key=key: self.show_saver_tab(key))
             button.pack(side="left")
+            button.keyboard_access()
+            button.bind("<Left>", lambda event, key=key: self.step_saver_tab(key, -1))
+            button.bind("<Right>", lambda event, key=key: self.step_saver_tab(key, 1))
             self.saver_tab_buttons.append(button)
 
-        self.saver_tabs = {key: tk.Frame(page, bg=ui.MAIN_BG) for key, _ in SAVER_TABS}
+        self.saver_scroll = ui.ScrollArea(page, k, CARD_WIDTH)
+        self.saver_scroll.pack(fill="both", expand=True)
+        self.saver_tabs = {key: tk.Frame(self.saver_scroll.body, bg=ui.MAIN_BG)
+                           for key, _ in SAVER_TABS}
+        for tab in self.saver_tabs.values():
+            tab.settings_layout = True
         self.saver_choices = []
         self.saver_boxes_shown = None
         self.saver_preview_cache = (None, None)
@@ -374,14 +382,14 @@ class ScreensaverPage:
         self.saver_heading(body, "When the knob is idle",
                            "What happens after nobody touches or turns it for a while.")
         self.saver_toggle = ui.Button(
-            body, PANEL_BG,
+            body, ui.MAIN_BG,
             lambda hover: self.paint_toggle(
                 self.settings["saver_enabled"], "Screensaver",
                 "A touch or a turn brings the dial back", hover),
             lambda: self.toggle_setting("saver_enabled"))
         self.saver_toggle.pack(anchor="w", pady=(k.px(14), 0))
         self.dim_toggle = ui.Button(
-            body, PANEL_BG,
+            body, ui.MAIN_BG,
             lambda hover: self.paint_toggle(
                 self.settings["dim_idle"], "Dim the screen",
                 "After 10 min, 10% dimmer every 5 min until off", hover),
@@ -390,11 +398,11 @@ class ScreensaverPage:
 
         body = self.section(tab)
         self.saver_heading(body, "At a glance", "Click a card to change it.")
-        row = tk.Frame(body, bg=PANEL_BG)
+        row = tk.Frame(body, bg=ui.MAIN_BG)
         row.pack(anchor="w", pady=(k.px(14), 0))
         widths = self.fill_widths([0] * len(GLANCE), GLANCE_GAP)
         self.saver_glance = [
-            ui.Button(row, PANEL_BG,
+            ui.Button(row, ui.MAIN_BG,
                       lambda hover, key=key, width=width: self.paint_glance(key, hover, width),
                       lambda target=target: self.show_saver_tab(target))
             for (key, target), width in zip(GLANCE, widths)]
@@ -418,11 +426,11 @@ class ScreensaverPage:
         body = self.section(tab)
         self.saver_heading(body, "What the knob shows",
                            "Your pictures, a big clock, or the time over your pictures.")
-        row = tk.Frame(body, bg=PANEL_BG)
+        row = tk.Frame(body, bg=ui.MAIN_BG)
         row.pack(anchor="w", pady=(k.px(14), 0))
         widths = self.fill_widths([0] * len(SHOW_TITLES), SHOW_GAP)
         self.saver_show_cards = [
-            ui.Button(row, PANEL_BG,
+            ui.Button(row, ui.MAIN_BG,
                       lambda hover, value=value, width=width:
                           self.paint_show_card(value, hover, width),
                       lambda value=value: self.set_saver_choice("saver_show", value))
@@ -430,16 +438,16 @@ class ScreensaverPage:
         self.pack_row(self.saver_show_cards, SHOW_GAP)
 
         body = self.section(tab)
-        self.saver_preview = ui.Picture(body, PANEL_BG)
+        self.saver_preview = ui.Picture(body, ui.MAIN_BG)
         self.saver_preview.pack(side="left", anchor="n")
-        column = tk.Frame(body, bg=PANEL_BG)
+        column = tk.Frame(body, bg=ui.MAIN_BG)
         column.pack(side="left", anchor="n", padx=(k.px(PREVIEW_GAP), 0))
 
-        self.saver_clock_box = box = tk.Frame(column, bg=PANEL_BG)
+        self.saver_clock_box = box = tk.Frame(column, bg=ui.MAIN_BG)
         row, controls = self.display_row(box, "Clock")
         row.pack(anchor="w")
         buttons = [ui.Button(
-            controls, PANEL_BG,
+            controls, ui.MAIN_BG,
             lambda hover, value=value: self.paint_radio(
                 self.settings["clock_format"] == value, CLOCK_LABELS[value], hover),
             lambda value=value: self.set_saver_choice("clock_format", value))
@@ -452,10 +460,10 @@ class ScreensaverPage:
         widths = self.fill_widths([0] * RING_PER_ROW, RING_GAP, COLUMN_W - ROW_LABEL_W)
         values = list(RING_LABELS)
         for start in range(0, len(values), RING_PER_ROW):
-            line = tk.Frame(controls, bg=PANEL_BG)
+            line = tk.Frame(controls, bg=ui.MAIN_BG)
             line.pack(anchor="w", pady=(k.px(RING_GAP) if start else 0, 0))
             buttons = [ui.Button(
-                line, PANEL_BG,
+                line, ui.MAIN_BG,
                 lambda hover, value=value, width=width:
                     self.paint_ring_swatch(value, hover, width),
                 lambda value=value: self.set_saver_choice("saver_ring", value))
@@ -472,7 +480,7 @@ class ScreensaverPage:
         self.saver_choices += self.colour_swatches(controls, "clock_face", CLOCK_FACES)
         self.saver_shade_row, controls = self.display_row(box, "Shade")
         button = ui.Button(
-            controls, PANEL_BG,
+            controls, ui.MAIN_BG,
             lambda hover: self.paint_shade_switch(self.settings["clock_shade"],
                                             "Darken the picture behind the time", hover),
             lambda: self.set_saver_choice("clock_shade", not self.settings["clock_shade"]))
@@ -481,11 +489,11 @@ class ScreensaverPage:
         self.saver_look_row = None
 
         # With pictures only, the column points to the Pictures tab instead.
-        self.saver_library_box = box = tk.Frame(column, bg=PANEL_BG)
-        self.saver_library_note = ui.Picture(box, PANEL_BG)
+        self.saver_library_box = box = tk.Frame(column, bg=ui.MAIN_BG)
+        self.saver_library_note = ui.Picture(box, ui.MAIN_BG)
         self.saver_library_note.pack(anchor="w")
         self.saver_library_link = ui.Button(
-            box, PANEL_BG,
+            box, ui.MAIN_BG,
             lambda hover: self.paint_choice(False, "Manage pictures \u203a", hover,
                                             CHOICE_W * 2 + CHOICE_GAP),
             lambda: self.show_saver_tab("pictures"))
@@ -494,9 +502,9 @@ class ScreensaverPage:
     def build_saver_pictures(self, tab):
         k = self.kit
         body = self.section(tab)
-        self.saver_summary = ui.Picture(body, PANEL_BG)
+        self.saver_summary = ui.Picture(body, ui.MAIN_BG)
         self.saver_summary.pack(anchor="w")
-        self.thumb_canvas = tk.Canvas(body, bg=PANEL_BG, highlightthickness=0, bd=0,
+        self.thumb_canvas = tk.Canvas(body, bg=ui.MAIN_BG, highlightthickness=0, bd=0,
                                       width=k.px(CARD_WIDTH),
                                       height=k.px(LIBRARY_HEIGHT))
         self.thumb_canvas.pack(anchor="w", pady=(k.px(14), 0))
@@ -507,33 +515,33 @@ class ScreensaverPage:
         self.thumb_canvas.bind("<Leave>", lambda event: self.set_thumb_hover(None))
         self.thumb_canvas.bind("<Button-1>", self.click_thumb)
         self.thumb_canvas.bind("<MouseWheel>", self.scroll_thumbs)
-        row = tk.Frame(body, bg=PANEL_BG)
+        row = tk.Frame(body, bg=ui.MAIN_BG)
         row.pack(anchor="w", pady=(k.px(14), 0))
         widths = self.button_widths([self.pill_width("Add pictures or videos\u2026"),
                                      self.pill_width("Send to knob")])
         self.saver_buttons = [
-            ui.Button(row, PANEL_BG,
+            ui.Button(row, ui.MAIN_BG,
                       lambda hover, width=widths[0]: self.paint_pill(
                           "Add pictures or videos\u2026", hover, width=width,
                           enabled=not self.saver_busy(), height=CHOICE_H),
                       self.add_saver_media),
-            ui.Button(row, PANEL_BG,
+            ui.Button(row, ui.MAIN_BG,
                       lambda hover, width=widths[1]: self.paint_pill(
                           "Send to knob", hover, primary=True, width=width,
                           enabled=self.can_upload(), height=CHOICE_H),
                       self.upload_saver_media),
         ]
         self.pack_row(self.saver_buttons, CHOICE_GAP)
-        self.saver_status = ui.Picture(body, PANEL_BG)
+        self.saver_status = ui.Picture(body, ui.MAIN_BG)
         self.saver_status.pack(anchor="w", pady=(k.px(8), 0))
 
     def saver_heading(self, parent, title, detail, width=CARD_WIDTH):
         """A block title with one line saying what it is for."""
         k = self.kit
-        picture = ui.Picture(parent, PANEL_BG)
-        image = k.canvas(width, HEADING_HEIGHT, PANEL_BG)
-        k.text(image, 0, 10, title, "semibold", 11, ui.INK)
-        k.text(image, 0, 31, detail, "regular", 9, ui.MUTED_INK, width=width)
+        picture = ui.Picture(parent, ui.MAIN_BG)
+        image = k.canvas(width, HEADING_HEIGHT, ui.MAIN_BG)
+        k.text(image, 0, 10, title, "semibold", ui.TEXT_HEADING, ui.INK)
+        k.text(image, 0, 31, detail, "regular", ui.TEXT_BODY, ui.SUBTLE_INK, width=width)
         picture.show(image)
         picture.pack(anchor="w")
         return picture
@@ -541,34 +549,34 @@ class ScreensaverPage:
     def display_row(self, parent, label, height=ROW_H):
         """A Display tab row: its label, and a frame for the controls."""
         k = self.kit
-        row = tk.Frame(parent, bg=PANEL_BG)
-        picture = ui.Picture(row, PANEL_BG)
-        image = k.canvas(ROW_LABEL_W, height, PANEL_BG)
-        k.text(image, 0, height / 2, label, "semibold", 10, ui.INK)
+        row = tk.Frame(parent, bg=ui.MAIN_BG)
+        picture = ui.Picture(row, ui.MAIN_BG)
+        image = k.canvas(ROW_LABEL_W, height, ui.MAIN_BG)
+        k.text(image, 0, height / 2, label, "semibold", ui.TEXT_BUTTON, ui.INK)
         picture.show(image)
         picture.pack(side="left", anchor="n")
-        controls = tk.Frame(row, bg=PANEL_BG)
+        controls = tk.Frame(row, bg=ui.MAIN_BG)
         controls.pack(side="left", anchor="n")
         return row, controls
 
     def colour_swatches(self, parent, key, presets):
         """A swatch per preset colour, then one that opens a colour picker."""
         buttons = [ui.Button(
-            parent, PANEL_BG,
+            parent, ui.MAIN_BG,
             lambda hover, colour=colour: self.paint_clock_swatch(key, colour, presets, hover),
             lambda colour=colour: self.set_saver_choice(key, colour))
             for colour in presets]
         buttons.append(ui.Button(
-            parent, PANEL_BG,
+            parent, ui.MAIN_BG,
             lambda hover: self.paint_clock_swatch(key, None, presets, hover),
             lambda: self.pick_clock_colour(key)))
         self.pack_row(buttons, SWATCH_GAP)
         return buttons
 
     def saver_choice_row(self, parent, key, labels):
-        row = tk.Frame(parent, bg=PANEL_BG)
+        row = tk.Frame(parent, bg=ui.MAIN_BG)
         buttons = [ui.Button(
-            row, PANEL_BG,
+            row, ui.MAIN_BG,
             lambda hover, value=value, text=text:
                 self.paint_choice(self.settings[key] == value, text, hover),
             lambda value=value: self.set_saver_choice(key, value))
@@ -582,35 +590,30 @@ class ScreensaverPage:
     def paint_choice(self, chosen, label, hover, width=CHOICE_W):
         k = self.kit
         height = CHOICE_H
-        image = k.canvas(width, height, PANEL_BG)
-        if chosen:
-            k.rounded(image, (0, 0, width, height), 10, ui.INK)
-            ink = "#FFFFFF"
-        else:
-            k.rounded(image, (0, 0, width, height), 10, "#FFFFFF" if hover else ui.CARD_BG,
-                      ui.CARD_EDGE)
-            ink = ui.SUBTLE_INK
-        k.text(image, width / 2, height / 2, label, "semibold", 10, ink, anchor="mm")
+        image = k.canvas(width, height, ui.MAIN_BG)
+        ink, _ = k.button_surface(image, width, height, hover, chosen)
+        k.text(image, width / 2, height / 2, label, "semibold", ui.TEXT_BUTTON, ink, anchor="mm")
         return image
 
-    def paint_radio(self, chosen, label, hover):
+    def paint_radio(self, chosen, label, hover, width=None, height=ROW_H):
         k = self.kit
-        width = k.font("semibold", 10).getlength(label) / k.scale + 30
-        image = k.canvas(width, ROW_H, PANEL_BG)
-        cy = ROW_H / 2
-        k.dot(image, 9, cy, 9, ui.INK if chosen else (ui.SUBTLE_INK if hover else ui.CARD_EDGE))
-        k.dot(image, 9, cy, 7.5, "#FFFFFF")
+        width = width or k.font("semibold", ui.TEXT_BUTTON).getlength(label) / k.scale + 48
+        image = k.canvas(width, height, ui.MAIN_BG)
+        cy = height / 2
+        ink, _ = k.button_surface(image, width, height, hover, chosen)
+        cx = 20
+        k.dot(image, cx, cy, 9, ink if chosen else (ui.SUBTLE_INK if hover else ui.CARD_EDGE))
+        k.dot(image, cx, cy, 7.5, ui.SELECT_BG if chosen else ui.FIELD_BG)
         if chosen:
-            k.dot(image, 9, cy, 4.5, ui.INK)
-        k.text(image, 26, cy, label, "semibold" if chosen else "regular", 10,
-               ui.INK if chosen else ui.SUBTLE_INK)
+            k.dot(image, cx, cy, 4.5, ink)
+        k.text(image, cx + 17, cy, label, "semibold", ui.TEXT_BUTTON, ink)
         return image
 
     def paint_clock_swatch(self, key, colour, presets, hover):
         """One colour to pick, ringed when chosen. `colour` None is the custom
         swatch: a plus, or the custom colour once one is picked."""
         k = self.kit
-        image = k.canvas(SWATCH, ROW_H, PANEL_BG)
+        image = k.canvas(SWATCH, ROW_H, ui.MAIN_BG)
         current = self.settings[key]
         if colour is None:
             chosen = current not in presets
@@ -618,25 +621,17 @@ class ScreensaverPage:
         else:
             chosen, fill = current == colour, colour
         c, cy = SWATCH / 2, ROW_H / 2
-        if chosen or hover:
-            k.dot(image, c, cy, 15, ui.INK if chosen else ui.CARD_EDGE)
-            k.dot(image, c, cy, 13.5 if chosen else 14, PANEL_BG)
-        k.dot(image, c, cy, 11, ui.CARD_EDGE)
-        if fill:
-            k.dot(image, c, cy, 10, fill)
-        else:
-            k.dot(image, c, cy, 10, "#FFFFFF" if hover else ui.CARD_BG)
-            k.text(image, c, cy, "+", "semibold", 12, ui.SUBTLE_INK, anchor="mm")
+        k.colour_swatch(image, c, cy, fill, hover, chosen, radius=min(SWATCH, ROW_H) / 2 - 2)
         return image
 
     def paint_shade_switch(self, on, label, hover):
         k = self.kit
         width = COLUMN_W - ROW_LABEL_W
-        image = k.canvas(width, ROW_H, PANEL_BG)
+        image = k.canvas(width, ROW_H, ui.MAIN_BG)
         y0 = ROW_H / 2 - 11
-        track = ui.INK if on else (ui.SUBTLE_INK if hover else ui.IDLE_GREY)
+        track = ui.SELECT_BG if on else (ui.SUBTLE_INK if hover else ui.IDLE_GREY)
         k.rounded(image, (0, y0, 40, y0 + 22), 11, track)
-        k.dot(image, 29 if on else 11, ROW_H / 2, 8, "#FFFFFF")
+        k.dot(image, 29 if on else 11, ROW_H / 2, 8, ui.SWITCH_KNOB)
         k.text(image, 54, ROW_H / 2, label, "regular", 10, ui.INK, width=width - 54)
         return image
 
@@ -663,65 +658,50 @@ class ScreensaverPage:
     def paint_glance(self, key, hover, width):
         k = self.kit
         height = GLANCE_HEIGHT
-        image = k.canvas(width, height, PANEL_BG)
-        k.rounded(image, (0, 0, width, height), 12, "#FFFFFF" if hover else ui.CARD_BG,
-                  ui.CARD_EDGE)
+        image = k.canvas(width, height, ui.MAIN_BG)
+        k.button_surface(image, width, height, hover)
         label, value, note = self.glance_text(key)
-        k.text(image, 18, 22, label, "regular", 9, ui.MUTED_INK)
+        k.text(image, 18, 22, label, "regular", ui.TEXT_DETAIL, ui.SUBTLE_INK)
         k.text(image, 18, 46, value, "semibold", 15, ui.INK, width=width - 46)
-        k.text(image, 18, 68, note, "regular", 8.5, ui.SUBTLE_INK, width=width - 36)
+        k.text(image, 18, 68, note, "regular", ui.TEXT_DETAIL, ui.SUBTLE_INK, width=width - 36)
         k.text(image, width - 18, 22, "\u203a", "semibold", 13,
-               dial.label_ink(self.accent(self.mode)) if hover else ui.MUTED_INK,
+               ui.accent_ink(self.accent(self.mode)) if hover else ui.MUTED_INK,
                anchor="mm")
         return image
 
     def paint_show_card(self, value, hover, width):
-        """A big pick for what the screensaver shows; the chosen one is ringed
-        in the accent and ticked."""
+        """A choice card with the shared selection surface and a check mark."""
         k = self.kit
         height = SHOW_HEIGHT
-        image = k.canvas(width, height, PANEL_BG)
-        accent = self.accent(self.mode)
+        image = k.canvas(width, height, ui.MAIN_BG)
         chosen = self.settings["saver_show"] == value
-        if chosen:
-            k.rounded(image, (0, 0, width, height), 12, accent)
-            k.rounded(image, (2, 2, width - 2, height - 2), 10, "#FFFFFF")
-        else:
-            k.rounded(image, (0, 0, width, height), 12, "#FFFFFF" if hover else ui.CARD_BG,
-                      ui.CARD_EDGE)
+        ink, detail_ink = k.button_surface(image, width, height, hover, chosen)
         cx, cy = 34, height / 2
-        ink = "#FFFFFF" if chosen else ui.SUBTLE_INK
-        k.dot(image, cx, cy, 18, accent if chosen else ui.CARD_EDGE)
+        k.dot(image, cx, cy, 18, ui.SELECT_INK if chosen else ui.CARD_EDGE)
+        icon_ink = ui.SELECT_BG if chosen else ui.SUBTLE_INK
         if value == "both":
-            k.icon(image, "Screensaver", cx - 3, cy - 3, ink, 0.5)
-            k.dot(image, cx + 9, cy + 9, 8.5, "#FFFFFF" if chosen else ui.CARD_BG)
-            k.icon(image, "Clock", cx + 9, cy + 9,
-                   dial.label_ink(accent) if chosen else ui.SUBTLE_INK, 0.34)
+            k.icon(image, "Screensaver", cx - 3, cy - 3, icon_ink, 0.5)
+            k.dot(image, cx + 9, cy + 9, 8.5, ui.SELECT_BG if chosen else ui.CARD_BG)
+            k.icon(image, "Clock", cx + 9, cy + 9, ink, 0.34)
         else:
-            k.icon(image, "Screensaver" if value == "pictures" else "Clock", cx, cy, ink, 0.6)
+            k.icon(image, "Screensaver" if value == "pictures" else "Clock", cx, cy, icon_ink, 0.6)
         left = 64
-        k.text(image, left, cy - 9, SHOW_TITLES[value], "semibold", 10.5, ui.INK,
+        k.text(image, left, cy - 9, SHOW_TITLES[value], "semibold", ui.TEXT_BUTTON, ink,
                width=width - left - 26)
-        k.text(image, left, cy + 10, SHOW_DETAILS[value], "regular", 8.5, ui.MUTED_INK,
+        k.text(image, left, cy + 10, SHOW_DETAILS[value], "regular", ui.TEXT_DETAIL, detail_ink,
                width=width - left - 10)
         if chosen:
-            k.dot(image, width - 14, 14, 7, accent)
-            k.icon(image, "Check", width - 14, 14, "#FFFFFF", 0.55)
+            k.icon(image, "Check", width - 14, 14, ink, 0.55)
         return image
 
     def paint_ring_swatch(self, value, hover, width):
         """A small knob face showing one ring style, about two thirds round."""
         k = self.kit
         height = RING_SWATCH_H
-        image = k.canvas(width, height, PANEL_BG)
+        image = k.canvas(width, height, ui.MAIN_BG)
         accent = self.accent(self.mode)
         chosen = self.settings["saver_ring"] == value
-        if chosen:
-            k.rounded(image, (0, 0, width, height), 12, accent)
-            k.rounded(image, (2, 2, width - 2, height - 2), 10, "#FFFFFF")
-        else:
-            k.rounded(image, (0, 0, width, height), 12, "#FFFFFF" if hover else ui.CARD_BG,
-                      ui.CARD_EDGE)
+        ink, _ = k.button_surface(image, width, height, hover, chosen)
         cx, cy = width / 2, 30
         k.dot(image, cx, cy, 21, "#101014")
         if value == "none":
@@ -734,8 +714,8 @@ class ScreensaverPage:
             paint_ring(image, (k.px(cx), k.px(cy)), k.scale * 16, k.scale * 0.62, 20, 13,
                        value, accent, False)
         label = RING_LABELS[value]
-        k.text(image, cx, height - 12, label, "semibold" if chosen else "regular",
-               9 if len(label) < 9 else 8, ui.INK if chosen else ui.SUBTLE_INK, anchor="mm")
+        k.text(image, cx, height - 12, label, "semibold",
+               ui.TEXT_DETAIL, ink, anchor="mm", width=width - 8)
         return image
 
     def preview_picture(self):
@@ -759,7 +739,7 @@ class ScreensaverPage:
         k = self.kit
         show = self.settings["saver_show"]
         size = PREVIEW
-        image = k.canvas(size, size + 30, PANEL_BG)
+        image = k.canvas(size, size + 30, ui.MAIN_BG)
         c = size / 2
         r = c - 1
         # A thin neutral bezel only; the seconds ring takes the time's colour.
@@ -803,7 +783,7 @@ class ScreensaverPage:
                    anchor="mm")
         if show == "clock" and contrast(ink, face) < MIN_CONTRAST:
             k.text(image, c, size + 18, "Hard to read: try other colours", "semibold", 8.5,
-                   WARNING_INK, anchor="mm")
+                   ui.WARNING_INK, anchor="mm")
         else:
             k.text(image, c, size + 18, "Preview", "regular", 8.5, ui.MUTED_INK, anchor="mm")
         return image
@@ -812,7 +792,7 @@ class ScreensaverPage:
         """The Display tab's pointer to the library when only pictures show."""
         k = self.kit
         width, height = COLUMN_W, 62
-        image = k.canvas(width, height, PANEL_BG)
+        image = k.canvas(width, height, ui.MAIN_BG)
         count = len(self.library.items)
         k.text(image, 0, 10, "Your pictures", "semibold", 11, ui.INK)
         if count:
@@ -833,7 +813,7 @@ class ScreensaverPage:
     def paint_saver_summary(self):
         k = self.kit
         width, height = CARD_WIDTH, HEADING_HEIGHT
-        image = k.canvas(width, height, PANEL_BG)
+        image = k.canvas(width, height, ui.MAIN_BG)
         used, capacity = self.library.total_bytes(), self.capacity()
         count = len(self.library.items)
         k.text(image, 0, 10, "Your pictures and clips", "semibold", 11, ui.INK)
@@ -843,7 +823,7 @@ class ScreensaverPage:
         k.rounded(image, (0, 30, width, 34), 2, ui.CARD_EDGE)
         if used:
             k.rounded(image, (0, 30, max(4, width * min(1.0, used / capacity)), 34), 2,
-                      dial.label_ink(self.accent(self.mode)))
+                      ui.accent_ink(self.accent(self.mode)))
         return image
 
     def paint_thumbs(self):
@@ -853,8 +833,8 @@ class ScreensaverPage:
         items = self.library.items
         rows = max(THUMB_ROWS_SHOWN, (len(items) + THUMB_COLUMNS - 1) // THUMB_COLUMNS)
         height = rows * THUMB_ROW - 10 + 2 * LIBRARY_PAD
-        image = k.canvas(CARD_WIDTH, height, PANEL_BG)
-        k.rounded(image, (0, 0, CARD_WIDTH, height), 12, ui.CARD_BG, ui.CARD_EDGE)
+        image = k.canvas(CARD_WIDTH, height, ui.MAIN_BG)
+        k.rounded(image, (0, 0, CARD_WIDTH, height), ui.CONTROL_RADIUS, ui.CARD_BG, ui.CARD_EDGE)
         size = k.px(THUMB)
         if not items:
             k.icon(image, "Screensaver", CARD_WIDTH / 2, height / 2 - 14, ui.MUTED_INK, 0.9)
@@ -875,17 +855,17 @@ class ScreensaverPage:
                 picture = Image.new("RGB", (size, size), ui.rgb(ui.CARD_EDGE))
             image.paste(picture, (k.px(x), k.px(y)), mask)
             if item["frames"] > 1:
-                k.dot(image, x + THUMB / 2, y + THUMB / 2, 9, "#FFFFFF")
+                k.dot(image, x + THUMB / 2, y + THUMB / 2, 9, ui.SWITCH_KNOB)
                 k.icon(image, "Play", x + THUMB / 2 + 1, y + THUMB / 2, ui.INK, 0.32)
             if index == self.thumb_hover:
-                k.dot(image, x + THUMB - 8, y + 8, 9, ui.INK)
-                k.icon(image, "Close", x + THUMB - 8, y + 8, "#FFFFFF", 0.7)
+                k.dot(image, x + THUMB - 8, y + 8, 9, ui.SELECT_BG)
+                k.icon(image, "Close", x + THUMB - 8, y + 8, ui.SELECT_INK, 0.7)
         return image
 
     def paint_saver_status(self):
         k = self.kit
         width = CARD_WIDTH
-        image = k.canvas(width, 24, PANEL_BG)
+        image = k.canvas(width, 24, ui.MAIN_BG)
         state = self.upload_state
         progress = None
         if state and state[0] == "busy":
@@ -908,7 +888,7 @@ class ScreensaverPage:
         if progress is not None:
             k.rounded(image, (0, 17, width, 22), 2.5, ui.CARD_EDGE)
             k.rounded(image, (0, 17, max(5, width * progress), 22), 2.5,
-                      dial.label_ink(self.accent(self.mode)))
+                      ui.accent_ink(self.accent(self.mode)))
         return image
 
     # ----- state --------------------------------------------------------
@@ -928,12 +908,22 @@ class ScreensaverPage:
         return (self.connected and self.device_library is not None and not self.saver_busy()
                 and not self.update_busy and not self.library_in_sync())
 
+    def step_saver_tab(self, key, direction):
+        keys = [name for name, _ in SAVER_TABS]
+        index = (keys.index(key) + direction) % len(keys)
+        self.show_saver_tab(keys[index])
+        self.saver_tab_buttons[index].focus_set()
+        return "break"
+
     def show_saver_tab(self, key):
         self.saver_tab = key
         for frame in self.saver_tabs.values():
             frame.pack_forget()
         self.saver_tabs[key].pack(fill="x", anchor="w")
         self.refresh_screensaver()
+        self.root.update_idletasks()
+        self.saver_scroll._fit()
+        self.saver_scroll.canvas.yview_moveto(0)
 
     def refresh_screensaver(self):
         if not hasattr(self, "screensaver_page"):

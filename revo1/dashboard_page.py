@@ -3,10 +3,10 @@ switch to keep it on or off the knob's menu."""
 
 import tkinter as tk
 
-from revo1 import config, dial, pomodoro, ui
+from revo1 import config, pomodoro, ui
 from revo1.layout import CARD_WIDTH
 
-TILE_GAP = 10
+TILE_GAP = ui.HEADER_GAP
 TILE_COLUMNS = 3
 TILE_WIDTH = (CARD_WIDTH - TILE_GAP * (TILE_COLUMNS - 1)) // TILE_COLUMNS
 TILE_HEIGHT = 112
@@ -23,11 +23,10 @@ class DashboardPage:
         k = self.kit
         page = tk.Frame(self.root, bg=ui.MAIN_BG)
         header = ui.Picture(page, ui.MAIN_BG)
-        image = k.canvas(CARD_WIDTH, 62, ui.MAIN_BG)
-        k.text(image, 0, 22, "Dashboard", "semibold", 18, ui.INK)
-        k.text(image, 0, 50, "Switch off the screens you don't need on the knob.", "regular", 9, ui.MUTED_INK, width=CARD_WIDTH)
-        header.show(image)
-        header.pack(padx=k.px(28), pady=(k.px(18), k.px(12)), anchor="w")
+        header.show(k.page_header("Dashboard", "Switch off the screens you don't need on the knob.",
+                                  CARD_WIDTH))
+        header.pack(padx=k.px(ui.PAGE_INSET),
+                    pady=(k.px(ui.PAGE_TOP), k.px(ui.HEADER_GAP)), anchor="w")
         grid = tk.Frame(page, bg=ui.MAIN_BG)
         grid.pack(padx=k.px(28), anchor="w")
         self.dashboard_tiles = {}
@@ -74,6 +73,9 @@ class DashboardPage:
         if key == "Games":
             best = self.settings["whack_best"]
             return (f"Best {best}" if best else "No score yet"), "", None
+        if key == "Launcher":
+            count = sum(item is not None for item in self.settings["launcher"])
+            return f"{count} of 7 apps", "Choose apps on this PC", None
         if key == "Screensaver":
             if not self.settings["saver_enabled"]:
                 return "Off", "", None
@@ -85,12 +87,11 @@ class DashboardPage:
         width, height = TILE_WIDTH, TILE_HEIGHT
         image = k.canvas(width, height, ui.MAIN_BG)
         on = self.tile_on(key)
-        k.rounded(image, (0, 0, width, height), 14,
-                  "#FFFFFF" if hover else ui.CARD_BG, ui.CARD_EDGE)
+        k.button_surface(image, width, height, hover)
         accent = self.accent(key)
-        ink = dial.label_ink(accent) if on else ui.MUTED_INK
+        ink = ui.accent_ink(accent) if on else ui.MUTED_INK
         k.icon(image, key, 24, 26, ink, 0.72)
-        k.text(image, 42, 26, config.title(key), "semibold", 10,
+        k.text(image, 42, 26, config.title(key), "semibold", ui.TEXT_BUTTON,
                ui.INK if on else ui.SUBTLE_INK, width=width - 42 - SWITCH_W - 18)
         self.paint_switch(image, width - 14 - SWITCH_W, 26 - SWITCH_H / 2, on, hover)
         headline, detail, level = self.tile_text(key)
@@ -101,24 +102,24 @@ class DashboardPage:
         k.text(image, 16, 66, headline, "semibold", 17 if big else 11.5, value_ink,
                width=width - 32)
         if level is not None:
-            bar = ui.MUTED_INK if muted or not on else dial.label_ink(accent)
+            bar = ui.MUTED_INK if muted or not on else ui.accent_ink(accent)
             k.rounded(image, (16, 90, width - 16, 94), 2, ui.CARD_EDGE)
             if level > 0:
                 k.rounded(image, (16, 90, max(20, 16 + (width - 32) * level), 94), 2, bar)
             if detail:
                 k.text(image, width - 16, 66, detail, "semibold" if muted else "regular", 9,
-                       dial.MUTED_INK if muted else ui.MUTED_INK, anchor="rm")
+                       ui.SUBTLE_INK if muted else ui.MUTED_INK, anchor="rm")
         elif detail:
-            k.text(image, 16, 90, detail, "regular", 8.5, ui.MUTED_INK, width=width - 32)
+            k.text(image, 16, 90, detail, "regular", ui.TEXT_DETAIL, ui.SUBTLE_INK, width=width - 32)
         return image
 
     def paint_switch(self, image, x, y, on, hover):
         k = self.kit
-        track = ui.INK if on else (ui.SUBTLE_INK if hover else ui.IDLE_GREY)
+        track = ui.SELECT_BG if on else (ui.SUBTLE_INK if hover else ui.IDLE_GREY)
         k.rounded(image, (x, y, x + SWITCH_W, y + SWITCH_H), SWITCH_H / 2, track)
         r = SWITCH_H / 2 - 3
         k.dot(image, x + (SWITCH_W - SWITCH_H / 2 if on else SWITCH_H / 2), y + SWITCH_H / 2,
-              r, "#FFFFFF")
+              r, ui.SWITCH_KNOB)
 
     def click_tile(self, key, event):
         scale = self.kit.scale

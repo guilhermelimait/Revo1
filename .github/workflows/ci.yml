@@ -61,6 +61,7 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           files: dist/Revo1-Setup-*.exe
+          draft: true
 
   firmware:
     name: Firmware build
@@ -100,4 +101,4 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           files: dist/*.bin
-          generate_release_notes: true
+          draft: true

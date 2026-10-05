@@ -10,6 +10,7 @@ Packed layout (little endian):
     data: each item's frames as [u32 length][JPEG][padding to 4 bytes].
 """
 
+import hashlib
 import io
 import json
 import os
@@ -40,8 +41,9 @@ THUMB_SIZE = 96
 # (key, name, file). Each key is offered once: a new library starts with them,
 # and one that is removed stays removed. A replaced picture gets a new key so
 # existing libraries are offered it too.
-STARTER_PICTURES = (("moon-colour", "Moon",
+STARTER_PICTURES = (("moon-colour-2", "Moon",
                      Path(__file__).with_name("assets") / "moon.jpg"),)
+LEGACY_MOON_SHA256 = "7aeb4e057478cc1eee8ecd545cf62015e0782a028b49ca2ece0e479fb52eecc2"
 
 IMAGE_TYPES = (".jpg", ".jpeg", ".png", ".bmp", ".webp", ".gif", ".tif", ".tiff")
 VIDEO_TYPES = (".mp4", ".mov", ".avi", ".mkv", ".webm", ".m4v", ".wmv")
@@ -276,8 +278,13 @@ class Library:
         for key, name, path in starters:
             if key in offered:
                 continue
+            previous = next((item["id"] for item in self.items
+                             if key == "moon-colour-2" and "moon-colour" in offered
+                             and item["name"] == name
+                             and hashlib.sha256((self.folder / f"{item['id']}.bin").read_bytes()
+                                                ).hexdigest() == LEGACY_MOON_SHA256), None)
             try:
-                self.add(path, name=name)
+                self.add(path, name=name, replace_id=previous)
             except (MediaError, OSError):
                 continue
             offered.append(key)
@@ -309,15 +316,18 @@ class Library:
     def packed_size(self):
         return HEADER_BYTES + self.total_bytes()
 
-    def add(self, path, capacity=DEFAULT_CAPACITY, name=None):
+    def add(self, path, capacity=DEFAULT_CAPACITY, name=None, replace_id=None):
         """Converts `path` and keeps it; raises MediaError if it cannot be
         read or would not fit in `capacity` bytes on the knob."""
-        if len(self.items) >= MAX_ITEMS:
+        previous = next((item for item in self.items if item["id"] == replace_id), None)
+        if replace_id is not None and previous is None:
+            raise MediaError("The picture to replace no longer exists")
+        if len(self.items) >= MAX_ITEMS and previous is None:
             raise MediaError(f"The knob holds at most {MAX_ITEMS} items")
         path = Path(path)
         frames, frame_ms = convert(path)
         blob = pack_frames(frames)
-        if self.total_bytes() + len(blob) > capacity:
+        if self.total_bytes() - (previous["bytes"] if previous else 0) + len(blob) > capacity:
             raise MediaError("Not enough room left on the knob")
         item_id = uuid.uuid4().hex[:12]
         self.folder.mkdir(parents=True, exist_ok=True)
@@ -327,8 +337,13 @@ class Library:
             thumb.save(self.folder / f"{item_id}.png")
         item = {"id": item_id, "name": name or path.name, "frames": len(frames),
                 "frame_ms": frame_ms, "bytes": len(blob)}
-        self.items.append(item)
+        if previous:
+            self.items[self.items.index(previous)] = item
+        else:
+            self.items.append(item)
         self._save()
+        if previous:
+            self.remove(previous["id"])
         return item
 
     def remove(self, item_id):

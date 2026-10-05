@@ -31,6 +31,7 @@
 #include "wireless.h"
 #include "power_save.h"
 #include "voltage.h"
+#include "launcher.h"
 
 #define LCD_WIDTH 360
 #define LCD_HEIGHT 360
@@ -117,6 +118,8 @@
 #define MEDIA_TITLE_Y 98
 #define MEDIA_ARTIST_Y 120
 #define MEDIA_TIME_Y 52
+#define MEDIA_BATTERY_Y (-78)
+#define BATTERY_Y 132
 
 /* The annulus spans about 360 rows; in 32-row strips that is 12 strips and at
    most 20 areas, comfortably inside LVGL's default 32-entry invalidation
@@ -127,9 +130,10 @@
 #define ENCODER_BOUNCE_REJECT_US 2000
 #define ENCODER_DIRECTION_LOCKOUT_US 120000
 
-#define MODE_COUNT 8
+#define MODE_COUNT 9
 #define POMODORO_MODE 6
 #define GAMES_MODE 7
+#define LAUNCHER_MODE 8
 #define ALL_SCREENS ((1u << MODE_COUNT) - 1)
 /* Lines the app sends, apart from screensaver uploads, fit in this; the
    upload's data lines carry up to 3 KB of base64 and are handled apart. */
@@ -138,11 +142,11 @@
 #define UPLOAD_CHUNK_MAX 3072
 
 static const char *mode_names[MODE_COUNT] = {
-    "VOLUME", "SCROLL", "BRIGHTNESS", "MIC", "ZOOM", "MEDIA", "POMODORO", "GAMES"
+    "VOLUME", "SCROLL", "BRIGHTNESS", "MIC", "ZOOM", "MEDIA", "POMODORO", "GAMES", "LAUNCHER"
 };
 /* What the dial shows; mode_names stay the protocol's words. */
 static const char *mode_titles[MODE_COUNT] = {
-    "VOLUME", "SCROLL", "BRIGHTNESS", "MICROPHONE", "ZOOM", "MEDIA", "POMODORO", "GAMES"
+    "VOLUME", "SCROLL", "BRIGHTNESS", "MICROPHONE", "ZOOM", "MEDIA", "POMODORO", "GAMES", "APP LAUNCHER"
 };
 
 /* Saturated accents; on an AMOLED the unlit pixels stay truly black, so
@@ -151,11 +155,12 @@ static const uint8_t mode_accents[MODE_COUNT][3] = {
     {0, 176, 255}, {124, 104, 255}, {255, 168, 40},
     {255, 64, 116}, {0, 226, 158}, {255, 116, 56}, {232, 58, 58},
     {150, 200, 30},
+    {64, 148, 240},
 };
 
 /* The screens the menu offers, chosen on the app's dashboard: bit n is
    mode n. The menu ring is split evenly between them. */
-static uint8_t screen_mask = ALL_SCREENS;
+static uint16_t screen_mask = ALL_SCREENS;
 /* Left/right swipes step between screens unless the app turns them off. */
 static bool swipe_enabled = true;
 
@@ -416,6 +421,10 @@ static uint16_t touch_y;
 static int selected_mode;
 /* The option the knob is pointing at while the menu is open; a tap confirms it. */
 static int menu_cursor;
+static int launcher_cursor;
+static int64_t launcher_tapped_us;
+static int64_t launcher_feedback_until;
+static const char *launcher_feedback;
 static int selected_value = 50;
 static int orientation;
 static bool show_menu = true;
@@ -459,13 +468,32 @@ static const lv_font_t *font_for_size(int size)
    knob comes back the way it was even before the PC app is running. */
 #define SETTINGS_NAMESPACE "revo1"
 #define STANDARD_ACCENT 0xFFFFFFFFu
+static bool dark_theme;
+
+static uint32_t theme_colour(uint32_t light)
+{
+    if (!dark_theme) return light;
+    switch (light) {
+    case 0x2A2A34: return 0xF1F0F5;
+    case 0x3C3C4A: return 0xDAD8E8;
+    case 0x5A5A6A: case 0x76768A: return 0xC4C3D0;
+    case 0xA83232: case 0xE5484D: return 0xFF858A;
+    case 0xA4A4B0: return 0xAAA9BA;
+    default: return light;
+    }
+}
+
+static int accent_channel(int value, int divisor)
+{
+    return dark_theme ? (value + 510) / 3 : value * 3 / divisor;
+}
 
 typedef struct {
     uint8_t mode;
     uint8_t orientation;
     uint8_t number_size;
     uint32_t accent;
-    uint8_t screens;
+    uint16_t screens;
     uint8_t backlight;
     uint8_t saver;
     uint16_t idle_s;
@@ -479,6 +507,7 @@ typedef struct {
     uint32_t face;
     uint8_t bar;
     uint8_t power_save;
+    uint8_t dark;
 } stored_settings_t;
 
 static uint32_t rgb_word(const uint8_t rgb[3])
@@ -519,6 +548,7 @@ static stored_settings_t current_settings(void)
         .face = rgb_word(clock_bg),
         .bar = (uint8_t)bar_style,
         .power_save = power_save_enabled,
+        .dark = dark_theme,
     };
     static const int sizes[] = {24, 32, 40, 48};
     for (size_t index = 0; index < sizeof(sizes) / sizeof(sizes[0]); index++) {
@@ -536,7 +566,8 @@ static bool same_settings(const stored_settings_t *a, const stored_settings_t *b
            a->interval_s == b->interval_s && a->swipe == b->swipe &&
            a->saver_kind == b->saver_kind && a->dim == b->dim &&
            a->ring == b->ring && a->shade == b->shade && a->ink == b->ink &&
-           a->face == b->face && a->bar == b->bar && a->power_save == b->power_save;
+           a->face == b->face && a->bar == b->bar && a->power_save == b->power_save &&
+           a->dark == b->dark;
 }
 
 static void load_settings(void)
@@ -553,8 +584,10 @@ static void load_settings(void)
         uint8_t byte;
         uint16_t word;
         uint32_t accent;
-        if (nvs_get_u8(handle, "screens", &byte) == ESP_OK && byte && byte <= ALL_SCREENS) {
-            screen_mask = byte;
+        if (nvs_get_u16(handle, "screens_v2", &word) == ESP_OK && word && word <= ALL_SCREENS) {
+            screen_mask = word;
+        } else if (nvs_get_u8(handle, "screens", &byte) == ESP_OK && byte) {
+            screen_mask = byte | (1u << LAUNCHER_MODE);
         }
         if (nvs_get_u8(handle, "mode", &byte) == ESP_OK && byte < MODE_COUNT &&
             screen_enabled(byte)) {
@@ -584,6 +617,7 @@ static void load_settings(void)
         if (nvs_get_u8(handle, "show", &byte) == ESP_OK && byte <= SAVER_BOTH) saver_kind = byte;
         if (nvs_get_u8(handle, "dim", &byte) == ESP_OK) dim_enabled = byte != 0;
         if (nvs_get_u8(handle, "power_save", &byte) == ESP_OK) power_save_enabled = byte != 0;
+        if (nvs_get_u8(handle, "dark", &byte) == ESP_OK && byte <= 1) dark_theme = byte != 0;
         if (nvs_get_u8(handle, "ring", &byte) == ESP_OK && byte < RING_COUNT) saver_ring = byte;
         if (nvs_get_u8(handle, "shade", &byte) == ESP_OK) clock_shade = byte != 0;
         if (nvs_get_u32(handle, "ink", &accent) == ESP_OK && accent <= 0xFFFFFF) {
@@ -611,7 +645,7 @@ static void save_settings(void)
                     nvs_set_u8(handle, "orient", settings.orientation) == ESP_OK &&
                     nvs_set_u8(handle, "numsize", settings.number_size) == ESP_OK &&
                     nvs_set_u32(handle, "accent", settings.accent) == ESP_OK &&
-                    nvs_set_u8(handle, "screens", settings.screens) == ESP_OK &&
+                    nvs_set_u16(handle, "screens_v2", settings.screens) == ESP_OK &&
                     nvs_set_u8(handle, "light", settings.backlight) == ESP_OK &&
                     nvs_set_u8(handle, "saver", settings.saver) == ESP_OK &&
                     nvs_set_u16(handle, "idle", settings.idle_s) == ESP_OK &&
@@ -620,6 +654,7 @@ static void save_settings(void)
                     nvs_set_u8(handle, "show", settings.saver_kind) == ESP_OK &&
                     nvs_set_u8(handle, "dim", settings.dim) == ESP_OK &&
                     nvs_set_u8(handle, "power_save", settings.power_save) == ESP_OK &&
+                    nvs_set_u8(handle, "dark", settings.dark) == ESP_OK &&
                     nvs_set_u8(handle, "ring", settings.ring) == ESP_OK &&
                     nvs_set_u8(handle, "shade", settings.shade) == ESP_OK &&
                     nvs_set_u32(handle, "ink", settings.ink) == ESP_OK &&
@@ -846,9 +881,9 @@ static inline bool segment_in_gauge(int segment)
    sectors the touch handler uses, with a short gap between neighbours.
    Returns the slot a segment belongs to, or -1 when it falls in a gap. */
 #define MENU_SEGMENT_HALF 456
-static int menu_sector_of(int segment)
+static int ring_sector_of(int segment, int count)
 {
-    const int count = screen_count();
+    if (count <= 0) return -1;
     const int whole = count * 1024;
     const int clockwise = (256 - segment) & ARC_MASK;
     const int sector = ((clockwise * count + 512) / 1024) % count;
@@ -858,9 +893,18 @@ static int menu_sector_of(int segment)
     return (offset >= -MENU_SEGMENT_HALF && offset <= MENU_SEGMENT_HALF) ? sector : -1;
 }
 
+static int menu_sector_of(int segment)
+{
+    return ring_sector_of(segment, screen_count());
+}
+
 static inline bool segment_on_track(int segment)
 {
-    return show_menu ? menu_sector_of(segment) >= 0 : segment_in_gauge(segment);
+    if (show_menu) return menu_sector_of(segment) >= 0;
+    if (!app_offline && selected_mode == LAUNCHER_MODE && launcher_count()) {
+        return ring_sector_of(segment, launcher_count() + 1) >= 0;
+    }
+    return segment_in_gauge(segment);
 }
 
 static inline bool mode_is_level(int mode)
@@ -998,11 +1042,12 @@ static void render_dial_chrome(void)
             const float rim = (radius - ((float)SCREEN_RADIUS - 4.0f)) / 4.0f;
             if (rim > 0.0f) face -= (rim > 1.0f ? 1.0f : rim) * (rim > 1.0f ? 1.0f : rim) * 26.0f;
 
+            if (dark_theme) face = 30.0f + (face - 212.0f) * 0.55f;
             const int value = (int)face;
             const int noise = dither[x & 3];
             int r = clamp_channel(value + noise);
-            int g = clamp_channel(value - 3 + noise);
-            int b = clamp_channel(value - 1 + noise);
+            int g = clamp_channel(value + (dark_theme ? 0 : -3) + noise);
+            int b = clamp_channel(value + (dark_theme ? 7 : -1) + noise);
 
             if (x == first || x == last) {
                 const int coverage = row_edge_coverage[y];
@@ -1177,15 +1222,19 @@ static void build_comet_arc(void)
 
 /* Lights the segment of the last-used mode at full accent, so the menu opens
    already pointing at where you came from. */
-static void build_menu_arc(void)
+static void build_selection_arc(int count, int lit_slot)
 {
-    const int lit_slot = slot_of(menu_cursor);
     for (int i = 0; i < ARC_SEGMENTS; ++i) {
-        const bool lit = menu_sector_of(i) == lit_slot;
+        const bool lit = ring_sector_of(i, count) == lit_slot;
         arc_level[i] = lit ? 255 : 0;
         arc_ramp[i] = 255;
     }
     arc_head = -1;
+}
+
+static void build_menu_arc(void)
+{
+    build_selection_arc(screen_count(), slot_of(menu_cursor));
 }
 
 static void clear_canvas(void)
@@ -1316,6 +1365,12 @@ static const icon_part_t icon_games[] = {
 };
 
 #define ICON_COUNT(parts) ((int)(sizeof(parts) / sizeof(parts[0])))
+static const icon_part_t icon_launcher[] = {
+    {PART_POLY, {-11, -11, -2, -11, -2, -2, -11, -2}},
+    {PART_POLY, {2, -11, 11, -11, 11, -2, 2, -2}},
+    {PART_POLY, {-11, 2, -2, 2, -2, 11, -11, 11}},
+    {PART_POLY, {2, 2, 11, 2, 11, 11, 2, 11}},
+};
 static const menu_icon_t menu_icons[MODE_COUNT] = {
     {icon_volume, ICON_COUNT(icon_volume)},
     {icon_scroll, ICON_COUNT(icon_scroll)},
@@ -1325,6 +1380,7 @@ static const menu_icon_t menu_icons[MODE_COUNT] = {
     {icon_media, ICON_COUNT(icon_media)},
     {icon_pomodoro, ICON_COUNT(icon_pomodoro)},
     {icon_games, ICON_COUNT(icon_games)},
+    {icon_launcher, ICON_COUNT(icon_launcher)},
 };
 static const menu_icon_t media_prev = {icon_prev, ICON_COUNT(icon_prev)};
 static const menu_icon_t media_next = {icon_next, ICON_COUNT(icon_next)};
@@ -1492,12 +1548,12 @@ static void draw_menu_icons(void)
     for (int slot = 0; slot < count; ++slot) {
         const int mode = screen_at(slot);
         const float angle = (90.0f - slot * 360.0f / count) * 0.0174532925f;
-        int r = 0x8A, g = 0x8A, b = 0x9A;
+        int r = dark_theme ? 0xAA : 0x8A, g = dark_theme ? 0xA9 : 0x8A, b = dark_theme ? 0xBA : 0x9A;
         if (mode == menu_cursor) {
             const uint8_t *accent = accent_of(mode);
-            r = accent[0] * 3 / 4;
-            g = accent[1] * 3 / 4;
-            b = accent[2] * 3 / 4;
+            r = accent_channel(accent[0], 4);
+            g = accent_channel(accent[1], 4);
+            b = accent_channel(accent[2], 4);
         }
         draw_menu_icon(&menu_icons[mode],
                        SCREEN_CENTER + MENU_ICON_R * cosf(angle),
@@ -1509,12 +1565,14 @@ static void draw_menu_icons(void)
    middle one shows the action a tap performs: pause while playing. */
 static void draw_media_icons(const uint8_t *accent)
 {
-    const int dim = 90;
+    const int dim = dark_theme ? 196 : 90;
     draw_menu_icon(&media_prev, SCREEN_CENTER - MEDIA_BUTTON_SPACING, SCREEN_CENTER,
                    MEDIA_SKIP_SIZE, dim, dim, dim + 14);
     draw_menu_icon(media_status == 1 ? &media_pause : &media_play,
                    SCREEN_CENTER, SCREEN_CENTER, MEDIA_PLAY_SIZE,
-                   accent[0] * 170 >> 8, accent[1] * 170 >> 8, accent[2] * 170 >> 8);
+                   dark_theme ? accent_channel(accent[0], 4) : accent[0] * 170 >> 8,
+                   dark_theme ? accent_channel(accent[1], 4) : accent[1] * 170 >> 8,
+                   dark_theme ? accent_channel(accent[2], 4) : accent[2] * 170 >> 8);
     draw_menu_icon(&media_next, SCREEN_CENTER + MEDIA_BUTTON_SPACING, SCREEN_CENTER,
                    MEDIA_SKIP_SIZE, dim, dim, dim + 14);
 }
@@ -1637,14 +1695,14 @@ static void draw_whack_hole(int hole)
         draw_menu_icon(&bomb_spark, cx, cy, s, 0xFF, 0x8C, 0x1A);
     }
     if (h->flash == FLASH_HIT) {
-        draw_menu_icon(&whack_burst, cx, cy, s, accent[0] * 3 / 4, accent[1] * 3 / 4,
-                       accent[2] * 3 / 4);
+        draw_menu_icon(&whack_burst, cx, cy, s, accent_channel(accent[0], 4), accent_channel(accent[1], 4),
+                       accent_channel(accent[2], 4));
     } else if (h->flash == FLASH_BOOM) {
         draw_menu_icon(&whack_burst, cx, cy, s, 0xE0, 0x34, 0x34);
     }
     if (hole == whack_cursor && game_state != GAME_OVER) {
-        draw_menu_icon(&whack_aim, cx, cy, s, accent[0] * 3 / 4, accent[1] * 3 / 4,
-                       accent[2] * 3 / 4);
+        draw_menu_icon(&whack_aim, cx, cy, s, accent_channel(accent[0], 4), accent_channel(accent[1], 4),
+                       accent_channel(accent[2], 4));
     }
 }
 
@@ -1710,8 +1768,10 @@ static void draw_game_cards(void)
     const float cx = SCREEN_CENTER, cy = SCREEN_CENTER;
     const float r = CARD_R;
     draw_round_box(cx, cy + 4, r + 1, r + 1, r + 1, 0x60, 0x60, 0x70, 40);
-    draw_round_box(cx, cy, r, r, r, 0xC8, 0xC8, 0xD2, 256);
-    draw_round_box(cx, cy, r - 1, r - 1, r - 1, 0xFA, 0xFA, 0xFC, 256);
+    draw_round_box(cx, cy, r, r, r, dark_theme ? 0x45 : 0xC8,
+                   dark_theme ? 0x45 : 0xC8, dark_theme ? 0x52 : 0xD2, 256);
+    draw_round_box(cx, cy, r - 1, r - 1, r - 1, dark_theme ? 0x25 : 0xFA,
+                   dark_theme ? 0x25 : 0xFA, dark_theme ? 0x2F : 0xFC, 256);
     draw_card_art(game_card, cx, SCREEN_CENTER + CARD_ART_Y);
     if (GAME_COUNT > 1) {
         draw_chevrons();
@@ -1720,8 +1780,8 @@ static void draw_game_cards(void)
             const float x = cx + (game - (GAME_COUNT - 1) / 2.0f) * 14;
             const bool on = game == game_card;
             draw_round_box(x, SCREEN_CENTER + CARD_DOTS_Y, 3.5f, 3.5f, 3.5f,
-                           on ? accent[0] * 3 / 4 : 0xA8, on ? accent[1] * 3 / 4 : 0xA8,
-                           on ? accent[2] * 3 / 4 : 0xB4, 256);
+                           on ? accent_channel(accent[0], 4) : 0xA8, on ? accent_channel(accent[1], 4) : 0xA8,
+                           on ? accent_channel(accent[2], 4) : 0xB4, 256);
         }
     }
 }
@@ -1751,6 +1811,20 @@ static void whack_restore_hole(int hole)
 
 /* Composes a frame: the static chrome only when the view changed, then the
    arc, which is the only thing that moves. */
+#define LAUNCHER_MENU_ICON_SIZE 44
+#define LAUNCHER_BACK_Y (-120)
+#define LAUNCHER_EMPTY_ICON_Y (-30)
+#define LAUNCHER_EMPTY_ICON_SIZE 1.0f
+#define LAUNCHER_TITLE_Y (-10)
+#define LAUNCHER_EMPTY_TITLE_Y 8
+#define LAUNCHER_EMPTY_HINT_Y 32
+#define LAUNCHER_BATTERY_Y 56
+#define LAUNCHER_TEXT_WIDTH 136
+#define LAUNCHER_EMPTY_TEXT_WIDTH 128
+#define LAUNCHER_TITLE_MAX_H 42
+#define LAUNCHER_HINT_GAP 12
+static void draw_launcher_icons(void);
+
 static void render_canvas(void)
 {
     /* The screensaver owns the canvas; the dial is composed afresh when it ends. */
@@ -1778,8 +1852,10 @@ static void render_canvas(void)
         if (show_menu) {
             draw_menu_icons();
         } else {
-            draw_menu_icon(&back_button, SCREEN_CENTER, SCREEN_CENTER + FOOTER_Y,
-                           BACK_ICON_SIZE, 0x8A, 0x8A, 0x98);
+            draw_menu_icon(&back_button, SCREEN_CENTER,
+                           SCREEN_CENTER + (selected_mode == LAUNCHER_MODE ?
+                                            LAUNCHER_BACK_Y : FOOTER_Y),
+                           BACK_ICON_SIZE, dark_theme ? 0xC4 : 0x8A, dark_theme ? 0xC3 : 0x8A, dark_theme ? 0xD0 : 0x98);
             if (selected_mode == MEDIA_MODE) {
                 draw_media_icons(accent_of(MEDIA_MODE));
             } else if (mode_is_level(selected_mode)) {
@@ -1793,19 +1869,28 @@ static void render_canvas(void)
                                        MUTE_ICON_SIZE, 0xE5, 0x48, 0x4D);
                     } else {
                         draw_menu_icon(icon, SCREEN_CENTER, SCREEN_CENTER + MUTE_ICON_Y,
-                                       MUTE_ICON_SIZE, 0x8A, 0x8A, 0x98);
+                                       MUTE_ICON_SIZE, dark_theme ? 0xC4 : 0x8A, dark_theme ? 0xC3 : 0x8A, dark_theme ? 0xD0 : 0x98);
                     }
                 } else {
                     /* Brightness: its icon in the same place, as a label. */
                     draw_menu_icon(&menu_icons[selected_mode], SCREEN_CENTER,
                                    SCREEN_CENTER + MUTE_ICON_Y, MUTE_ICON_SIZE,
-                                   0x8A, 0x8A, 0x98);
+                                   dark_theme ? 0xC4 : 0x8A, dark_theme ? 0xC3 : 0x8A, dark_theme ? 0xD0 : 0x98);
                 }
             } else if (selected_mode == POMODORO_MODE) {
                 /* The timer icon under the time, where the level screens keep theirs. */
                 draw_menu_icon(&menu_icons[POMODORO_MODE], SCREEN_CENTER,
                                SCREEN_CENTER + MUTE_ICON_Y, MUTE_ICON_SIZE,
-                               0x8A, 0x8A, 0x98);
+                               dark_theme ? 0xC4 : 0x8A, dark_theme ? 0xC3 : 0x8A, dark_theme ? 0xD0 : 0x98);
+            } else if (selected_mode == LAUNCHER_MODE) {
+                const int count = launcher_count();
+                if (count) {
+                    draw_launcher_icons();
+                } else {
+                    draw_menu_icon(&menu_icons[LAUNCHER_MODE], SCREEN_CENTER,
+                                   SCREEN_CENTER + LAUNCHER_EMPTY_ICON_Y,
+                                   LAUNCHER_EMPTY_ICON_SIZE, dark_theme ? 0xC4 : 0x5A, dark_theme ? 0xC3 : 0x5A, dark_theme ? 0xD0 : 0x68);
+                }
             } else if (selected_mode == GAMES_MODE) {
                 if (game_state == GAME_LOBBY) {
                     draw_game_cards();
@@ -1816,8 +1901,8 @@ static void render_canvas(void)
                 const uint8_t *accent = accent_of(selected_mode);
                 draw_menu_icon(&menu_icons[selected_mode], SCREEN_CENTER,
                                SCREEN_CENTER + MODE_ICON_Y,
-                               MODE_ICON_SIZE, accent[0] * 3 / 4, accent[1] * 3 / 4,
-                               accent[2] * 3 / 4);
+                               MODE_ICON_SIZE, accent_channel(accent[0], 4), accent_channel(accent[1], 4),
+                               accent_channel(accent[2], 4));
             }
         }
         capture_arc_backdrop();
@@ -1842,6 +1927,9 @@ static void render_canvas(void)
             build_level_arc(fill);
         } else if (selected_mode == POMODORO_MODE) {
             build_level_arc(pomo_fill_q8());
+        } else if (selected_mode == LAUNCHER_MODE) {
+            const int count = launcher_count();
+            build_selection_arc(count ? count + 1 : 0, launcher_cursor + 1);
         } else if (selected_mode == GAMES_MODE) {
             build_level_arc(whack_fill_q8());
         } else {
@@ -1859,24 +1947,69 @@ static void render_canvas(void)
 }
 
 /* The menu slot under a touch, or -1 off the ring. */
-static int sector_at(int x, int y)
+static int ring_sector_at(int x, int y, int count)
 {
+    if (count <= 0) return -1;
     const int dx = x - LCD_WIDTH / 2;
     const int dy = LCD_HEIGHT / 2 - y;
     const int radius_squared = dx * dx + dy * dy;
     if (radius_squared < 50 * 50 || radius_squared > 170 * 170) {
         return -1;
     }
-    const int count = screen_count();
     const float step = 360.0f / count;
     float degrees = atan2f((float)dy, (float)dx) * 57.2957795f;
     int sector = (int)floorf((90.0f - degrees + step / 2 + 360.0f) / step);
     return sector % count;
 }
 
-/* The animation only changes the canvas. Re-setting the label text every frame
-   cost more than drawing the water did, so the label work is kept on the
-   state-change path and the tick just redraws the canvas. */
+static int sector_at(int x, int y)
+{
+    return ring_sector_at(x, y, screen_count());
+}
+
+static void draw_launcher_icon(int ordinal, int centre_x, int centre_y)
+{
+    const int slot = launcher_slot(ordinal);
+    const uint8_t *icon = launcher_icon(slot);
+    if (!icon) return;
+    const int stride = launcher_icon_stride(slot);
+    const int size = LAUNCHER_MENU_ICON_SIZE;
+    uint16_t *pixels = (uint16_t *)canvas_pixels;
+    const int left = centre_x - size / 2;
+    const int top = centre_y - size / 2;
+    for (int y = 0; y < size; ++y) {
+        for (int x = 0; x < size; ++x) {
+            const int source = ((y * LAUNCHER_ICON_SIZE / size) * LAUNCHER_ICON_SIZE +
+                                x * LAUNCHER_ICON_SIZE / size) * stride;
+            const int alpha = stride == 3 ? icon[source + 2] : 255;
+            if (!alpha) continue;
+            const uint16_t native = (uint16_t)(icon[source] << 8 | icon[source + 1]);
+            uint16_t *target = &pixels[(top + y) * LCD_WIDTH + left + x];
+            const uint16_t backdrop = (uint16_t)(*target >> 8 | *target << 8);
+            const int weight = (alpha * 256 + 127) / 255;
+            int r = (backdrop >> 8) & 0xF8;
+            int g = (backdrop >> 3) & 0xFC;
+            int b = (backdrop << 3) & 0xF8;
+            r += ((((native >> 8) & 0xF8) - r) * weight) >> 8;
+            g += ((((native >> 3) & 0xFC) - g) * weight) >> 8;
+            b += ((((native << 3) & 0xF8) - b) * weight) >> 8;
+            *target = pack_pixel(r, g, b);
+        }
+    }
+}
+
+static void draw_launcher_icons(void)
+{
+    const int count = launcher_count();
+    for (int ordinal = 0; ordinal < count; ++ordinal) {
+        const float angle = (90.0f - (ordinal + 1) * 360.0f / (count + 1)) * 0.0174532925f;
+        draw_launcher_icon(ordinal,
+                           (int)lroundf(SCREEN_CENTER + MENU_ICON_R * cosf(angle)),
+                           (int)lroundf(SCREEN_CENTER - MENU_ICON_R * sinf(angle)));
+    }
+}
+
+/* The animation only changes the canvas; labels update on state changes. */
 static void draw_frame(void)
 {
     if (lvgl_mutex) xSemaphoreTake(lvgl_mutex, portMAX_DELAY);
@@ -1889,43 +2022,70 @@ static void draw_frame(void)
    whole screen did. */
 static void apply_battery_label(void)
 {
-    if (!app_offline && !show_menu && !saver_active &&
-        !(selected_mode == GAMES_MODE && game_state == GAME_PLAYING) &&
-        (host_usb || (wireless_connected() && battery_percent >= 0))) {
+    lv_obj_align(battery_label, LV_ALIGN_CENTER, 0,
+                 selected_mode == LAUNCHER_MODE ? LAUNCHER_BATTERY_Y :
+                 selected_mode == MEDIA_MODE ? MEDIA_BATTERY_Y : BATTERY_Y);
+    if (!app_offline && !show_menu && !saver_active && !host_usb &&
+        selected_mode != GAMES_MODE && wireless_connected() && battery_percent >= 0) {
         char text[16];
         const char *icon = battery_percent <= 10 ? LV_SYMBOL_BATTERY_EMPTY :
                            battery_percent <= 35 ? LV_SYMBOL_BATTERY_1 :
                            battery_percent <= 65 ? LV_SYMBOL_BATTERY_2 :
                            battery_percent <= 90 ? LV_SYMBOL_BATTERY_3 :
                                                   LV_SYMBOL_BATTERY_FULL;
-        if (host_usb) {
-            snprintf(text, sizeof(text), "%s USB power", LV_SYMBOL_CHARGE);
-        } else {
-            snprintf(text, sizeof(text), "%s %d%%", icon, battery_percent);
-        }
+        snprintf(text, sizeof(text), "%s %d%%", icon, battery_percent);
         lv_label_set_text(battery_label, text);
         lv_obj_set_style_text_color(battery_label,
-                                   lv_color_hex(!host_usb && battery_percent <= 20 ?
-                                                0xA83232 : 0x5A5A6A), 0);
+                                   lv_color_hex(battery_percent <= 20 ?
+                                                theme_colour(0xA83232) : theme_colour(0x5A5A6A)), 0);
         lv_obj_clear_flag(battery_label, LV_OBJ_FLAG_HIDDEN);
     } else {
         lv_obj_add_flag(battery_label, LV_OBJ_FLAG_HIDDEN);
     }
 }
 
+static void apply_launcher_labels(void)
+{
+    const bool empty = launcher_count() == 0;
+    const int width = empty ? LAUNCHER_EMPTY_TEXT_WIDTH : LAUNCHER_TEXT_WIDTH;
+    const char *title = empty ? "No apps yet" : launcher_name(launcher_slot(launcher_cursor));
+    lv_point_t size;
+    lv_txt_get_size(&size, title, &lv_font_montserrat_16,
+                   lv_obj_get_style_text_letter_space(title_label, 0),
+                   lv_obj_get_style_text_line_space(title_label, 0),
+                   width, LV_TEXT_FLAG_NONE);
+    const int height = size.y > LAUNCHER_TITLE_MAX_H ? LAUNCHER_TITLE_MAX_H : size.y;
+    const int title_y = empty ? LAUNCHER_EMPTY_TITLE_Y : LAUNCHER_TITLE_Y;
+    lv_obj_set_width(title_label, width);
+    lv_obj_set_height(title_label, height);
+    lv_label_set_text(title_label, title);
+    lv_obj_align(title_label, LV_ALIGN_CENTER, 0, title_y);
+    lv_obj_set_width(artist_label, width);
+    lv_label_set_text(artist_label, empty ? "Add apps in Revo1" :
+                      launcher_feedback ? launcher_feedback : "Tap to launch");
+    lv_obj_align(artist_label, LV_ALIGN_CENTER, 0,
+                 empty ? LAUNCHER_EMPTY_HINT_Y :
+                         title_y + (height + 1) / 2 + LAUNCHER_HINT_GAP);
+    lv_obj_add_flag(value_label, LV_OBJ_FLAG_HIDDEN);
+    lv_obj_clear_flag(title_label, LV_OBJ_FLAG_HIDDEN);
+    lv_obj_clear_flag(artist_label, LV_OBJ_FLAG_HIDDEN);
+    lv_obj_add_flag(time_label, LV_OBJ_FLAG_HIDDEN);
+}
+
 static void apply_labels(void)
 {
     apply_battery_label();
     if (saver_active) return;
+    lv_obj_set_style_text_color(title_label, lv_color_hex(theme_colour(0x2A2A34)), 0);
     if (app_offline) {
         lv_obj_align(value_label, LV_ALIGN_CENTER, 0, OFFLINE_HEAD_Y);
         lv_obj_set_style_text_font(value_label, &lv_font_montserrat_16, 0);
-        lv_obj_set_style_text_color(value_label, lv_color_hex(0x2A2A34), 0);
+        lv_obj_set_style_text_color(value_label, lv_color_hex(theme_colour(0x2A2A34)), 0);
         lv_label_set_text(value_label, "Not connected");
         lv_obj_align(artist_label, LV_ALIGN_CENTER, 0, OFFLINE_HINT_Y);
         lv_obj_set_style_text_font(artist_label, &lv_font_montserrat_16, 0);
         lv_obj_set_width(artist_label, 220);
-        lv_obj_set_style_text_color(artist_label, lv_color_hex(0x5A5A6A), 0);
+        lv_obj_set_style_text_color(artist_label, lv_color_hex(theme_colour(0x5A5A6A)), 0);
         lv_label_set_text(artist_label, "Open Revo1 on your PC");
         lv_obj_clear_flag(value_label, LV_OBJ_FLAG_HIDDEN);
         lv_obj_clear_flag(artist_label, LV_OBJ_FLAG_HIDDEN);
@@ -1934,6 +2094,8 @@ static void apply_labels(void)
         return;
     }
     lv_obj_align(value_label, LV_ALIGN_CENTER, 0, 0);
+    lv_obj_set_width(title_label, 200);
+    lv_obj_set_height(title_label, LV_SIZE_CONTENT);
     lv_obj_set_style_text_font(artist_label, &lv_font_montserrat_12, 0);
     lv_obj_set_width(artist_label, 160);
     /* Games move the labels: onto the card, or the title into the cap above
@@ -1947,17 +2109,17 @@ static void apply_labels(void)
     {
         const uint8_t *accent = accent_of(GAMES_MODE);
         lv_obj_set_style_text_color(artist_label,
-                                    cards ? lv_color_make(accent[0] * 3 / 5, accent[1] * 3 / 5,
-                                                          accent[2] * 3 / 5)
-                                          : lv_color_hex(0x76768A), 0);
+                                    cards ? lv_color_make(accent_channel(accent[0], 5), accent_channel(accent[1], 5),
+                                                          accent_channel(accent[2], 5))
+                                          : lv_color_hex(theme_colour(0x76768A)), 0);
     }
     if (show_menu) {
         /* The cap names the option the knob points at; a tap confirms it. */
         const uint8_t *accent = accent_of(menu_cursor);
         lv_obj_set_style_text_font(value_label, &lv_font_montserrat_16, 0);
         lv_obj_set_style_text_color(value_label,
-                                    lv_color_make(accent[0] * 3 / 4, accent[1] * 3 / 4,
-                                                  accent[2] * 3 / 4), 0);
+                                    lv_color_make(accent_channel(accent[0], 4), accent_channel(accent[1], 4),
+                                                  accent_channel(accent[2], 4)), 0);
         lv_label_set_text(value_label, mode_titles[menu_cursor]);
         lv_obj_clear_flag(value_label, LV_OBJ_FLAG_HIDDEN);
         lv_obj_add_flag(title_label, LV_OBJ_FLAG_HIDDEN);
@@ -1966,8 +2128,13 @@ static void apply_labels(void)
         return;
     }
 
-    lv_obj_set_style_text_color(value_label, lv_color_hex(0x2A2A34), 0);
-    lv_obj_set_style_text_color(time_label, lv_color_hex(0x3C3C4A), 0);
+    lv_obj_set_style_text_color(value_label, lv_color_hex(theme_colour(0x2A2A34)), 0);
+    lv_obj_set_style_text_color(time_label, lv_color_hex(theme_colour(0x3C3C4A)), 0);
+
+    if (selected_mode == LAUNCHER_MODE) {
+        apply_launcher_labels();
+        return;
+    }
 
     if (selected_mode == MEDIA_MODE) {
         lv_label_set_text(title_label,
@@ -2059,8 +2226,8 @@ static void apply_labels(void)
         lv_obj_set_style_text_font(value_label, &lv_font_montserrat_16, 0);
         const uint8_t *accent = accent_of(selected_mode);
         lv_obj_set_style_text_color(value_label,
-                                    lv_color_make(accent[0] * 3 / 4, accent[1] * 3 / 4,
-                                                  accent[2] * 3 / 4), 0);
+                                    lv_color_make(accent_channel(accent[0], 4), accent_channel(accent[1], 4),
+                                                  accent_channel(accent[2], 4)), 0);
         lv_obj_align(value_label, LV_ALIGN_CENTER, 0, MODE_LABEL_Y);
     }
     lv_label_set_text(value_label, value);
@@ -2069,8 +2236,8 @@ static void apply_labels(void)
     lv_obj_add_flag(artist_label, LV_OBJ_FLAG_HIDDEN);
     if (mode_muted(selected_mode)) {
         /* Muted: the level greys out and the cap says so; a tap unmutes. */
-        lv_obj_set_style_text_color(value_label, lv_color_hex(0xA4A4B0), 0);
-        lv_obj_set_style_text_color(time_label, lv_color_hex(0xE5484D), 0);
+        lv_obj_set_style_text_color(value_label, lv_color_hex(theme_colour(0xA4A4B0)), 0);
+        lv_obj_set_style_text_color(time_label, lv_color_hex(theme_colour(0xE5484D)), 0);
         lv_label_set_text(time_label, "MUTED");
         lv_obj_align(time_label, LV_ALIGN_CENTER, 0, MUTE_LABEL_Y);
         lv_obj_clear_flag(time_label, LV_OBJ_FLAG_HIDDEN);
@@ -2550,6 +2717,11 @@ static void dispatch_unlocked(char *line, size_t length)
 {
     /* The app's heartbeat: hearing it at all is what counts. */
     if (strcmp(line, "APP") == 0) return;
+    if (strncmp(line, "LBEGIN,", 7) == 0 || strncmp(line, "LITEM,", 6) == 0 ||
+        strncmp(line, "LDATA,", 6) == 0) {
+        host_printf("%s\n", launcher_receive(line));
+        return;
+    }
     if (strncmp(line, "MD,", 3) == 0 || strncmp(line, "MEDIA_", 6) == 0 ||
         strcmp(line, "LIBRARY") == 0) {
         handle_media_line(line);
@@ -2669,6 +2841,38 @@ static void confirm_menu(int mode)
 
 static void handle_command(char *line)
 {
+    if (strncmp(line, "LRESULT,", 8) == 0) {
+        char token[9];
+        int slot, success, consumed = 0;
+        if (sscanf(line + 8, "%8[0-9a-f],%d,%d%n", token, &slot, &success, &consumed) != 3 ||
+            line[8 + consumed] || strcmp(token, launcher_token()) ||
+            slot != launcher_slot(launcher_cursor) || (success != 0 && success != 1)) {
+            host_printf("LAUNCHER_ERR,RESULT\n");
+            return;
+        }
+        launcher_feedback = success ? "Opened on PC" : "Could not launch";
+        launcher_feedback_until = esp_timer_get_time() + 2500000;
+        if (!show_menu && selected_mode == LAUNCHER_MODE) refresh_text();
+        return;
+    }
+    if (strncmp(line, "LEND,", 5) == 0) {
+        xSemaphoreTake(dispatch_lock, portMAX_DELAY);
+        if (lvgl_mutex) xSemaphoreTake(lvgl_mutex, portMAX_DELAY);
+        const char *err = launcher_commit(line + 5);
+        if (!err) {
+            launcher_cursor = 0;
+            launcher_feedback = NULL;
+        }
+        if (lvgl_mutex) xSemaphoreGive(lvgl_mutex);
+        if (err) {
+            host_printf("%s\n", err);
+        } else {
+            host_printf("LAUNCHER_OK,%s\n", launcher_token());
+        }
+        xSemaphoreGive(dispatch_lock);
+        if (!err && selected_mode == LAUNCHER_MODE) refresh_screen();
+        return;
+    }
     if (strcmp(line, "VOLTAGE") == 0) {
         int raw, adc_mv;
         const esp_err_t err = voltage_read(&raw, &adc_mv);
@@ -2687,6 +2891,21 @@ static void handle_command(char *line)
         return;
     }
 
+    if (strncmp(line, "THEME,", 6) == 0) {
+        if (strcmp(line + 6, "LIGHT") != 0 && strcmp(line + 6, "DARK") != 0) {
+            host_printf("THEME_ERR,FORMAT\n");
+            return;
+        }
+        const bool dark = strcmp(line + 6, "DARK") == 0;
+        if (dark != dark_theme) {
+            dark_theme = dark;
+            save_settings();
+            if (!saver_active) refresh_screen();
+        }
+        host_printf("THEME_OK,%s\n", dark_theme ? "DARK" : "LIGHT");
+        return;
+    }
+
     if (strcmp(line, "COMETRESET") == 0) {
         reset_comet();
         draw_frame();
@@ -2696,7 +2915,7 @@ static void handle_command(char *line)
     if (strncmp(line, "SCREENS,", 8) == 0) {
         int mask;
         if (!parse_integer(line + 8, 1, ALL_SCREENS, &mask)) return;
-        screen_mask = (uint8_t)mask;
+        screen_mask = (uint16_t)mask;
         if (!screen_enabled(selected_mode)) selected_mode = screen_at(0);
         if (!screen_enabled(menu_cursor)) menu_cursor = selected_mode;
         save_settings();
@@ -3057,6 +3276,38 @@ static void send_touch_event(void)
     }
     const int dx = (int)touch_start_x - SCREEN_CENTER;
     const int dy = (int)touch_start_y - SCREEN_CENTER;
+    if (!show_menu && selected_mode == LAUNCHER_MODE) {
+        if (abs(dx) <= FOOTER_HIT_W && abs(dy - LAUNCHER_BACK_Y) <= FOOTER_HIT_H) {
+            open_menu();
+            host_printf("MENU\n");
+            refresh_screen();
+            return;
+        }
+        const int radius_squared = dx * dx + dy * dy;
+        const int sector = radius_squared >= DIAL_CAP_R * DIAL_CAP_R ?
+                           ring_sector_at(touch_start_x, touch_start_y, launcher_count() + 1) : -1;
+        if (sector == 0) {
+            open_menu();
+            host_printf("MENU\n");
+            refresh_screen();
+            return;
+        }
+        if (sector >= 0) {
+            launcher_cursor = sector - 1;
+            launcher_feedback = NULL;
+            refresh_screen();
+        }
+        const int slot = launcher_slot(launcher_cursor);
+        const int64_t now = esp_timer_get_time();
+        if (slot >= 0 && now - launcher_tapped_us >= 700000) {
+            launcher_tapped_us = now;
+            host_printf("LAUNCH,%s,%d\n", launcher_token(), slot);
+            launcher_feedback = "Opening on PC...";
+            launcher_feedback_until = now + 5000000;
+            refresh_text();
+        }
+        return;
+    }
     if (whack_tap(dx, dy)) return;
     if (!show_menu && selected_mode == POMODORO_MODE &&
         dx * dx + dy * dy < DIAL_CAP_R * DIAL_CAP_R) {
@@ -3351,18 +3602,18 @@ static void initialize_lvgl(void)
     lv_canvas_set_buffer(canvas, canvas_pixels, LCD_WIDTH, LCD_HEIGHT,
                          LV_IMG_CF_TRUE_COLOR);
     title_label = lv_label_create(lv_scr_act());
-    lv_obj_set_style_text_color(title_label, lv_color_hex(0x2A2A34), 0);
+    lv_obj_set_style_text_color(title_label, lv_color_hex(theme_colour(0x2A2A34)), 0);
     lv_obj_set_style_text_font(title_label, &lv_font_montserrat_16, 0);
     lv_label_set_long_mode(title_label, LV_LABEL_LONG_DOT);
     lv_obj_set_width(title_label, 200);
     lv_obj_set_style_text_align(title_label, LV_TEXT_ALIGN_CENTER, 0);
     lv_obj_align(title_label, LV_ALIGN_CENTER, 0, MEDIA_TITLE_Y);
     value_label = lv_label_create(lv_scr_act());
-    lv_obj_set_style_text_color(value_label, lv_color_hex(0x2A2A34), 0);
+    lv_obj_set_style_text_color(value_label, lv_color_hex(theme_colour(0x2A2A34)), 0);
     lv_obj_set_style_text_font(value_label, &lv_font_montserrat_32, 0);
     lv_obj_align(value_label, LV_ALIGN_CENTER, 0, 0);
     artist_label = lv_label_create(lv_scr_act());
-    lv_obj_set_style_text_color(artist_label, lv_color_hex(0x76768A), 0);
+    lv_obj_set_style_text_color(artist_label, lv_color_hex(theme_colour(0x76768A)), 0);
     lv_obj_set_style_text_font(artist_label, &lv_font_montserrat_12, 0);
     lv_label_set_long_mode(artist_label, LV_LABEL_LONG_DOT);
     lv_obj_set_width(artist_label, 160);
@@ -3370,13 +3621,13 @@ static void initialize_lvgl(void)
     lv_obj_align(artist_label, LV_ALIGN_CENTER, 0, MEDIA_ARTIST_Y);
     lv_label_set_text(artist_label, "");
     time_label = lv_label_create(lv_scr_act());
-    lv_obj_set_style_text_color(time_label, lv_color_hex(0x3C3C4A), 0);
+    lv_obj_set_style_text_color(time_label, lv_color_hex(theme_colour(0x3C3C4A)), 0);
     lv_obj_set_style_text_font(time_label, &lv_font_montserrat_12, 0);
     lv_obj_align(time_label, LV_ALIGN_CENTER, 0, MEDIA_TIME_Y);
     lv_label_set_text(time_label, "");
     battery_label = lv_label_create(lv_scr_act());
     lv_obj_set_style_text_font(battery_label, &lv_font_montserrat_12, 0);
-    lv_obj_align(battery_label, LV_ALIGN_CENTER, 0, 132);
+    lv_obj_align(battery_label, LV_ALIGN_CENTER, 0, BATTERY_Y);
     lv_obj_add_flag(battery_label, LV_OBJ_FLAG_HIDDEN);
     clock_label = lv_label_create(lv_scr_act());
     lv_obj_set_style_text_color(clock_label, lv_color_hex(0xF2F2F5), 0);
@@ -4457,6 +4708,7 @@ static void battery_tick(int64_t now)
 static bool dial_advance(void)
 {
     if (show_menu || saver_active || app_offline) return false;
+    if (selected_mode == LAUNCHER_MODE) return false;
 
     if (mode_is_level(selected_mode)) {
         const int32_t target = (int32_t)selected_value << 8;
@@ -4583,6 +4835,13 @@ void app_main(void)
             menu_cursor = step_screen(menu_cursor, detents);
             host_printf("CURSOR,%d\n", menu_cursor);
             refresh_screen();
+        } else if (detents != 0 && selected_mode == LAUNCHER_MODE) {
+            const int count = launcher_count();
+            if (count > 1) {
+                launcher_cursor = ((launcher_cursor + detents) % count + count) % count;
+                launcher_feedback = NULL;
+                refresh_screen();
+            }
         } else if (detents != 0 && selected_mode == GAMES_MODE) {
             /* Games keep the knob to themselves; the PC hears nothing. */
             whack_rotate(detents);
@@ -4599,6 +4858,10 @@ void app_main(void)
         }
         poll_touch();
         const int64_t now = esp_timer_get_time();
+        if (launcher_feedback && now >= launcher_feedback_until) {
+            launcher_feedback = NULL;
+            if (!show_menu && selected_mode == LAUNCHER_MODE) refresh_text();
+        }
         {
             const bool offline =
                 !host_seen || (uint32_t)(now / 1000) - last_host_ms > APP_TIMEOUT_MS;

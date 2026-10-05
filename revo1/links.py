@@ -114,8 +114,8 @@ def discover_ble(timeout=6.0):
 
     try:
         return _await(scan(), timeout + 5)
-    except Exception:
-        return None
+    except Exception as exc:
+        raise LinkError(f"Bluetooth discovery failed: {exc}") from exc
 
 
 class BleLink(SecureLink):

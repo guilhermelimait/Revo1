@@ -3,10 +3,10 @@ The games themselves are played on the knob."""
 
 import tkinter as tk
 
-from revo1 import config, dial, ui
+from revo1 import config, ui
 from revo1.layout import CARD_WIDTH
 
-CARD_GAP = 10
+CARD_GAP = ui.HEADER_GAP
 CARD_COLUMNS = 3
 CARD_W = (CARD_WIDTH - CARD_GAP * (CARD_COLUMNS - 1)) // CARD_COLUMNS
 CARD_H = 176
@@ -26,12 +26,10 @@ class GamesPage:
         k = self.kit
         panel = tk.Frame(page, bg=ui.MAIN_BG)
         header = ui.Picture(panel, ui.MAIN_BG)
-        image = k.canvas(CARD_WIDTH, 62, ui.MAIN_BG)
-        k.text(image, 0, 22, "Games", "semibold", 18, ui.INK)
-        k.text(image, 0, 50, "Play them on the knob: open Games there and tap a card.",
-               "regular", 9, ui.MUTED_INK, width=CARD_WIDTH)
-        header.show(image)
-        header.pack(padx=k.px(28), pady=(k.px(18), k.px(12)), anchor="w")
+        header.show(k.page_header("Games", "On the knob: open Games, then tap a card to play.",
+                                  CARD_WIDTH))
+        header.pack(padx=k.px(ui.PAGE_INSET),
+                    pady=(k.px(ui.PAGE_TOP), k.px(ui.HEADER_GAP)), anchor="w")
         grid = tk.Frame(panel, bg=ui.MAIN_BG)
         grid.pack(padx=k.px(28), anchor="w")
         self.game_cards = []
@@ -63,14 +61,14 @@ class GamesPage:
     def paint_game_card(self, name, art):
         k = self.kit
         image = k.canvas(CARD_W, CARD_H, ui.MAIN_BG)
-        k.rounded(image, (0, 0, CARD_W, CARD_H), 16, ui.CARD_BG, ui.CARD_EDGE)
+        k.button_surface(image, CARD_W, CARD_H)
         centre = CARD_W / 2
         if name is None:
             k.dot(image, centre, ART_Y, 21, ui.CARD_EDGE)
             k.dot(image, centre, ART_Y, 19, ui.MAIN_BG)
             k.text(image, centre, ART_Y, "?", "semibold", 16, ui.IDLE_GREY, anchor="mm")
             k.text(image, centre, 100, "Soon", "semibold", 12, ui.SUBTLE_INK, anchor="mm")
-            k.text(image, centre, 122, "Another game is on the way", "regular", 8.5,
+            k.text(image, centre, 122, "Another game is on the way", "regular", ui.TEXT_DETAIL,
                    ui.MUTED_INK, anchor="mm", width=CARD_W - 24)
             return image
         for shape, colour in art:
@@ -84,9 +82,9 @@ class GamesPage:
             score = f"Best {best}"
         else:
             score = "No score yet"
-        k.text(image, centre, 122, score, "regular", 8.5, ui.MUTED_INK, anchor="mm",
+        k.text(image, centre, 122, score, "regular", ui.TEXT_DETAIL, ui.SUBTLE_INK, anchor="mm",
                width=CARD_W - 24)
-        ink = dial.label_ink(self.accent("Games"))
-        k.rounded(image, (24, 140, CARD_W - 24, 162), 11, ui.MAIN_BG)
-        k.text(image, centre, 151, "Play on the knob", "semibold", 8.5, ink, anchor="mm")
+        ink = ui.accent_ink(self.accent("Games"))
+        k.rounded(image, (24, 140, CARD_W - 24, 162), ui.CONTROL_RADIUS, ui.MAIN_BG)
+        k.text(image, centre, 151, "Play on the knob", "semibold", ui.TEXT_DETAIL, ink, anchor="mm")
         return image

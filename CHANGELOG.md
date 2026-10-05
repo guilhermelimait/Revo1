@@ -1,9 +1,68 @@
 # Changelog
 
-## Unreleased
+## 1.1.0 - 2026-10-05
 
+Feature release: app launcher, themes, desktop feedback, games, screensavers,
+Bluetooth recovery and a consistent interface across the companion and device.
+
+- Add Standard and Minimal desktop feedback layouts for both a translucent
+  bottom pill and an opaque top notch. Minimal centres the icon and smaller
+  value text together, without an icon badge. Each control can be included or
+  excluded independently; choices persist while feedback is disabled.
+- Preserve Windows app-icon transparency in the PC launcher and on the device
+  in both themes. Remove added launcher-row backgrounds; the device selection
+  remains visible through its coloured ring segment. RGB565A8 transfers carry
+  per-pixel alpha and commit atomically; firmware still accepts legacy RGB565.
+  Install the matching companion and firmware for transparent icons.
+- Standardise soft-rounded action buttons, text fields, typography, colours,
+  tab heights and spacing across the app. Colour swatches remain circular with
+  a selection ring. Improve Light-theme text contrast and long-label handling.
+- Put device naming first in Device settings. Fresh installations start as
+  Revo1; existing names are preserved and blank names return to Revo1.
+- Simplify Connection into a compact Bluetooth status/action row. Connect and
+  Disconnect preserve pairing; automatic retries honour the saved preference.
+  Prefer the known Bluetooth address and report discovery/connection errors.
+- Verify USB companion greetings before selecting a serial port, so another
+  ESP32 cannot block the real device or Bluetooth fallback.
+- Rename Number size to Center text size, remove the swipe setting from the
+  UI without changing saved swipe behaviour, and hide USB details in Settings.
+- Fix About text clipping with glyph padding, measured wrapping and row
+  heights. Expand Screensaver ring choices and add fixed tabs over scrolling
+  content so lower controls remain reachable in both themes.
+- Refresh public screenshots and documentation, use the Amazon product link,
+  and keep build output, local settings, development captures and backups out
+  of the source upload.
+
+- Rework all five Settings tabs with consistent section spacing, a
+  single-column Device layout, larger controls, readable wrapped help and
+  error text, and fixed navigation above scrollable content. Add keyboard
+  activation, tab navigation, focus-aware scrolling and backlight adjustment.
+- Add a translucent, rounded desktop control overlay above the taskbar,
+  with the control icon, live percentage or action, and a compact level bar.
+  Its compact pill stays translucent black in every app theme, with the
+  chosen accent colour. It works from the tray without taking
+  focus or blocking clicks, and disappears after adjustments stop.
+  Only Revo1 actions trigger it; Settings > Interface > Control overlay can disable it.
+- Add saved Light, Dark and System app themes, with live switching across
+  every companion page, app picker, title bar and Revo1 message dialog.
+  The round device display and preview follow the resolved theme; pictures,
+  app icons and configured screensaver colours keep their original colours.
+- Launcher Back stays separate at 12 o'clock, with a reserved space above
+  the app icons. The default Moon uses the new centred moon2 picture in
+  the app and device media library, replacing the previous built-in Moon.
+- App launcher: seven locally saved PC app slots, searchable desktop and
+  Microsoft Store app selection with icons, an everyday-apps default list
+  and a Show all apps toggle, plus executable/shortcut browsing.
+  The new device submenu uses rotary selection and a centre tap to
+  launch over USB or paired Bluetooth. Names/icons sync atomically; paths
+  stay on the PC and stale mappings cannot launch a different app.
+- The launcher now shows every configured icon around the device face,
+  like the home menu: turn to highlight an app, tap the centre to launch,
+  or tap an icon directly. The selected app's name stays in the centre.
 - Battery indicators now show an icon beside the percentage, without `~`.
-  On an app USB connection, a lightning icon and `USB power` appear instead.
+  On an app USB connection, a lightning icon and `USB power` appear on the
+  PC dashboard only. Device power labels stay hidden on USB and in Games;
+  Media battery text sits clear of the playback controls and track labels.
   This indicates USB use, not verified battery charging status.
 - Estimated battery charge during Bluetooth use: a battery icon and `N%` below the
   connection line in the app, and on device control screens, not the
@@ -73,7 +132,7 @@
 
 - Dashboard tiles are taller and show only what matters: the value, plus
   **Muted**, **Paused** or **Break** when that applies. Gone: the screensaver
-  picture count, Pomodoro's "Focus · ready", and Media's "Playing".
+  picture count, Pomodoro's "Focus Â· ready", and Media's "Playing".
 - On the knob (and its preview in the app), Scroll and Zoom show the
   screen's icon in the middle with its name below, like the other screens.
 - The top of the sidebar shows a small knob next to the name, with a ring

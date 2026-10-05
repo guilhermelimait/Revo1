@@ -3,11 +3,13 @@ import os
 import string
 from pathlib import Path
 from tempfile import NamedTemporaryFile
+from revo1.launcher import valid_slots
+from revo1.theme import CHOICES as THEME_CHOICES
 
 
-MODES = ("Volume", "Scroll", "Brightness", "Mic", "Zoom", "Media", "Pomodoro", "Games")
+MODES = ("Volume", "Scroll", "Brightness", "Mic", "Zoom", "Media", "Pomodoro", "Games", "Launcher")
 # Names shown to the user where they differ from the saved and protocol name.
-TITLES = {"Mic": "Microphone"}
+TITLES = {"Mic": "Microphone", "Launcher": "App launcher"}
 
 
 def title(mode):
@@ -23,18 +25,23 @@ NUMBER_SIZES = (24, 32, 40, 48)
 # How a level ring is coloured along its length; the order is the number sent
 # to the knob.
 BAR_STYLES = ("glow", "fade", "soft", "solid")
-DEFAULTS = {"mode": "Volume", "orientation": 0, "port": "", "name": DEFAULT_NAME,
+OVERLAY_STYLES = ("pill", "notch")
+OVERLAY_DETAILS = ("standard", "minimal")
+OVERLAY_MODES = MODES
+DEFAULTS = {"mode": "Volume", "orientation": 0, "port": "", "name": DEFAULT_NAME, "theme": "light",
             "accent": STANDARD_ACCENT, "bar_style": "glow", "number_size": 32, "minimize_to_tray": False,
-            "invert_scroll": False, "invert_zoom": False, "swipe_screens": True,
+            "invert_scroll": False, "invert_zoom": False, "swipe_screens": True, "control_overlay": True,
+            "overlay_style": "pill", "overlay_detail": "standard", "overlay_modes": list(OVERLAY_MODES),
             "screens": list(MODES), "known_screens": list(MODES), "backlight": 100,
             "focus_minutes": 25, "break_minutes": 5,
             "saver_enabled": False, "saver_idle": 5, "saver_interval": 30,
             "saver_show": "pictures", "clock_format": "24h", "saver_ring": "dots",
             "clock_ink": "#F2F2F5", "clock_face": "#000000", "clock_shade": True,
-            "dim_idle": True, "battery_saver": False, "link_key": "", "knob_ble": "",
-            "whack_best": 0, "whack_last": -1}
+            "dim_idle": True, "battery_saver": False, "bluetooth_enabled": True, "link_key": "", "knob_ble": "",
+            "whack_best": 0, "whack_last": -1, "launcher": [None] * 7}
 FLAGS = ("minimize_to_tray", "invert_scroll", "invert_zoom", "swipe_screens",
-         "saver_enabled", "dim_idle", "clock_shade", "battery_saver")
+         "saver_enabled", "dim_idle", "clock_shade", "battery_saver", "control_overlay",
+         "bluetooth_enabled")
 # The wireless pairing: the key (protected with Windows DPAPI, see
 # secure.protect_key) and the knob's last known Bluetooth address.
 WIRELESS_TEXT = ("link_key", "knob_ble")
@@ -107,6 +114,13 @@ def load(path=None):
     accent = pick("accent", valid_accent)
     number_size = pick("number_size", number_in(NUMBER_SIZES))
     bar_style = pick("bar_style", lambda value: value in BAR_STYLES)
+    theme = pick("theme", lambda value: value in THEME_CHOICES)
+    overlay_style = pick("overlay_style", lambda value: value in OVERLAY_STYLES)
+    overlay_detail = pick("overlay_detail", lambda value: value in OVERLAY_DETAILS)
+    overlay_modes = pick("overlay_modes", lambda value: (
+        isinstance(value, list) and all(isinstance(item, str) and item in OVERLAY_MODES
+                                       for item in value)))
+    overlay_modes = [candidate for candidate in OVERLAY_MODES if candidate in overlay_modes]
     flags = {key: pick(key, lambda value: isinstance(value, bool)) for key in FLAGS}
     screens = data.get("screens", list(MODES))
     if isinstance(screens, list):
@@ -121,6 +135,7 @@ def load(path=None):
     clock_format = pick("clock_format", lambda value: value in CLOCK_FORMATS)
     saver_ring = pick("saver_ring", lambda value: value in RING_STYLES)
     wireless = {key: pick(key, lambda value: isinstance(value, str)) for key in WIRELESS_TEXT}
+    launcher_slots = pick("launcher", valid_slots)
     colours = {key: pick(key, valid_colour) for key in CLOCK_COLOURS}
     numbers = {"backlight": pick("backlight", number_in(BACKLIGHT_RANGE)),
                "focus_minutes": pick("focus_minutes", number_in(POMODORO_MINUTES)),
@@ -137,9 +152,11 @@ def load(path=None):
     return {"mode": mode, "orientation": orientation, "port": port,
             "name": name.strip() or DEFAULT_NAME,
             "accent": accent if accent == STANDARD_ACCENT else accent.upper(),
-            "bar_style": bar_style, "number_size": number_size, "screens": screens,
+            "bar_style": bar_style, "number_size": number_size, "screens": screens, "theme": theme,
+            "overlay_style": overlay_style, "overlay_detail": overlay_detail, "overlay_modes": overlay_modes,
             "known_screens": list(MODES), "saver_show": saver_show,
             "clock_format": clock_format, "saver_ring": saver_ring,
+            "launcher": launcher_slots,
             **{key: value.upper() for key, value in colours.items()},
             **numbers, **flags, **wireless}
 

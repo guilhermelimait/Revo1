@@ -1,7 +1,7 @@
 # Revo1
 
 **Turn a Waveshare round knob display into a beautiful volume, scroll,
-brightness and media controller, Pomodoro timer and photo frame for Windows.**
+brightness and media controller, app launcher, Pomodoro timer and photo frame for Windows.**
 
 [![CI](https://github.com/guilhermelimait/Revo1/actions/workflows/ci.yml/badge.svg)](https://github.com/guilhermelimait/Revo1/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
@@ -9,12 +9,22 @@ brightness and media controller, Pomodoro timer and photo frame for Windows.**
 [![Ko-fi](https://img.shields.io/badge/Ko--fi-support-FF5E5B?logo=ko-fi&logoColor=white)](https://ko-fi.com/guilhermelimait)
 
 Revo1 is custom firmware for the
-[Waveshare ESP32-S3-Knob-Touch-LCD-1.8](https://www.waveshare.com/wiki/ESP32-S3-Knob-Touch-LCD-1.8)
-([Amazon](https://link.amazon/B061NfG3G); a 360 x 360 round touch screen
+[Waveshare ESP32-S3-Knob-Touch-LCD-1.8](https://link.amazon/B061NfG3G)
+(a 360 x 360 round touch screen
 with a rotary knob) plus a Windows
 companion app. The screen and the app draw the same Nest-style dial: a light,
-sculpted face with a glowing arc in the control's colour, and they stay in
+sculpted Light or Dark face with a glowing arc in the control's colour, and they stay in
 sync as you turn the knob.
+
+## What's new in 1.1.0
+
+**A more personal, polished controller across your PC and round display.**
+This release adds a seven-app launcher, Light/Dark/System themes, configurable
+desktop feedback, Whack-a-Mole, richer screensavers, and Bluetooth-only wireless
+controls. Settings now use consistent typography, spacing and accessible navigation.
+
+See the [release overview and screenshots](docs/releases/1.1.0.md) for the highlights,
+or the [changelog](CHANGELOG.md) for the full changes since 1.0.1.
 
 <table>
   <tr>
@@ -43,11 +53,19 @@ sync as you turn the knob.
   </tr>
   <tr>
     <th>Screensaver</th>
-    <th></th>
+    <th>App launcher</th>
   </tr>
   <tr>
     <td><img src="./docs/images/app-screensaver.png" alt="Screensaver" width="400"></td>
-    <td></td>
+    <td><img src="./docs/images/app-launcher.png" alt="Transparent app launcher icons in Dark mode" width="400"></td>
+  </tr>
+  <tr>
+    <th>Dark mode</th>
+    <th>Desktop feedback</th>
+  </tr>
+  <tr>
+    <td><img src="./docs/images/app-dashboard-dark.png" alt="Dashboard in Dark mode" width="400"></td>
+    <td><img src="./docs/images/app-overlays.png" alt="Bottom pill and top notch in Standard and Minimal layouts" width="400"></td>
   </tr>
 </table>
 
@@ -55,9 +73,15 @@ sync as you turn the knob.
 
 ## Features
 
-- **Eight screens:** system volume, mouse-wheel scrolling, display brightness,
+- **Nine screens:** system volume, mouse-wheel scrolling, display brightness,
   microphone level, zoom (Ctrl + wheel), media playback, a Pomodoro timer and
-  Games.
+  Games and App launcher.
+- **App launcher:** choose up to seven desktop or Microsoft Store apps, or
+  browse for an executable or app shortcut. On the knob, turn to select an
+  app and tap the centre to open it on the PC. All configured icons are
+  visible around the ring, like the home menu. Revo1 must be running,
+  over USB or paired Bluetooth. Paths stay in this PC's local settings;
+  only app names and icons are sent to the device.
 - **Dashboard:** every screen at a glance with its live value, and a switch
   to hide the ones you don't use from the knob's menu and swipes.
 - **Pomodoro:** pick the focus and break lengths, then tap the dial (on the
@@ -105,10 +129,15 @@ sync as you turn the knob.
 - **A real Windows app:** a one-click installer, Start Menu entry, optional
   start at sign-in, and a clean uninstall. It remembers all settings between
   runs, and can minimise to the notification area.
+- **Light, Dark or System:** one saved appearance for the companion and device,
+  with consistent controls and circular colour swatches.
+- **Desktop feedback:** choose a translucent bottom pill or solid-black top notch,
+  Standard detail or a centred Minimal icon/value, and exactly which actions appear.
+  It works in the tray without taking focus or blocking clicks.
 - **Wireless:** pair the knob once over USB, then use it over **Bluetooth**
   whenever the cable is unplugged (the knob still needs power,
-  from a battery or a USB charger). Plugging the cable back in switches to
-  USB at once. The wireless link is end-to-end encrypted with AES-256-GCM
+  from a battery or a USB charger). Settings > Connection also lets you
+  connect or disconnect Bluetooth explicitly. The wireless link is end-to-end encrypted with AES-256-GCM
   and a key only your PC and the knob hold.
 - **Updates from the app:** the About page shows the newest release on GitHub
   and installs its firmware on the knob with one click.
@@ -144,6 +173,13 @@ The installer is not code-signed yet, so Windows SmartScreen may say
 
 ### 2. Flash the firmware (once)
 
+**Upgrading from 1.0.x:** install the matching **1.1.0 app and firmware**.
+The transparent launcher icons use a new alpha-aware format; older firmware
+rejects it explicitly. Wireless is now Bluetooth only: former Wi-Fi settings are
+removed. Existing PC preferences, app choices and valid Bluetooth pairing are
+preserved. The swipe setting is no longer exposed in the app, but an existing
+saved preference still applies.
+
 Download `revo1-firmware-<version>.bin` from the same release, and this
 repository (**Code > Download ZIP**) for the flashing script.
 
@@ -176,11 +212,12 @@ below it shows how the knob is linked: **On USB cable** or **On Bluetooth**.
 Below **On Bluetooth**, a battery icon and percentage show a voltage-based charge estimate.
 It is hidden on USB, when disconnected, or if the reading is unavailable or
 stale. The knob shows the same estimate near the bottom of control screens,
-not in its home menu, offline screen, screensaver or during active gameplay.
+not in its home menu, offline screen, screensaver or any Games view. On Media,
+the estimate sits above the playback controls, clear of the track and artist.
 The percentage is approximate: this is not a fuel gauge, and load, temperature
 and battery condition affect the reading.
-On USB, a lightning icon and **USB power** replace the battery estimate,
-also on device control screens. This identifies the app's USB connection,
+On USB, a lightning icon and **USB power** replace the battery estimate
+on the PC dashboard only; the device shows no USB power label. This identifies the app's USB connection,
 not verified charging status.
 
 ## Using it
@@ -212,6 +249,17 @@ not verified charging status.
   screen off, a touch or a turn wakes the dial (that first touch or turn
   does nothing else).
 - On the **media** screen, tap play/pause, previous or next.
+- Open **App launcher** from the main menu. Turn the knob to move through
+  configured apps (empty slots are skipped), then tap the centre to launch.
+  All app icons appear around the face; the coloured ring segment highlights
+  the selected app, whose name appears in the centre. Tapping an app icon
+  directly selects and launches it, just like the home menu.
+  The separate back arrow stays at 12 o'clock, above the app icons, and
+  returns to the main menu. Turning selects apps only, not Back.
+  The USB power label is hidden on this submenu; the Bluetooth battery
+  percentage remains visible.
+  Launch feedback appears beneath the
+  name; Windows may still ask for permission if the chosen app needs it.
 
 The knob has no push button.
 
@@ -219,7 +267,7 @@ The knob has no push button.
 
 The dial in the window mirrors the device and accepts clicks the same way;
 beside it are the screen's name, a short note on using it and its buttons.
-The app opens on the **Dashboard**, a 3 by 3 grid of tiles: click a tile to
+The app opens on the **Dashboard**, a three-column grid of tiles: click a tile to
 open that screen, or its switch to show or hide it on the knob (at least one stays on).
 Each tile shows just its live value: the level (with **Muted** in red when
 muted), the song playing (or **Paused**), the Pomodoro time left (with
@@ -233,6 +281,21 @@ in the left sidebar.
   the knob while the timer is stopped), then **Start**, **Pause** or
   **Reset**. The timer runs in the app, so keep Revo1 running (it can sit
   in the notification area).
+- **App launcher:** seven slots with **Choose app**, **Replace** and **Clear**.
+  Saved app rows have no added tile background. Windows icon transparency is
+  preserved on the PC and transmitted to the device, where icons blend directly
+  over the Light or Dark face; selection remains indicated by the ring segment.
+  This requires the matching alpha-aware firmware. Backgrounds painted into an
+  app's own artwork are preserved rather than deleting legitimate icon colours.
+  Search the installed-app list with icons (including Microsoft Store apps).
+  Everyday apps show by default; **Show all apps** reveals administrative
+  tools, help files, uninstallers and developer utilities.
+  Use **Browse...** to select `.exe`, `.lnk`
+  or `.appref-ms` files. Choices are saved locally and names/icons sync on
+  connection and after edits. An empty launcher tells you to choose apps in
+  Revo1. Store apps use their registered Windows app identity rather than
+  a path into the protected WindowsApps folder. Apps are not bundled or
+  uploaded to GitHub.
 - **Screensaver:** four tabs, each fitting the window. **General** switches the screensaver and
   **Dim the screen** on or off, with **At a glance** cards summing up the
   settings (click one to change it). **Timing** has **Start after** (1, 2, 5,
@@ -253,8 +316,9 @@ in the left sidebar.
   **Shade**, which darkens the picture behind the time (on by default). If
   the time and background are too close, the preview warns **Hard to read**.
   **Pictures** holds your pictures and clips. It starts with a built-in
-  colourful **Moon**, centred to fill the round screen (remove it and it stays
-  removed); click **Add pictures or videos...** to add more. Pictures are
+  colourful **Moon**, centred with the new picture's black margin (remove it
+  and it stays removed). This version replaces the previous built-in Moon
+  without removing custom pictures; click **Add pictures or videos...** to add more. Pictures are
   cropped around their centre. Hover a thumbnail
   and click the cross to remove it. **Send to knob** copies the collection
   to the device (about 110 KB/s, so a full collection takes about two
@@ -268,10 +332,13 @@ in the left sidebar.
 
 **Settings** has five tabs:
 
-- **Device:** the screen backlight, the name shown in the sidebar and the
-  list of connected knobs
-  (refreshed automatically every two seconds; pick one or leave it on
-  **Automatic**).
+- **Device:** a dedicated **Device name** field at the top, followed by screen
+  backlight and battery saver. Fresh installations use **Revo1**; upgrades keep
+  existing custom names. Press Enter or leave the field to save. Blank names
+  return to Revo1, and leading/trailing spaces are removed.
+  USB discovery is automatic and verifies the companion firmware, including
+  when several ESP32 serial ports are present; USB status and port controls
+  are not shown in Settings.
   **Battery Saver** is a manual switch, for battery or USB use. It caps the
   backlight at 40% (20% in the screensaver), dims to at most 10% after
   30 seconds without touching or turning the knob, and switches the display
@@ -283,29 +350,81 @@ in the left sidebar.
   detection and automatic battery-only activation are not available.
 - **Controls:** the screen orientation (0, 90, 180 or 270 degrees) and
   **Knob direction**: **Invert scroll** and **Invert zoom** swap what a
-  clockwise turn does (the comet on the dial still follows your hand). Under
-  **Touch**, **Swipe between screens** turns the left/right swipe on the knob
-  on or off.
-- **Interface:** **Standard** colours (one per control), a swatch, or
+  clockwise turn does (the comet on the dial still follows your hand).
+  The swipe-between-screens option is no longer shown; existing preferences
+  and device swipe behaviour are retained.
+- **Interface:** **App appearance** offers **Light**, **Dark**, or **System**.
+  Settings tabs stay visible above a scrollable content area, with larger
+  controls, grouped sections, and wrapped help and error text. Use the mouse
+  wheel or scrollbar on longer pages. Tab moves through controls; Enter or
+  Space activates buttons, Left/Right switches focused Settings tabs, and
+  Left/Right adjusts a focused device-backlight slider. Focusing a control
+  below the viewport automatically brings it into view.
+  Throughout the PC app, action buttons, choice cards and text fields share
+  a 10-pixel soft corner radius. Action buttons use a 40-pixel height, while
+  larger choices retain room for previews. Dashboard, Screensaver, Games,
+  App launcher, Settings and app-owned dialogs share Montserrat typography,
+  sentence-case labels, page margins, section spacing and selection colours.
+  Settings and Screensaver tabs share the same height, text and underline
+  treatment. Longer Screensaver pages also scroll beneath fixed tabs, with
+  larger seconds-ring choices and no hidden bottom controls. Both themes use
+  contrast-checked text and status colours.
+  Circular switches, colour samples, sliders and round device previews keep
+  their purpose-specific geometry.
+  The choice is saved and applies immediately to every companion page,
+  the app picker, and Revo1's confirmation and error windows. **System**
+  follows the Windows app theme, including changes while Revo1 is running.
+  The round device screen and its preview follow the same resolved theme,
+  with the last theme saved on the device for disconnected use. Pictures,
+  app icons, and your chosen screensaver clock colours remain unchanged.
+  Windows-owned file and colour pickers use Windows styling.
+  **Interface → Control overlay** offers an on/off switch, **Bottom pill**
+  (the default, translucent above the taskbar) or **Top notch** (small, solid
+  black, attached to the top centre of the foreground window's monitor).
+  Both appear only during changes and disappear afterwards. **Show feedback for**
+  lets you independently choose volume, scroll, brightness, microphone, zoom,
+  media, Pomodoro, game scores and app-launch confirmations; these choices do
+  not change the device menu. All start enabled, and you can deselect all.
+  **Standard / Minimal** applies to either style: Standard (the default) keeps
+  the control label and progress bar; Minimal uses a smaller surface showing
+  only the icon and current value or action, centred together with smaller
+  value text and no icon badge background. The detail preference is saved.
+  Accent and screensaver clock colour swatches are circular, with a selection
+  ring; other buttons keep the shared rounded-rectangle shape.
+  Volume, microphone and PC brightness show their percentage;
+  scrolling and zoom show direction rather than inventing a percentage. Media
+  actions and Pomodoro adjustments show their action or time. The compact overlay
+  uses a black background (62% opacity for the pill; opaque for the notch), regardless of the app theme, with
+  your exact accent colour at full opacity for the icon and level bar (no tint or
+  desaturation). It works while Revo1 is in the tray, does not take focus,
+  and lets clicks pass through. It fades after 1.6 seconds without another change
+  (no fade when Windows animations are disabled). Changes from Windows or other
+  apps do not trigger it. Turn it off under **Interface → Control overlay**.
+  **Standard** colours (one per control), a swatch, or
   **Custom...** for any single bar colour; the **bar style** (**Glowing
   tip**, the default, an even bar whose end brightens; **Fade to solid**, a
   deep-to-bright gradient that turns into one colour near 100%; **Soft
-  gradient**; or **Solid**); and the number size (Small, Medium,
+  gradient**; or **Solid**); and **Center text size** (Small, Medium,
   Large or X-Large). Under **Window**, turn on **Minimise to the notification
   area** to hide Revo1 next to the clock when you minimise it (click the
   icon to bring it back, right-click for **Quit**). When it's on, the
   start-at-sign-in shortcut starts it there too. Closing the window or
   choosing **Quit** asks first, since the knob stops working until Revo1
   runs again (and warns harder during a firmware update).
-- **Wireless:** two tiles show which link is in use (**USB cable** or
-  **Bluetooth**) and whether the other is ready. To pair, plug in the cable
-  and click **Pair over USB**: the PC and the knob share one new key, and no
-  password is involved. The key is stored on the PC protected by Windows for
-  your user account. **Pair again** replaces the key, and **Forget pairing**
-  clears it on both sides. Once paired, unplugging the cable is all it
-  takes: Revo1 finds the knob over Bluetooth on its own and connects in a
-  few seconds. USB takes over again as soon as it is plugged in.
+- **Connection:** shows Bluetooth only, with **Connect** and **Disconnect**.
+  Status and the action sit together in one compact row, with pairing help
+  directly underneath. Errors wrap below without expanding the status control.
+  For first-time setup or recovery after forgetting a pairing, connect the
+  cable and choose **Connect**. Revo1 creates an encrypted shared key and
+  then connects over Bluetooth, even while the cable remains plugged in.
+  The key is protected on the PC by Windows for your user account.
+  **Disconnect** keeps the pairing but pauses Bluetooth reconnection, including
+  after restarting the app, until **Connect** is chosen again. In automatic
+  operation USB remains available internally, and Bluetooth takes over when
+  the cable is unplugged. Discovery and connection errors are shown explicitly.
 - **About:** links to GitHub, the releases, the licence and Ko-fi; the app
+  description, update values and messages use padded, wrapping text so
+  characters are not cut off at display scaling boundaries. Shows the app
   version, the firmware version on the knob, and the latest release on
   GitHub. When the release has newer firmware than the knob, **Update
   firmware** downloads and flashes it (the first time it also downloads
@@ -335,8 +454,11 @@ never overwritten with old saved values.
 - **Brightness does nothing.** Brightness is set through Windows' WMI
   interface, which normally covers built-in laptop screens only. Most external
   desktop monitors are not supported yet.
-- **Wireless doesn't connect.** Check Settings > Wireless: a red line says
-  when the knob holds a different key; pair again with the cable plugged in.
+- **Bluetooth doesn't connect.** Check Settings > Connection for the error.
+  Choose **Connect** to resume a deliberately disconnected Bluetooth link.
+  If pairing was forgotten or the keys do not match, plug in the cable and
+  choose **Connect** to set it up again. The device's disconnected symbol
+  means it has no companion link; it does not mean its screen has frozen.
   Make sure Bluetooth is on in Windows and keep the knob within a few metres
   of the PC.
 - **Song titles show "?".** The device fonts only have Latin letters. Accents
@@ -359,8 +481,8 @@ never overwritten with old saved values.
   USB cable. Bluetooth is about half as fast as USB (about 57 KB/s), so
   sending screensaver pictures over it takes longer.
 - The knob stores its pairing key in plain flash (it has no flash
-  encryption), so someone with the device in hand could read it; **Forget
-  pairing** removes it. Revo1 has no Wi-Fi, so the knob never holds a
+  encryption), so someone with the device in hand could read it.
+  Revo1 has no Wi-Fi, so the knob never holds a
   network password (firmware from this version on also wipes one saved by
   earlier versions).
 
@@ -406,9 +528,9 @@ framing.
 | Device to PC | `VERSION,<x.y.z>` | Firmware version, right after each `HELLO` |
 | Device to PC | `SYNC` | Sent with `HELLO` until the first `STATE` after a restart; the app resends style and state |
 | Device to PC | `ROT,<signed steps>` | Knob movement |
-| Device to PC | `MENU` | Centre (except on Volume, Microphone and Pomodoro) or back-icon tap opens the menu |
-| Device to PC | `TAP,<0..7>` | Menu choice confirmed (mode index) |
-| Device to PC | `CURSOR,<0..7>` | Knob moved the menu highlight (mode index) |
+| Device to PC | `MENU` | Centre (except on Volume, Microphone, Pomodoro and App launcher) or back-icon tap opens the menu |
+| Device to PC | `TAP,<0..8>` | Menu choice confirmed (mode index) |
+| Device to PC | `CURSOR,<0..8>` | Knob moved the menu highlight (mode index) |
 | Device to PC | `SWIPE,LEFT` or `SWIPE,RIGHT` | Change control |
 | PC to device | `STATE,<MODE>,<0..100>,<0\|90\|180\|270>[,<1 keep>]` | Set screen state; with keep an open menu stays open (value updates and connecting), without it the knob opens `MODE` |
 | PC to device | `SHOWMENU` | Show radial menu |
@@ -427,6 +549,9 @@ framing.
 | Device to PC | `MUTE,TOGGLE` | Centre of the Volume or Microphone dial tapped |
 | Device to PC | `GAME,WHACK,<score>,<best>` | Whack-a-Mole round finished |
 | PC to device | `GAMEBEST,<best>` | The app's saved Whack-a-Mole best, sent on connect; the knob keeps the higher one and answers `GAME,BEST,<best>` |
+| PC to device | `LBEGIN`, `LITEM`, `LDATA`, `LEND` | Atomic launcher name/icon snapshot; see [firmware/README.md](firmware/README.md) |
+| Device to PC | `LAUNCH,<snapshot token>,<slot 0..6>` | Launch the saved PC app only if the snapshot still matches |
+| PC to device | `LRESULT,<snapshot token>,<slot>,<0 or 1>` | Launch failed or Windows accepted the launch request |
 | PC to device | `SAVER,<0\|1>,<idle s>,<seconds per item>,<0 pictures\|1 clock\|2 both>[,<ring 0-10>]` | Screensaver settings; answered by `SAVER_OK` |
 | PC to device | `SAVERLOOK,<shade 0\|1>,<time RRGGBB>,<background RRGGBB>` | Screensaver clock colours and picture shade; answered by `SAVERLOOK_OK` |
 | PC to device | `TIME,<local seconds>,<1 for 24-hour\|0>` | Sets the knob's clock (local time counted as if it were UTC); answered by `TIME_OK` |
@@ -439,7 +564,7 @@ framing.
 | Device to PC | `NET,<key id\|->,<name>,<0 or 1>` | Every second: the pairing key id, the Bluetooth name and whether the app is linked over Bluetooth |
 
 Mode names, in sector order: `VOLUME`, `SCROLL`, `BRIGHTNESS`, `MIC`, `ZOOM`,
-`MEDIA`, `POMODORO`, `GAMES` (the Microphone screen keeps `MIC` on the wire). The preview uses a neutral midpoint for non-percentage controls.
+`MEDIA`, `POMODORO`, `GAMES`, `LAUNCHER` (the Microphone screen keeps `MIC` on the wire). The preview uses a neutral midpoint for non-percentage controls.
 
 Each knob detent sends exactly one step. The encoder is not a quadrature
 encoder and emits two pulses per detent, which the firmware divides down; see

@@ -1,5 +1,5 @@
 idf_component_register(
-    SRCS "main.c" "revo1_clock_96.c" "wireless.c" "voltage.c"
+    SRCS "main.c" "revo1_clock_96.c" "wireless.c" "voltage.c" "launcher.c"
     INCLUDE_DIRS "."
     REQUIRES esp_lcd_sh8601 lvgl esp_driver_gpio esp_driver_spi esp_driver_i2c
              esp_driver_ledc esp_driver_usb_serial_jtag esp_timer nvs_flash

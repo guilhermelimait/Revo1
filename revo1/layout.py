@@ -1,7 +1,5 @@
 """Window layout shared by the pages, in 96-dpi pixels."""
 
-from revo1 import ui
-
 SIDEBAR_WIDTH = 212
 MAIN_WIDTH = 800
 WINDOW_HEIGHT = 640
@@ -17,5 +15,3 @@ SIDE_WIDTH = CARD_WIDTH - DIAL_SIZE - DIAL_GAP
 FORM_WIDTH = 440
 # Buttons are as wide as their label, but never narrower than this.
 BUTTON_MIN = 96
-# Settings sit straight on the page, lined up with the tabs, not in boxes.
-PANEL_BG = ui.MAIN_BG

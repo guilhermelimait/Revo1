@@ -6,14 +6,14 @@ import time
 import serial
 from serial.tools import list_ports
 
-from revo1 import config, links, secure
+from revo1 import config, launcher, links, secure
 
 # USB IDs of the ESP32-S3 native USB Serial/JTAG port the knob enumerates as.
 DEVICE_IDS = (0x303A, 0x1001)
 # The firmware's greeting. Early builds, made while the project was called
 # RoundScreen, still say so; they're accepted so the app can update them.
 HELLO_LINES = ("HELLO,REVO1,1", "HELLO,ROUNDSCREEN,1")
-MODE_COUNT = 8
+MODE_COUNT = len(config.MODES)
 # Raw bytes per upload line; the firmware accepts up to 3072.
 UPLOAD_CHUNK = 3072
 # Chunks in flight before waiting for an acknowledgement.
@@ -22,6 +22,7 @@ UPLOAD_WINDOW = 4
 USB_CHECK_S = 1.5
 # Pause between rounds of looking for the knob over Bluetooth.
 WIRELESS_RETRY_S = 4
+USB_GREETING_S = 2.5
 
 
 def find_devices():
@@ -47,6 +48,15 @@ class DeviceBridge:
         self.key_id = ""
         self.knob_ble = ""
         self.link_kind = None
+        self.usb_port = ""
+        self.rejected_usb = set()
+        self.bluetooth_enabled = True
+        self.prefer_bluetooth = False
+
+    def set_bluetooth(self, enabled, prefer=False):
+        self.bluetooth_enabled = bool(enabled)
+        self.prefer_bluetooth = bool(enabled and prefer)
+        self.reconnect_event.set()
 
     def set_wireless(self, key, knob_ble=""):
         """The pairing key (None when not paired) and the last known Bluetooth
@@ -55,8 +65,8 @@ class DeviceBridge:
         changed = key != self.link_key
         self.link_key = key
         self.key_id = secure.key_id(key) if key else ""
-        self.knob_ble = knob_ble or self.knob_ble
-        if changed and self.link_kind == "ble":
+        self.knob_ble = knob_ble if key else ""
+        if changed:
             self.reconnect_event.set()
 
     def pair(self, key):
@@ -110,6 +120,11 @@ class DeviceBridge:
         """Puts the device's scroll/zoom comet back at its start position."""
         self.outbound.put(b"COMETRESET\n")
 
+    def send_theme(self, resolved):
+        if resolved not in ("light", "dark"):
+            raise ValueError(f"Unknown device theme: {resolved}")
+        self.outbound.put(f"THEME,{resolved.upper()}\n".encode("ascii"))
+
     def send_menu(self):
         self.outbound.put(b"SHOWMENU\n")
 
@@ -130,6 +145,12 @@ class DeviceBridge:
 
     def send_game_best(self, best):
         self.outbound.put(f"GAMEBEST,{int(best)}\n".encode("ascii"))
+
+    def send_launcher(self, token, items):
+        self.jobs.put(("launcher", (token, items)))
+
+    def send_launch_result(self, token, index, success):
+        self.outbound.put(f"LRESULT,{token},{index},{int(bool(success))}\n".encode("ascii"))
 
     def send_mute(self, volume, mic):
         self.outbound.put(f"MUTE,{int(bool(volume))},{int(bool(mic))}\n".encode("ascii"))
@@ -180,10 +201,27 @@ class DeviceBridge:
     def _port(self):
         ports = [port for port in list_ports.comports()
                  if (port.vid, port.pid) == DEVICE_IDS]
+        self.rejected_usb.intersection_update(port.device for port in ports)
+        ports = [port for port in ports if port.device not in self.rejected_usb]
         if self.preferred_port:
             return next((port.device for port in ports
                          if port.device.upper() == self.preferred_port.upper()), None)
+        if self.usb_port:
+            found = next((port.device for port in ports if port.device == self.usb_port), None)
+            if found:
+                return found
         return ports[0].device if len(ports) == 1 else None
+
+    def _usb_candidates(self):
+        ports = [port for port, _ in find_devices()]
+        self.rejected_usb.intersection_update(ports)
+        ports = [port for port in ports if port not in self.rejected_usb]
+        if self.preferred_port:
+            return [port for port in ports if port.upper() == self.preferred_port.upper()]
+        if self.usb_port in ports:
+            ports.remove(self.usb_port)
+            ports.insert(0, self.usb_port)
+        return ports
 
     def _run(self):
         last_error = None
@@ -193,14 +231,15 @@ class DeviceBridge:
                 self.stop_event.wait(0.1)
                 continue
             self.reconnect_event.clear()
-            port = self._port()
-            if port:
-                # USB always wins while a cable is plugged in.
+            greeted = False
+            for port in ([] if self.prefer_bluetooth and self._wireless_ready()
+                         else self._usb_candidates()):
                 try:
                     with serial.Serial(port, 115200, timeout=0.2, write_timeout=1) as connection:
                         self.link_kind = "usb"
                         self.events.put(("status", f"Waiting for companion firmware on {port}"))
-                        if self._serve(connection, port):
+                        greeted = self._serve(connection, port)
+                        if greeted:
                             last_error = None
                 except (serial.SerialException, OSError) as exc:
                     self.events.put(("disconnected", port))
@@ -208,9 +247,11 @@ class DeviceBridge:
                     if status != last_error:
                         self.events.put(("status", status))
                         last_error = status
-                    self.reconnect_event.wait(2)
                 finally:
                     self.link_kind = None
+                if greeted or self.reconnect_event.is_set() or self.stop_event.is_set():
+                    break
+            if greeted or self.reconnect_event.is_set():
                 continue
             link = self._open_wireless()
             if link:
@@ -235,35 +276,56 @@ class DeviceBridge:
             self.reconnect_event.wait(WIRELESS_RETRY_S if self._wireless_ready() else 2)
 
     def _wireless_ready(self):
-        return bool(self.link_key)
+        return bool(self.link_key) and self.bluetooth_enabled
 
     def _open_wireless(self):
         """A Bluetooth link to the paired knob, or None if it doesn't answer."""
         if not self._wireless_ready():
             return None
         key = self.link_key
-        if not links.ble_available() or self._usb_or_stop():
+        if not links.ble_available():
+            self.events.put(("bluetooth_status", ("error", "Bluetooth support is unavailable.")))
+            return None
+        if self._usb_or_stop():
             return None
         self.events.put(("status", "Looking for the knob over Bluetooth..."))
+        self.events.put(("bluetooth_status", ("connecting", "Looking for the knob over Bluetooth...")))
         addresses = [self.knob_ble] if self.knob_ble else []
-        found = links.discover_ble()
-        if found and found not in addresses:
-            addresses.insert(0, found)
-        for address in addresses:
+        tried = set()
+        error = None
+        while True:
+            if not addresses:
+                try:
+                    found = links.discover_ble()
+                except OSError as exc:
+                    error = str(exc)
+                    break
+                if not found or found in tried:
+                    break
+                addresses.append(found)
+            address = addresses.pop(0)
+            tried.add(address)
             if self._usb_or_stop():
                 return None
             try:
                 link = links.BleLink(address, key)
-            except OSError:
+            except OSError as exc:
+                error = str(exc)
                 continue
+            if self._usb_or_stop() or key != self.link_key or not self.bluetooth_enabled:
+                link.close()
+                return None
             self.knob_ble = address
             self.events.put(("knob_seen", ("ble", address)))
             return link
+        self.events.put(("bluetooth_status", ("error", error or
+                         "Knob not found. Check that it is powered on and nearby; retrying automatically.")))
         return None
 
     def _usb_or_stop(self):
         return (self.stop_event.is_set() or self.pause_event.is_set()
-                or self.reconnect_event.is_set() or bool(self._port()))
+                or self.reconnect_event.is_set() or not self.bluetooth_enabled
+                or (not self.prefer_bluetooth and bool(self._port())))
 
     def _serve(self, connection, label):
         """Runs one connection until it drops or the bridge switches link.
@@ -271,16 +333,26 @@ class DeviceBridge:
         greeted = False
         wireless = not isinstance(connection, serial.Serial)
         next_usb_check = time.monotonic() + USB_CHECK_S
+        greeting_deadline = time.monotonic() + USB_GREETING_S
         while not self.stop_event.is_set():
             if self.reconnect_event.is_set() or self.pause_event.is_set():
                 break
-            if wireless and time.monotonic() >= next_usb_check:
+            if not greeted and time.monotonic() >= greeting_deadline:
+                self.events.put(("status", f"No companion firmware answered on {label}"))
+                if not wireless:
+                    self.rejected_usb.add(label)
+                break
+            if wireless and not self.prefer_bluetooth and time.monotonic() >= next_usb_check:
                 next_usb_check = time.monotonic() + USB_CHECK_S
                 if self._port():
                     break
             line = connection.read_until(b"\n", 256).decode("ascii", errors="replace").strip()
             if line in HELLO_LINES:
                 greeted = True
+                if not wireless:
+                    self.usb_port = label
+            if not greeted:
+                continue
             self._handle_line(line, label)
             self._flush(connection)
             try:
@@ -289,6 +361,8 @@ class DeviceBridge:
                 continue
             if kind == "upload":
                 self._upload(connection, label, payload)
+            elif kind == "launcher":
+                self._send_launcher(connection, label, *payload)
             elif kind == "clear":
                 self._clear(connection, label)
             elif kind in ("pair", "unpair"):
@@ -297,7 +371,8 @@ class DeviceBridge:
                                                    "pair it"))
                 else:
                     self._pair(connection, label, kind, payload)
-        self.events.put(("disconnected", label))
+        if greeted:
+            self.events.put(("disconnected", label))
         return greeted
 
     def _fail_jobs(self, reason):
@@ -367,6 +442,8 @@ class DeviceBridge:
                     self.events.put(("status", f"Invalid power status: {line[:80]}"))
         elif line.startswith("POWERSAVE_ERR,"):
             self.events.put(("status", f"Battery Saver rejected by the knob: {line[14:80]}"))
+        elif line.startswith("THEME_ERR,"):
+            self.events.put(("status", f"Appearance rejected by the knob: {line[10:80]}"))
         elif line.startswith("BATTERY,"):
             try:
                 millivolts, percent = (int(part) for part in line[8:].split(","))
@@ -388,6 +465,14 @@ class DeviceBridge:
                     self.events.put(("rotate", steps))
             except ValueError:
                 self.events.put(("status", f"Invalid knob event: {line[:80]}"))
+        elif line.startswith("LAUNCH,"):
+            parts = line.split(",")
+            if (len(parts) == 3 and len(parts[1]) == 8
+                    and all(ch in "0123456789abcdef" for ch in parts[1])
+                    and parts[2] in tuple(str(i) for i in range(launcher.SLOTS))):
+                self.events.put(("launch", (parts[1], int(parts[2]))))
+            else:
+                self.events.put(("status", f"Invalid launcher event: {line[:80]}"))
         elif line in ("SWIPE,LEFT", "SWIPE,RIGHT"):
             self.events.put(("swipe", line[6:]))
         elif line == "MENU":
@@ -448,6 +533,28 @@ class DeviceBridge:
             if line.startswith(prefixes):
                 return line
         return None
+
+    def _send_launcher(self, connection, port, token, items):
+        def send(line, expected):
+            connection.write((line + "\n").encode("ascii"))
+            reply = self._await(connection, port, (expected, "LAUNCHER_ERR,"), 15)
+            if reply != expected:
+                raise UploadError(reply or "The knob did not answer. Update its firmware.")
+
+        try:
+            mask = sum(1 << index for index, _, _ in items)
+            send(f"LBEGIN,{token},{mask}", "LAUNCHER_ACK")
+            for index, name, icon in items:
+                if len(icon) != launcher.ICON_BYTES:
+                    raise UploadError("Invalid launcher icon size")
+                send(f"LITEM,{index},{name},RGB565A8", "LAUNCHER_ACK")
+                for offset in range(0, len(icon), 768):
+                    data = base64.b64encode(icon[offset:offset + 768]).decode("ascii")
+                    send(f"LDATA,{index},{offset},{data}", "LAUNCHER_ACK")
+            send(f"LEND,{token}", f"LAUNCHER_OK,{token}")
+            self.events.put(("launcher_done", token))
+        except UploadError as exc:
+            self.events.put(("launcher_error", (token, str(exc))))
 
     def _upload(self, connection, port, blob):
         try:

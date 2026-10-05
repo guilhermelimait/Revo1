@@ -68,6 +68,7 @@ ACCENTS = {
     "Media": (255, 116, 56),
     "Pomodoro": (232, 58, 58),
     "Games": (150, 200, 30),
+    "Launcher": (64, 148, 240),
     # Not a knob screen, but it has a tile and a sidebar entry of its own.
     "Screensaver": (186, 92, 230),
 }
@@ -100,7 +101,24 @@ _BAYER = np.array([-8, 0, -6, 2, 4, -4, 6, -2, -5, 3, -7, 1, 7, -1, 5, -3],
 
 def label_ink(accent):
     """The accent deepened enough to stay legible on the pale face."""
-    return "#%02X%02X%02X" % tuple(v * 3 // 4 for v in accent)
+    return "#%02X%02X%02X" % tuple((v + 510) // 3 if DARK_THEME else v * 3 // 4
+                                  for v in accent)
+
+
+DARK_THEME = False
+_LIGHT_INKS = {name: globals()[name] for name in (
+    "VALUE_INK", "ARTIST_INK", "TIME_INK", "MUTED_VALUE_INK",
+    "MUTED_INK", "FOOTER_INK", "MENU_INK", "ICON_INK")}
+
+
+def set_theme(dark):
+    global DARK_THEME
+    DARK_THEME = bool(dark)
+    dark_inks = {"VALUE_INK": "#F1F0F5", "ARTIST_INK": "#C4C3D0",
+                 "TIME_INK": "#DAD8E8", "MUTED_VALUE_INK": "#AAA9BA",
+                 "MUTED_INK": "#FF858A", "FOOTER_INK": "#C4C3D0",
+                 "MENU_INK": "#AAA9BA", "ICON_INK": "#C4C3D0"}
+    globals().update(dark_inks if dark else _LIGHT_INKS)
 
 
 def _grid():
@@ -140,9 +158,11 @@ def _chrome(background):
     face = face - rim * rim * 26.0
 
     face = np.clip(face, 0, 255)
+    if DARK_THEME:
+        face = 30 + (face - 212) * 0.55
     r = face
-    g = np.maximum(face - 3, 0)
-    b = np.maximum(face - 1, 0)
+    g = np.maximum(face if DARK_THEME else face - 3, 0)
+    b = np.maximum(face + 7 if DARK_THEME else face - 1, 0)
 
     noise = _BAYER[ys % 4, xs % 4]
     image = np.stack([r + noise, g + noise, b + noise], axis=-1)

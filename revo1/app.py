@@ -8,20 +8,22 @@ import time
 import tkinter as tk
 import webbrowser
 from pathlib import Path
-from tkinter import colorchooser, filedialog, messagebox
+from tkinter import colorchooser, filedialog
+from revo1 import dialogs as messagebox
 
 from comtypes import COMError, CoInitialize, CoUninitialize
 import numpy as np
 from PIL import Image, ImageDraw, ImageTk
 
-from revo1 import __version__, config, dial, icons, pomodoro, tray, ui, updater
+from revo1 import __version__, config, dial, icons, launcher, overlay, pomodoro, theme, tray, ui, updater
 from revo1 import windows_controls as controls
 from revo1.bridge import DeviceBridge, find_devices
 from revo1.dashboard_page import DashboardPage
 from revo1.games_page import GamesPage
+from revo1.launcher_page import LauncherPage
 from revo1.dial import DialRenderer
 from revo1.layout import (BUTTON_MIN, CARD_WIDTH, FORM_WIDTH, DIAL_GAP, MAIN_WIDTH, NAV_HEIGHT, NAV_WIDTH,
-                          PANEL_BG, SIDE_WIDTH, SIDEBAR_WIDTH, WINDOW_HEIGHT)
+                          SIDE_WIDTH, SIDEBAR_WIDTH, WINDOW_HEIGHT)
 from revo1.media import MediaSession
 from revo1.screensaver import STARTER_PICTURES, Library
 from revo1.screensaver_page import TIME_RESEND_S, ScreensaverPage
@@ -29,19 +31,18 @@ from revo1.wireless_page import WirelessTab, link_kind
 
 LEVEL_MODES = ("Volume", "Mic", "Brightness")
 MUTE_MODES = ("Volume", "Mic")
-MUTED_RED = "#E5484D"
 # How the knob is reached, as the sidebar names it: (icon, words).
 LINK_NAMES = {"usb": ("Usb", "USB cable"), "ble": ("Bluetooth", "Bluetooth")}
 # Beside the dial: what the knob does on each screen.
 SCREEN_HELP = {
     "Volume": ("Turn the knob to set the PC volume.",
-               "Tap the speaker in the centre to mute."),
+               "Tap the speaker in the center to mute."),
     "Scroll": ("Turn the knob to scroll the window",
                "under the mouse pointer."),
     "Brightness": ("Turn the knob to set the brightness",
                    "of your screen."),
     "Mic": ("Turn the knob to set the microphone level.",
-            "Tap the microphone in the centre to mute."),
+            "Tap the microphone in the center to mute."),
     "Zoom": ("Turn the knob to zoom in or out",
              "(the same as Ctrl and + or -)."),
     "Media": ("Shows what is playing on the PC.",
@@ -52,24 +53,27 @@ SCREEN_HELP = {
 MENU_HELP = ("Turn to choose a screen,", "then tap to open it.")
 SIDE_BAR_GAP = 20
 KOFI_RED = "#FF5E5B"
-DEVICE_ROW_HEIGHT = 36
+DEVICE_ROW_HEIGHT = 44
 DEVICE_SCAN_MS = 2000
 NUMBER_LABELS = {24: "Small", 32: "Medium", 40: "Large", 48: "X-Large"}
 BAR_STYLE_LABELS = {"glow": "Glowing tip", "fade": "Fade to solid",
                     "soft": "Soft gradient", "solid": "Solid"}
 SETTINGS_TABS = (("device", "Device"), ("controls", "Controls"), ("interface", "Interface"),
-                 ("wireless", "Wireless"), ("about", "About"))
+                 ("wireless", "Connection"), ("about", "About"))
 # How long a release check stays fresh before the About tab asks GitHub again.
 RELEASE_CHECK_S = 30 * 60
 
 
-class App(DashboardPage, ScreensaverPage, GamesPage, WirelessTab):
+class App(DashboardPage, ScreensaverPage, GamesPage, LauncherPage, WirelessTab):
     def __init__(self, root, tray=None, start_minimized=False):
         self.root = root
         self.tray = tray
         self.settings = config.load()
         for key, value in config.DEFAULTS.items():
             self.settings.setdefault(key, value)
+        ui.set_theme(theme.resolve(self.settings["theme"]))
+        dial.set_theme(ui.ACTIVE_THEME == "dark")
+        ui.style_native(root)
         self.settings["screens"] = list(self.settings["screens"])
         self.mode = self.settings["mode"]
         self.value = 50
@@ -145,12 +149,13 @@ class App(DashboardPage, ScreensaverPage, GamesPage, WirelessTab):
         self.scan_pending = False
 
         self.status = tk.StringVar(value="Looking for the device...")
+        self.control_overlay = overlay.ControlOverlay(root, self.scale, self.status.set)
+        self.init_launcher()
         self.build_sidebar()
         self.build_dashboard_page()
         self.build_control_page()
         self.build_screensaver_page()
         self.build_settings_page()
-        self.status.trace_add("write", lambda *args: self.refresh_status())
         self.show_page("dashboard")
 
         self.bridge.start()
@@ -166,6 +171,8 @@ class App(DashboardPage, ScreensaverPage, GamesPage, WirelessTab):
         root.after(250, self.tick_pomodoro)
         root.after(500, self.refresh_levels)
         self.center_window()
+        theme.title_bar(root, ui.ACTIVE_THEME == "dark")
+        root.after(2000, self.watch_system_theme)
         if start_minimized:
             root.after(0, self.minimize)
 
@@ -188,6 +195,64 @@ class App(DashboardPage, ScreensaverPage, GamesPage, WirelessTab):
 
     # ----- layout -------------------------------------------------------
 
+    def paint_theme_choice(self, choice, hover):
+        k = self.kit
+        image = k.canvas(112, 44, ui.MAIN_BG)
+        chosen = self.settings["theme"] == choice
+        ink, _ = k.button_surface(image, 112, 44, hover, chosen)
+        k.text(image, 56, 22, theme.LABELS[choice], "semibold", ui.TEXT_BUTTON,
+               ink, anchor="mm")
+        return image
+
+    def set_app_theme(self, choice):
+        resolved = theme.resolve(choice)
+        self.settings["theme"] = choice
+        config.save(self.settings)
+        self.apply_app_theme(resolved)
+
+    def apply_app_theme(self, resolved):
+        page = self.page
+        settings_scroll = self.settings_scroll.canvas.yview()[0]
+        saver_scroll = self.saver_scroll.canvas.yview()[0]
+        draft_name = self.name_entry.get()
+        ui.set_theme(resolved)
+        dial.set_theme(resolved == "dark")
+        for child in self.root.winfo_children():
+            child.destroy()
+        ui.style_native(self.root)
+        self.root.configure(bg=ui.MAIN_BG)
+        self.dial = DialRenderer(background=ui.rgb(ui.MAIN_BG), scale=self.scale)
+        self.dial.bar_style = self.settings["bar_style"]
+        self.dial_item = None
+        self.dial_image = None
+        self.device_rows = []
+        self.build_sidebar()
+        self.build_dashboard_page()
+        self.build_control_page()
+        self.build_screensaver_page()
+        self.build_settings_page()
+        self.name_entry.delete(0, "end")
+        self.name_entry.insert(0, draft_name)
+        self.show_devices()
+        self.show_page(page)
+        self.root.update_idletasks()
+        self.settings_scroll._fit()
+        self.settings_scroll.canvas.yview_moveto(settings_scroll)
+        self.saver_scroll._fit()
+        self.saver_scroll.canvas.yview_moveto(saver_scroll)
+        self.render()
+        theme.title_bar(self.root, resolved == "dark")
+        self.control_overlay.refresh_theme()
+        if self.connected:
+            self.bridge.send_theme(resolved)
+
+    def watch_system_theme(self):
+        if self.settings["theme"] == "system" and self.root.grab_current() is None:
+            resolved = theme.resolve("system")
+            if resolved != ui.ACTIVE_THEME:
+                self.apply_app_theme(resolved)
+        self.root.after(2000, self.watch_system_theme)
+
     def build_sidebar(self):
         k = self.kit
         bar = tk.Frame(self.root, bg=ui.SIDEBAR_BG, width=k.px(SIDEBAR_WIDTH))
@@ -208,6 +273,8 @@ class App(DashboardPage, ScreensaverPage, GamesPage, WirelessTab):
         for child in self.nav_list.winfo_children():
             child.destroy()
         self.nav = {}
+        self.nav_height = min(NAV_HEIGHT, (WINDOW_HEIGHT - 126) //
+                              (len(self.settings["screens"]) + 3) - 2)
         for key in (("Dashboard",) + tuple(self.settings["screens"])
                     + ("Screensaver", "Settings")):
             button = ui.Button(self.nav_list, ui.SIDEBAR_BG,
@@ -267,16 +334,17 @@ class App(DashboardPage, ScreensaverPage, GamesPage, WirelessTab):
         if self.mode in MUTE_MODES:
             self.mute_bar.pack(anchor="w", pady=(k.px(SIDE_BAR_GAP), 0))
         self.build_games_panel(page)
+        self.build_launcher_panel(page)
         self.control_page = page
 
     def build_settings_page(self):
         k = self.kit
         page = tk.Frame(self.root, bg=ui.MAIN_BG)
+        self.settings_page = page
         title = ui.Picture(page, ui.MAIN_BG)
-        image = k.canvas(CARD_WIDTH, 44, ui.MAIN_BG)
-        k.text(image, 0, 22, "Settings", "semibold", 18, ui.INK)
-        title.show(image)
-        title.pack(padx=k.px(28), pady=(k.px(18), k.px(4)), anchor="w")
+        title.show(k.page_header("Settings", "Make Revo1 feel right for your desk.", CARD_WIDTH))
+        title.pack(padx=k.px(ui.PAGE_INSET),
+                   pady=(k.px(ui.PAGE_TOP), k.px(ui.HEADER_GAP)), anchor="w")
 
         tabs = tk.Frame(page, bg=ui.MAIN_BG)
         tabs.pack(padx=k.px(28), pady=(0, k.px(12)), anchor="w")
@@ -286,9 +354,17 @@ class App(DashboardPage, ScreensaverPage, GamesPage, WirelessTab):
                                lambda hover, key=key, label=label: self.paint_tab(key, label, hover),
                                lambda key=key: self.show_tab(key))
             button.pack(side="left")
+            button.keyboard_access()
+            button.bind("<Left>", lambda event, key=key: self.step_settings_tab(key, -1))
+            button.bind("<Right>", lambda event, key=key: self.step_settings_tab(key, 1))
             self.tab_buttons.append(button)
 
-        self.tabs = {key: tk.Frame(page, bg=ui.MAIN_BG) for key, _ in SETTINGS_TABS}
+        self.settings_scroll = ui.ScrollArea(page, k, CARD_WIDTH)
+        self.settings_scroll.pack(fill="both", expand=True)
+        self.tabs = {key: tk.Frame(self.settings_scroll.body, bg=ui.MAIN_BG)
+                     for key, _ in SETTINGS_TABS}
+        for tab in self.tabs.values():
+            tab.settings_layout = True
         self.build_device_tab(self.tabs["device"])
         self.build_controls_tab(self.tabs["controls"])
         self.build_interface_tab(self.tabs["interface"])
@@ -296,73 +372,82 @@ class App(DashboardPage, ScreensaverPage, GamesPage, WirelessTab):
         self.build_about_tab(self.tabs["about"])
         self.settings_page = page
         self.show_tab(self.settings_tab)
-        self.refresh_status()
+        self.enable_settings_keyboard(page)
+
+    def step_settings_tab(self, key, direction):
+        keys = [name for name, _ in SETTINGS_TABS]
+        index = (keys.index(key) + direction) % len(keys)
+        self.show_tab(keys[index])
+        self.tab_buttons[index].focus_set()
+        return "break"
+
+    def enable_settings_keyboard(self, parent):
+        for widget in parent.winfo_children():
+            if isinstance(widget, ui.Button) and widget.cget("cursor") != "arrow":
+                widget.keyboard_access()
+            self.enable_settings_keyboard(widget)
 
     def build_device_tab(self, tab):
         k = self.kit
-        primary = tk.Frame(tab, bg=PANEL_BG)
-        primary.pack(side="left", anchor="n")
-        secondary = tk.Frame(tab, bg=PANEL_BG)
-        secondary.pack(side="left", anchor="n", padx=(0, k.px(24)))
-        body = self.section(primary, FORM_WIDTH)
+        body = self.section(tab)
+        self.caption(body, "Device name", FORM_WIDTH).pack(anchor="w")
+        self.help_text(body, "Give your knob a name. A new installation starts as Revo1.").pack(
+            anchor="w", pady=(k.px(ui.GAP), k.px(ui.GAP)))
+        field = ui.TextField(body, k, FORM_WIDTH)
+        field.pack(anchor="w")
+        self.name_entry = field.entry
+        self.name_entry.insert(0, self.settings["name"])
+        self.name_entry.bind("<Return>", self.save_name)
+        self.name_entry.bind("<FocusOut>", self.save_name, add="+")
+        self.help_text(body, "Saves when you press Enter or leave the field.", FORM_WIDTH).pack(
+            anchor="w", pady=(k.px(ui.GAP), 0))
+        body = self.section(tab)
         self.caption(body, "SCREEN BACKLIGHT", FORM_WIDTH).pack(anchor="w")
-        self.backlight_slider = ui.Button(body, PANEL_BG, self.paint_backlight, lambda: None)
+        self.help_text(body, "Set the brightness of the round device display.").pack(
+            anchor="w", pady=(k.px(8), k.px(8)))
+        self.backlight_slider = ui.Button(body, ui.MAIN_BG, self.paint_backlight, lambda: None)
         for sequence in ("<Button-1>", "<B1-Motion>"):
             self.backlight_slider.bind(sequence, self.drag_backlight)
         self.backlight_slider.bind("<ButtonRelease-1>", self.release_backlight)
+        self.backlight_slider.bind("<Left>", lambda event: self.step_backlight(-5))
+        self.backlight_slider.bind("<Right>", lambda event: self.step_backlight(5))
         self.backlight_slider.pack(anchor="w", pady=(k.px(6), 0))
 
-        body = secondary
-        width = CARD_WIDTH - FORM_WIDTH - 24
+        body = self.section(tab)
+        width = FORM_WIDTH
         self.caption(body, "BATTERY SAVER", width).pack(anchor="w")
         self.battery_toggle = ui.Button(
-            body, PANEL_BG,
+            body, ui.MAIN_BG,
             lambda hover: self.paint_toggle(
                 self.settings["battery_saver"], "Save device power",
                 "Manual: battery or USB", hover, width),
             lambda: self.toggle_setting("battery_saver"))
         self.battery_toggle.pack(anchor="w", pady=(k.px(6), 0))
-        self.power_status = ui.Picture(body, PANEL_BG)
+        self.power_status = ui.Picture(body, ui.MAIN_BG)
         self.power_status.pack(anchor="w", pady=(k.px(6), 0))
         self.refresh_power_status()
-        note = ui.Picture(body, PANEL_BG)
-        image = k.canvas(width, 100, PANEL_BG)
-        for y, text in ((10, "Brightness: 40% max; screensaver: 20%."),
-                        (26, "Idle: 10% after 30 seconds."),
-                        (42, "Display off after 5 min; touch or turn to wake."),
-                        (58, "Screensaver animations: up to 5 fps."),
-                        (82, "Battery charge is estimated on Bluetooth.")):
-            k.text(image, 0, y, text, "regular", 8.5, ui.MUTED_INK, width=width)
+        note = ui.Picture(body, ui.MAIN_BG)
+        image = k.canvas(CARD_WIDTH, 104, ui.MAIN_BG)
+        for y, text in ((12, "Brightness capped at 40%; screensaver capped at 20%."),
+                        (34, "After 30 seconds idle: dim to 10%. After 5 minutes: display off."),
+                        (56, "Touch or turn to wake. Screensaver animations run at up to 5 fps."),
+                        (86, "Battery charge is a voltage-based estimate shown on Bluetooth.")):
+            k.text(image, 0, y, text, "regular", ui.TEXT_BODY, ui.SUBTLE_INK, width=CARD_WIDTH)
         note.show(image)
         note.pack(anchor="w", pady=(k.px(6), 0))
-
-        body = self.section(primary, FORM_WIDTH)
-        self.caption(body, "DEVICE NAME", FORM_WIDTH).pack(anchor="w")
-        self.name_entry = tk.Entry(body, font=(ui.TK_FAMILY, 11), bg="#FFFFFF", fg=ui.INK,
-                                   relief="flat", highlightthickness=1,
-                                   highlightbackground=ui.CARD_EDGE,
-                                   highlightcolor=ui.SUBTLE_INK, insertbackground=ui.INK)
-        self.name_entry.insert(0, self.settings["name"])
-        self.name_entry.bind("<Return>", self.save_name)
-        self.name_entry.bind("<FocusOut>", self.save_name)
-        self.name_entry.config(width=24)
-        self.name_entry.pack(anchor="w", pady=(k.px(6), k.px(12)), ipady=k.px(4), ipadx=k.px(6))
-        self.caption(body, "DEVICES", FORM_WIDTH).pack(anchor="w")
-        self.connection_text = ui.Picture(body, PANEL_BG)
-        self.connection_text.pack(anchor="w", pady=(k.px(2), 0))
-        self.device_list = tk.Frame(body, bg=PANEL_BG)
-        self.device_list.pack(anchor="w")
 
     def build_controls_tab(self, tab):
         k = self.kit
         body = self.section(tab)
         self.caption(body, "SCREEN ORIENTATION").pack(anchor="w")
-        row = tk.Frame(body, bg=PANEL_BG)
+        self.help_text(body, "Rotate the device display to match how the knob sits on your desk.").pack(
+            anchor="w", pady=(k.px(8), k.px(8)))
+        row = tk.Frame(body, bg=ui.MAIN_BG)
         row.pack(anchor="w", pady=(k.px(6), 0))
         self.orientation_buttons = []
-        widths = [72] * len(config.ORIENTATIONS)
+        widths = [96] * len(config.ORIENTATIONS)
         for value, width in zip(config.ORIENTATIONS, widths):
-            button = ui.Button(row, PANEL_BG,
+            button = ui.Button(row, ui.MAIN_BG,
                                lambda hover, value=value, width=width:
                                    self.paint_orientation(value, hover, width),
                                lambda value=value: self.set_orientation(value))
@@ -377,65 +462,79 @@ class App(DashboardPage, ScreensaverPage, GamesPage, WirelessTab):
                  "Turning clockwise scrolls up instead of down"),
                 ("invert_zoom", "Invert zoom",
                  "Turning clockwise zooms out instead of in")):
-            toggle = ui.Button(body, PANEL_BG,
+            toggle = ui.Button(body, ui.MAIN_BG,
                                lambda hover, key=key, title=title, detail=detail:
                                    self.paint_toggle(self.settings[key], title, detail, hover),
                                lambda key=key: self.toggle_setting(key))
             toggle.pack(anchor="w", pady=(k.px(6), 0))
             self.invert_toggles.append(toggle)
 
-        body = self.section(tab)
-        self.caption(body, "TOUCH").pack(anchor="w")
-        toggle = ui.Button(body, PANEL_BG,
-                           lambda hover: self.paint_toggle(
-                               self.settings["swipe_screens"], "Swipe between screens",
-                               "Swipe left or right on the knob to change screen", hover),
-                           lambda: self.toggle_setting("swipe_screens"))
-        toggle.pack(anchor="w", pady=(k.px(6), 0))
-        self.invert_toggles.append(toggle)
-
     def build_interface_tab(self, tab):
         k = self.kit
         body = self.section(tab)
+        self.caption(body, "APP APPEARANCE").pack(anchor="w")
+        self.help_text(body, "Applies to the companion and device. System follows your Windows theme.").pack(
+            anchor="w", pady=(k.px(8), k.px(8)))
+        row = tk.Frame(body, bg=ui.MAIN_BG)
+        row.pack(anchor="w", pady=(k.px(6), 0))
+        for choice in theme.CHOICES:
+            button = ui.Button(row, ui.MAIN_BG,
+                               lambda hover, choice=choice: self.paint_theme_choice(choice, hover),
+                               lambda choice=choice: self.set_app_theme(choice))
+            button.configure(takefocus=True, highlightthickness=1,
+                             highlightbackground=ui.MAIN_BG, highlightcolor=ui.INK)
+            button.bind("<Return>", lambda event, choice=choice: self.set_app_theme(choice))
+            button.bind("<space>", lambda event, choice=choice: self.set_app_theme(choice))
+            button.pack(side="left", padx=(0, k.px(8)))
+        self.build_overlay_settings(tab)
+        body = self.section(tab)
         self.caption(body, "BAR COLOUR").pack(anchor="w")
+        self.help_text(body, "Standard gives each control its own colour. Choose a swatch or create a custom colour.").pack(
+            anchor="w", pady=(k.px(8), k.px(8)))
         self.accent_buttons = []
-        row = tk.Frame(body, bg=PANEL_BG)
+        row = tk.Frame(body, bg=ui.MAIN_BG)
         row.pack(anchor="w", pady=(k.px(6), 0))
         for key, width in zip(("standard", "custom"), (150, 150)):
-            button = ui.Button(row, PANEL_BG,
+            button = ui.Button(row, ui.MAIN_BG,
                                lambda hover, key=key, width=width:
                                    self.paint_accent_choice(key, hover, width),
                                lambda key=key: self.pick_accent_choice(key))
             self.accent_buttons.append(button)
         self.pack_row(self.accent_buttons)
-        row = tk.Frame(body, bg=PANEL_BG)
+        row = tk.Frame(body, bg=ui.MAIN_BG)
         row.pack(anchor="w", pady=(k.px(10), 0))
         swatches = []
         for colour in dial.PRESET_ACCENTS:
-            swatches.append(ui.Button(row, PANEL_BG,
+            swatches.append(ui.Button(row, ui.MAIN_BG,
                                       lambda hover, colour=colour: self.paint_swatch(colour, hover),
                                       lambda colour=colour: self.set_accent(colour)))
         self.pack_row(swatches, 6)
         self.accent_buttons += swatches
-        self.caption(body, "BAR STYLE").pack(anchor="w", pady=(k.px(16), 0))
-        row = tk.Frame(body, bg=PANEL_BG)
+        body = self.section(tab)
+        self.caption(body, "BAR STYLE").pack(anchor="w")
+        self.help_text(body, "Choose how the coloured ring fills as a level changes.").pack(
+            anchor="w", pady=(k.px(8), k.px(8)))
+        row = tk.Frame(body, bg=ui.MAIN_BG)
         row.pack(anchor="w", pady=(k.px(2), 0))
-        styles = [ui.Button(row, PANEL_BG,
+        styles = [ui.Button(row, ui.MAIN_BG,
                             lambda hover, style=style: self.paint_radio(
-                                self.settings["bar_style"] == style, BAR_STYLE_LABELS[style], hover),
+                                self.settings["bar_style"] == style, BAR_STYLE_LABELS[style], hover,
+                                width=170, height=44),
                             lambda style=style: self.set_bar_style(style))
                   for style in config.BAR_STYLES]
-        self.pack_row(styles, 20)
+        self.pack_row(styles, 12)
         self.accent_buttons += styles
 
         body = self.section(tab)
-        self.caption(body, "NUMBER SIZE").pack(anchor="w")
-        row = tk.Frame(body, bg=PANEL_BG)
+        self.caption(body, "CENTER TEXT SIZE").pack(anchor="w")
+        self.help_text(body, "Change the size of the text shown in the center of the device.").pack(
+            anchor="w", pady=(k.px(8), k.px(8)))
+        row = tk.Frame(body, bg=ui.MAIN_BG)
         row.pack(anchor="w", pady=(k.px(6), 0))
         self.size_buttons = []
-        widths = [80] * len(config.NUMBER_SIZES)
+        widths = [96] * len(config.NUMBER_SIZES)
         for size, width in zip(config.NUMBER_SIZES, widths):
-            button = ui.Button(row, PANEL_BG,
+            button = ui.Button(row, ui.MAIN_BG,
                                lambda hover, size=size, width=width:
                                    self.paint_number_size(size, hover, width),
                                lambda size=size: self.set_number_size(size))
@@ -444,17 +543,87 @@ class App(DashboardPage, ScreensaverPage, GamesPage, WirelessTab):
 
         body = self.section(tab)
         self.caption(body, "WINDOW").pack(anchor="w")
-        self.tray_toggle = ui.Button(body, PANEL_BG, self.paint_tray_toggle,
+        self.tray_toggle = ui.Button(body, ui.MAIN_BG, self.paint_tray_toggle,
                                      self.toggle_tray)
         self.tray_toggle.pack(anchor="w", pady=(k.px(6), 0))
+
+    def build_overlay_settings(self, tab):
+        k = self.kit
+        body = self.section(tab)
+        self.caption(body, "CONTROL OVERLAY").pack(anchor="w")
+        self.overlay_toggle = ui.Button(
+            body, ui.MAIN_BG,
+            lambda hover: self.paint_toggle(
+                self.settings["control_overlay"], "Show control overlay",
+                "Appears during changes, then disappears", hover),
+            lambda: self.toggle_setting("control_overlay"))
+        self.overlay_toggle.pack(anchor="w", pady=(k.px(6), 0))
+        self.overlay_toggle.keyboard_access()
+        row = tk.Frame(body, bg=ui.MAIN_BG)
+        row.pack(anchor="w", pady=(k.px(ui.GAP), 0))
+        self.overlay_style_buttons = []
+        for style, label in (("pill", "Bottom pill"), ("notch", "Top notch")):
+            button = ui.Button(
+                row, ui.MAIN_BG,
+                lambda hover, style=style, label=label: self.paint_radio(
+                    self.settings["overlay_style"] == style, label, hover,
+                    width=160, height=ui.CONTROL_HEIGHT),
+                lambda style=style: self.set_overlay_style(style))
+            button.keyboard_access()
+            self.overlay_style_buttons.append(button)
+        self.pack_row(self.overlay_style_buttons)
+        self.help_text(body, "Bottom pill is translucent. Top notch is solid black at the top of the screen.",
+                       width=FORM_WIDTH).pack(anchor="w", pady=(k.px(ui.GAP), k.px(ui.GAP)))
+        row = tk.Frame(body, bg=ui.MAIN_BG)
+        row.pack(anchor="w")
+        self.overlay_detail_buttons = []
+        for detail, label in (("standard", "Standard"), ("minimal", "Minimal")):
+            button = ui.Button(
+                row, ui.MAIN_BG,
+                lambda hover, detail=detail, label=label: self.paint_radio(
+                    self.settings["overlay_detail"] == detail, label, hover,
+                    width=160, height=ui.CONTROL_HEIGHT),
+                lambda detail=detail: self.set_overlay_detail(detail))
+            button.keyboard_access()
+            self.overlay_detail_buttons.append(button)
+        self.pack_row(self.overlay_detail_buttons)
+        self.help_text(body, "Standard shows the label and progress bar. Minimal shows only the icon and value.",
+                       width=FORM_WIDTH).pack(anchor="w", pady=(k.px(ui.GAP), k.px(ui.GAP)))
+        self.caption(body, "SHOW FEEDBACK FOR").pack(anchor="w")
+        self.help_text(body, "Choose independently of the device menu. Choices are saved even when the overlay is off.",
+                       width=FORM_WIDTH).pack(anchor="w", pady=(k.px(4), k.px(ui.GAP)))
+        grid = tk.Frame(body, bg=ui.MAIN_BG)
+        grid.pack(anchor="w")
+        self.overlay_mode_buttons = []
+        for index, mode in enumerate(config.OVERLAY_MODES):
+            button = ui.Button(
+                grid, ui.MAIN_BG,
+                lambda hover, mode=mode: self.paint_overlay_mode(mode, hover),
+                lambda mode=mode: self.toggle_overlay_mode(mode))
+            button.keyboard_access()
+            button.grid(row=index // 3, column=index % 3,
+                        padx=(0, k.px(ui.GAP) if index % 3 != 2 else 0),
+                        pady=(0, k.px(ui.GAP)))
+            self.overlay_mode_buttons.append(button)
+
+    def paint_overlay_mode(self, mode, hover):
+        k = self.kit
+        width, height = 164, ui.CONTROL_HEIGHT
+        chosen = mode in self.settings["overlay_modes"]
+        image = k.canvas(width, height, ui.MAIN_BG)
+        ink, _ = k.button_surface(image, width, height, hover, chosen)
+        k.icon(image, "Check" if chosen else mode, 20, height / 2, ink, 0.55)
+        k.text(image, 37, height / 2, config.title(mode), "semibold", ui.TEXT_BUTTON, ink,
+               width=width - 45)
+        return image
 
     def build_about_tab(self, tab):
         k = self.kit
         body = self.section(tab)
-        header = ui.Picture(body, PANEL_BG)
+        header = ui.Picture(body, ui.MAIN_BG)
         header.show(self.paint_about_header())
         header.pack(anchor="w")
-        row = tk.Frame(body, bg=PANEL_BG)
+        row = tk.Frame(body, bg=ui.MAIN_BG)
         row.pack(anchor="w", pady=(k.px(12), 0))
         links = (("GitHub", updater.PROJECT_URL, False),
                  ("Releases", updater.RELEASES_URL, False),
@@ -464,17 +633,17 @@ class App(DashboardPage, ScreensaverPage, GamesPage, WirelessTab):
         buttons = []
         for (label, url, kofi), width in zip(links, widths):
             buttons.append(ui.Button(
-                row, PANEL_BG,
+                row, ui.MAIN_BG,
                 lambda hover, label=label, width=width, kofi=kofi:
-                    self.paint_pill(label, hover, width=width, heart=kofi),
+                    self.paint_pill(label, hover, width=width, heart=kofi, height=40),
                 lambda url=url: webbrowser.open(url)))
         self.pack_row(buttons)
 
         body = self.section(tab)
         self.caption(body, "UPDATES").pack(anchor="w")
-        self.about_info = ui.Picture(body, PANEL_BG)
+        self.about_info = ui.Picture(body, ui.MAIN_BG)
         self.about_info.pack(anchor="w", pady=(k.px(4), 0))
-        self.about_actions = tk.Frame(body, bg=PANEL_BG)
+        self.about_actions = tk.Frame(body, bg=ui.MAIN_BG)
         self.about_actions.pack(anchor="w", pady=(k.px(10), 0))
         self.refresh_about()
 
@@ -482,15 +651,28 @@ class App(DashboardPage, ScreensaverPage, GamesPage, WirelessTab):
         """One group of settings. Groups after the first are set off by a
         hairline rather than each sitting in its own rounded box."""
         k = self.kit
+        settings = getattr(tab, "settings_layout", False)
+        inset, gap = (0 if settings else ui.PAGE_INSET), ui.GROUP_GAP
         if tab.winfo_children():
-            rule = ui.Picture(tab, PANEL_BG)
-            image = k.canvas(width, 1, PANEL_BG)
+            rule = ui.Picture(tab, ui.MAIN_BG)
+            image = k.canvas(width, 1, ui.MAIN_BG)
             k.rounded(image, (0, 0, width, 1), 0.1, ui.CARD_EDGE)
             rule.show(image)
-            rule.pack(padx=k.px(28), pady=(0, k.px(18)), anchor="w")
-        body = tk.Frame(tab, bg=PANEL_BG)
-        body.pack(padx=k.px(28), pady=(0, k.px(18)), anchor="w")
+            rule.pack(padx=k.px(inset), pady=(0, k.px(gap)), anchor="w")
+        body = tk.Frame(tab, bg=ui.MAIN_BG)
+        body.pack(padx=k.px(inset), pady=(0, k.px(gap)), anchor="w")
         return body
+
+    def help_text(self, parent, text, width=CARD_WIDTH):
+        k = self.kit
+        lines = k.wrap(text, "regular", ui.TEXT_BODY, width)
+        image = k.canvas(width, len(lines) * ui.TEXT_LINE, ui.MAIN_BG)
+        for index, line in enumerate(lines):
+            k.text(image, 0, index * ui.TEXT_LINE + ui.TEXT_LINE / 2, line,
+                   "regular", ui.TEXT_BODY, ui.SUBTLE_INK)
+        picture = ui.Picture(parent, ui.MAIN_BG)
+        picture.show(image)
+        return picture
 
     @staticmethod
     def fill_widths(naturals, gap=8, total=CARD_WIDTH):
@@ -508,19 +690,18 @@ class App(DashboardPage, ScreensaverPage, GamesPage, WirelessTab):
         comfortable target."""
         return [max(BUTTON_MIN, round(width)) for width in naturals]
 
-    def pack_row(self, buttons, gap=8):
+    def pack_row(self, buttons, gap=ui.GAP):
         """Packs buttons side by side, gap between them and none at the end."""
         for index, button in enumerate(buttons):
             button.pack(side="left",
                         padx=(0, 0 if index == len(buttons) - 1 else self.kit.px(gap)))
 
     def caption(self, parent, text, width=CARD_WIDTH):
-        picture = ui.Picture(parent, PANEL_BG)
-        image = self.kit.canvas(width, 16, PANEL_BG)
-        x = 0.0
-        for ch in text:
-            self.kit.text(image, x, 8, ch, "semibold", 8, ui.MUTED_INK)
-            x += self.kit.font("semibold", 8).getlength(ch) / self.scale + 1.2
+        picture = ui.Picture(parent, ui.MAIN_BG)
+        image = self.kit.canvas(width, ui.TEXT_LINE, ui.MAIN_BG)
+        label = text.capitalize() if text.isupper() else text
+        self.kit.text(image, 0, ui.TEXT_LINE / 2, label, "semibold",
+                      ui.TEXT_HEADING, ui.INK, width=width)
         picture.show(image)
         return picture
 
@@ -528,7 +709,8 @@ class App(DashboardPage, ScreensaverPage, GamesPage, WirelessTab):
 
     def paint_nav(self, key, hover):
         k = self.kit
-        image = k.canvas(NAV_WIDTH, NAV_HEIGHT, ui.SIDEBAR_BG)
+        height = self.nav_height
+        image = k.canvas(NAV_WIDTH, height, ui.SIDEBAR_BG)
         if key == "Settings":
             selected = self.page == "settings"
         elif key == "Dashboard":
@@ -539,58 +721,53 @@ class App(DashboardPage, ScreensaverPage, GamesPage, WirelessTab):
             selected = self.page == "control" and key == self.mode
         accent = self.accent(key) if key in dial.ACCENTS else None
         if selected:
-            k.rounded(image, (0, 0, NAV_WIDTH, NAV_HEIGHT), 12, ui.CARD_BG, ui.CARD_EDGE)
+            k.rounded(image, (0, 0, NAV_WIDTH, height), ui.CONTROL_RADIUS, ui.CARD_BG, ui.CARD_EDGE)
             if accent:
-                k.rounded(image, (7, 13, 10, NAV_HEIGHT - 13), 1.5, accent)
+                k.rounded(image, (7, 13, 10, height - 13), 1.5, accent)
         elif hover:
-            k.rounded(image, (0, 0, NAV_WIDTH, NAV_HEIGHT), 12, ui.HOVER_BG)
+            k.rounded(image, (0, 0, NAV_WIDTH, height), ui.CONTROL_RADIUS, ui.HOVER_BG)
         if selected:
-            ink = dial.label_ink(accent) if accent else ui.INK
+            ink = ui.accent_ink(accent) if accent else ui.INK
         else:
             ink = ui.SUBTLE_INK
-        k.icon(image, key, 31, NAV_HEIGHT / 2, ink, 0.8)
-        k.text(image, 56, NAV_HEIGHT / 2, config.title(key), "semibold" if selected else "regular", 10.5,
+        k.icon(image, key, 31, height / 2, ink, 0.8)
+        k.text(image, 56, height / 2, config.title(key), "semibold" if selected else "regular", ui.TEXT_BUTTON,
                ui.INK if selected else ui.SUBTLE_INK)
         return image
 
     def paint_device(self, port, description, hover):
         k = self.kit
         width, height = FORM_WIDTH, DEVICE_ROW_HEIGHT
-        image = k.canvas(width, height, PANEL_BG)
+        image = k.canvas(width, height, ui.MAIN_BG)
         chosen = self.settings["port"].upper() == port.upper()
-        k.rounded(image, (0, 0, width, height), 9,
-                  "#FFFFFF" if hover or chosen else ui.CARD_BG, ui.CARD_EDGE)
+        k.rounded(image, (0, 0, width, height), ui.CONTROL_RADIUS,
+                  ui.CARD_HOVER if hover or chosen else ui.CARD_BG, ui.CARD_EDGE)
         live = self.connected and (not port or port.upper() == (self.connected_port or "").upper())
         k.dot(image, 16, height / 2, 3.5, ui.OK_GREEN if live else ui.IDLE_GREY)
         title = port or "Automatic"
-        k.text(image, 28, height / 2, title, "semibold", 10, ui.INK)
-        offset = 28 + k.font("semibold", 10).getlength(title) / k.scale + 10
-        k.text(image, offset, height / 2, description, "regular", 8.5, ui.MUTED_INK,
+        k.text(image, 28, height / 2, title, "semibold", ui.TEXT_BUTTON, ui.INK)
+        offset = 28 + k.font("semibold", ui.TEXT_BUTTON).getlength(title) / k.scale + 10
+        k.text(image, offset, height / 2, description, "regular", ui.TEXT_DETAIL, ui.SUBTLE_INK,
                width=width - offset - 36)
         if chosen:
             k.icon(image, "Check", width - 20, height / 2,
-                   dial.label_ink(self.accent(self.mode)), 0.8)
+                   ui.accent_ink(self.accent(self.mode)), 0.8)
         return image
 
     def paint_orientation(self, value, hover, width=64):
         k = self.kit
-        height = 32
-        image = k.canvas(width, height, PANEL_BG)
-        if value == self.settings["orientation"]:
-            k.rounded(image, (0, 0, width, height), 9, ui.INK)
-            ink = "#FFFFFF"
-        else:
-            k.rounded(image, (0, 0, width, height), 9, "#FFFFFF" if hover else ui.CARD_BG,
-                      ui.CARD_EDGE)
-            ink = ui.SUBTLE_INK
-        k.text(image, width / 2, height / 2, f"{value}°", "semibold", 10, ink, anchor="mm")
+        height = 44
+        image = k.canvas(width, height, ui.MAIN_BG)
+        ink, _ = k.button_surface(image, width, height, hover, value == self.settings["orientation"])
+        k.text(image, width / 2, height / 2, f"{value}°", "semibold",
+               ui.TEXT_BUTTON, ink, anchor="mm")
         return image
 
     def tab_width(self, key, tabs=SETTINGS_TABS):
         """Tabs are as wide as their label plus a gap; the last one runs on to
         the edge so the hairline under them spans the whole page."""
-        font = self.kit.font("semibold", 10)
-        widths = [font.getlength(label) / self.kit.scale + 28 for _, label in tabs]
+        font = self.kit.font("semibold", ui.TEXT_BUTTON)
+        widths = [font.getlength(label) / self.kit.scale + ui.GROUP_GAP for _, label in tabs]
         index = [key for key, _ in tabs].index(key)
         if index == len(tabs) - 1:
             return CARD_WIDTH - sum(round(width) for width in widths[:-1])
@@ -600,36 +777,33 @@ class App(DashboardPage, ScreensaverPage, GamesPage, WirelessTab):
         """Underline tabs: labels on one hairline, the open one in bold with a
         bar in the current accent. The first label lines up with the settings."""
         k = self.kit
-        width, height = self.tab_width(key, tabs), 34
-        image = k.canvas(width, height, PANEL_BG)
+        width, height = self.tab_width(key, tabs), ui.TAB_HEIGHT
+        image = k.canvas(width, height, ui.MAIN_BG)
         active = key == (current or self.settings_tab)
         k.rounded(image, (0, height - 1, width, height), 0.1, ui.CARD_EDGE)
-        text = k.font("semibold", 10).getlength(label) / k.scale
+        text = k.font("semibold", ui.TEXT_BUTTON).getlength(label) / k.scale
         if active:
             k.rounded(image, (0, height - 3, text, height), 1.5, self.accent(self.mode))
         elif hover:
             k.rounded(image, (0, height - 2, text, height), 1, ui.MUTED_INK)
-        ink = ui.INK if active else (ui.SUBTLE_INK if hover else ui.MUTED_INK)
-        k.text(image, 0, (height - 3) / 2, label, "semibold" if active else "device", 10, ink)
+        ink = ui.INK if active else ui.SUBTLE_INK
+        face = "semibold" if active else "device"
+        left = k.font(face, ui.TEXT_BUTTON).getbbox(label)[0]
+        x = max(0, -left) / k.scale
+        k.text(image, x, (height - 3) / 2, label, face, ui.TEXT_BUTTON, ink)
         return image
 
     def paint_accent_choice(self, key, hover, width=140):
         """"Standard" keeps a colour per control; "Custom" opens a colour picker."""
         k = self.kit
-        height = 36
-        image = k.canvas(width, height, PANEL_BG)
+        height = 44
+        image = k.canvas(width, height, ui.MAIN_BG)
         accent = self.settings["accent"]
         if key == "standard":
             chosen = accent == config.STANDARD_ACCENT
         else:
             chosen = accent != config.STANDARD_ACCENT and accent not in dial.PRESET_ACCENTS
-        if chosen:
-            k.rounded(image, (0, 0, width, height), 10, ui.INK)
-            ink = "#FFFFFF"
-        else:
-            k.rounded(image, (0, 0, width, height), 10, "#FFFFFF" if hover else ui.CARD_BG,
-                      ui.CARD_EDGE)
-            ink = ui.SUBTLE_INK
+        ink, _ = k.button_surface(image, width, height, hover, chosen)
         if key == "standard":
             for index, mode in enumerate(config.MODES):
                 angle = math.radians(90 - index * 360 / len(config.MODES))
@@ -641,36 +815,25 @@ class App(DashboardPage, ScreensaverPage, GamesPage, WirelessTab):
             k.dot(image, 20, height / 2, 8, ui.CARD_EDGE)
             k.dot(image, 20, height / 2, 7, colour)
             label = "Custom\u2026"
-        k.text(image, 38, height / 2, label, "semibold", 10, ink)
+        k.text(image, 38, height / 2, label, "semibold", ui.TEXT_BUTTON, ink)
         return image
 
     def paint_swatch(self, colour, hover):
         k = self.kit
-        size = 34
-        image = k.canvas(size, size, PANEL_BG)
+        size = 44
+        image = k.canvas(size, size, ui.MAIN_BG)
         c = size / 2
-        if self.settings["accent"] == colour:
-            k.dot(image, c, c, 16, ui.INK)
-            k.dot(image, c, c, 14, PANEL_BG)
-        elif hover:
-            k.dot(image, c, c, 16, ui.CARD_EDGE)
-            k.dot(image, c, c, 14.5, PANEL_BG)
-        k.dot(image, c, c, 11.5, colour)
+        k.colour_swatch(image, c, c, colour, hover, self.settings["accent"] == colour)
         return image
 
     def paint_number_size(self, size, hover, width=76):
         k = self.kit
-        height = 56
-        image = k.canvas(width, height, PANEL_BG)
-        if size == self.settings["number_size"]:
-            k.rounded(image, (0, 0, width, height), 10, ui.INK)
-            ink, label_ink = "#FFFFFF", "#C8C8D2"
-        else:
-            k.rounded(image, (0, 0, width, height), 10, "#FFFFFF" if hover else ui.CARD_BG,
-                      ui.CARD_EDGE)
-            ink, label_ink = ui.INK, ui.MUTED_INK
-        k.text(image, width / 2, 23, "42", "device", size * 0.42, ink, anchor="mm")
-        k.text(image, width / 2, 45, NUMBER_LABELS[size], "regular", 7.5, label_ink,
+        height = 72
+        image = k.canvas(width, height, ui.MAIN_BG)
+        ink, label_ink = k.button_surface(image, width, height, hover,
+                                         size == self.settings["number_size"])
+        k.text(image, width / 2, 28, "42", "device", size * 0.42, ink, anchor="mm")
+        k.text(image, width / 2, 57, NUMBER_LABELS[size], "regular", ui.TEXT_DETAIL, label_ink,
                anchor="mm")
         return image
 
@@ -681,40 +844,35 @@ class App(DashboardPage, ScreensaverPage, GamesPage, WirelessTab):
 
     def paint_toggle(self, on, title, detail, hover, width=FORM_WIDTH):
         k = self.kit
-        height = 40
-        image = k.canvas(width, height, PANEL_BG)
-        k.text(image, 0, 12, title, "semibold", 10, ui.INK)
-        k.text(image, 0, 30, detail, "regular", 8.5, ui.MUTED_INK, width=width - 60)
+        lines = k.wrap(detail, "regular", ui.TEXT_DETAIL, width - 72)
+        height = max(60, 34 + 20 * len(lines))
+        image = k.canvas(width, height, ui.MAIN_BG)
+        k.text(image, 0, 15, title, "semibold", ui.TEXT_BUTTON, ui.INK, width=width - 72)
+        for index, line in enumerate(lines):
+            k.text(image, 0, 38 + index * 20, line, "regular", ui.TEXT_DETAIL, ui.SUBTLE_INK)
         x0, y0 = width - 44, height / 2 - 12
-        track = ui.INK if on else (ui.SUBTLE_INK if hover else ui.IDLE_GREY)
+        track = ui.SELECT_BG if on else (ui.SUBTLE_INK if hover else ui.IDLE_GREY)
         k.rounded(image, (x0, y0, x0 + 44, y0 + 24), 12, track)
-        k.dot(image, x0 + (32 if on else 12), height / 2, 9, "#FFFFFF")
+        k.dot(image, x0 + (32 if on else 12), height / 2, 9, ui.SWITCH_KNOB)
         return image
 
     def pill_width(self, label, heart=False):
-        width = self.kit.font("semibold", 9.5).getlength(label) / self.kit.scale + 28
+        width = self.kit.font("semibold", ui.TEXT_BUTTON).getlength(label) / self.kit.scale + 28
         return round(width + (16 if heart else 0))
 
     def paint_pill(self, label, hover, primary=False, enabled=True, width=None, heart=False,
-                   height=30):
+                   height=ui.CONTROL_HEIGHT):
         k = self.kit
         width = width or self.pill_width(label, heart)
-        image = k.canvas(width, height, PANEL_BG)
-        if primary and enabled:
-            fill = dial.label_ink(self.accent(self.mode)) if hover else ui.INK
-            k.rounded(image, (0, 0, width, height), height / 2, fill)
-            ink = "#FFFFFF"
-        else:
-            k.rounded(image, (0, 0, width, height), height / 2,
-                      "#FFFFFF" if hover and enabled else ui.CARD_BG, ui.CARD_EDGE)
-            ink = ui.INK if enabled else ui.MUTED_INK
+        image = k.canvas(width, height, ui.MAIN_BG)
+        ink, _ = k.button_surface(image, width, height, hover, primary, enabled)
         if heart:
-            text = k.font("semibold", 9.5).getlength(label) / k.scale
+            text = k.font("semibold", ui.TEXT_BUTTON).getlength(label) / k.scale
             left = (width - text - 16) / 2
             self.paint_heart(image, left + 5, height / 2, KOFI_RED)
-            k.text(image, left + 16, height / 2, label, "semibold", 9.5, ink)
+            k.text(image, left + 16, height / 2, label, "semibold", ui.TEXT_BUTTON, ink)
         else:
-            k.text(image, width / 2, height / 2, label, "semibold", 9.5, ink, anchor="mm")
+            k.text(image, width / 2, height / 2, label, "semibold", ui.TEXT_BUTTON, ink, anchor="mm")
         return image
 
     def paint_mute_button(self, hover):
@@ -722,21 +880,20 @@ class App(DashboardPage, ScreensaverPage, GamesPage, WirelessTab):
         k = self.kit
         mode = self.mode if self.mode in MUTE_MODES else "Volume"
         muted = self.muted.get(mode, False)
-        width, height = SIDE_WIDTH, 34
+        width, height = SIDE_WIDTH, ui.CONTROL_HEIGHT
         image = k.canvas(width, height, ui.MAIN_BG)
         if muted:
-            k.rounded(image, (0, 0, width, height), 17, "#D93F45" if hover else MUTED_RED)
-            ink = "#FFFFFF"
+            k.rounded(image, (0, 0, width, height), ui.CONTROL_RADIUS,
+                      ui.ERROR_INK, ui.INK if hover else None)
+            ink = ui.SELECT_INK
         else:
-            k.rounded(image, (0, 0, width, height), 17, "#FFFFFF" if hover else ui.CARD_BG,
-                      ui.CARD_EDGE)
-            ink = ui.INK
+            ink, _ = k.button_surface(image, width, height, hover)
         label = "Unmute" if muted else "Mute"
         label += " microphone" if mode == "Mic" else " sound"
-        text = k.font("semibold", 9.5).getlength(label) / k.scale
+        text = k.font("semibold", ui.TEXT_BUTTON).getlength(label) / k.scale
         left = (width - text - 24) / 2
         k.icon(image, mode + "Muted" if not muted else mode, left + 8, height / 2, ink, 0.55)
-        k.text(image, left + 24, height / 2, label, "semibold", 9.5, ink)
+        k.text(image, left + 24, height / 2, label, "semibold", ui.TEXT_BUTTON, ink)
         return image
 
     def paint_heart(self, image, x, y, colour):
@@ -759,18 +916,23 @@ class App(DashboardPage, ScreensaverPage, GamesPage, WirelessTab):
 
     def paint_about_header(self):
         k = self.kit
-        width, height = CARD_WIDTH, 64
-        image = k.canvas(width, height, PANEL_BG)
+        width = CARD_WIDTH
+        left, pad = 72, 4
+        detail = "Companion for the Waveshare ESP32-S3 knob"
+        lines = k.wrap(detail, "regular", ui.TEXT_BODY, width - left - pad)
+        height = max(72, 48 + len(lines) * ui.TEXT_LINE + pad)
+        image = k.canvas(width, height, ui.MAIN_BG)
         try:
             with Image.open(ui.ICON_FILE.with_suffix(".png")) as logo:
                 logo = logo.convert("RGBA").resize((k.px(56), k.px(56)), Image.LANCZOS)
-                image.paste(logo, (0, k.px(4)), logo)
+                image.paste(logo, (k.px(pad), k.px(8)), logo)
         except OSError:
             pass
-        k.text(image, 70, 16, "Revo1", "semibold", 14, ui.INK)
-        k.text(image, 70, 36, f"Version {__version__}", "regular", 9.5, ui.SUBTLE_INK)
-        k.text(image, 70, 53, "Companion for the Waveshare ESP32-S3 knob",
-               "regular", 8.5, ui.MUTED_INK, width=width - 70)
+        k.text(image, left, 16, "Revo1", "semibold", 14, ui.INK)
+        k.text(image, left, 38, f"Version {__version__}", "regular", ui.TEXT_BODY, ui.SUBTLE_INK)
+        for index, line in enumerate(lines):
+            k.text(image, left, 59 + index * ui.TEXT_LINE, line, "regular",
+                   ui.TEXT_BODY, ui.SUBTLE_INK)
         return image
 
     def about_rows(self):
@@ -807,21 +969,37 @@ class App(DashboardPage, ScreensaverPage, GamesPage, WirelessTab):
     def paint_about_info(self):
         k = self.kit
         width = CARD_WIDTH
+        pad, value_x = 4, 156
         rows = self.about_rows()
-        extra = 28 if self.update_text else 0
-        image = k.canvas(width, len(rows) * 24 + extra, PANEL_BG)
-        for index, (label, value) in enumerate(rows):
-            y = index * 24 + 12
-            k.text(image, 0, y, label, "regular", 9.5, ui.SUBTLE_INK)
-            k.text(image, 120, y, value, "semibold", 9.5, ui.INK, width=width - 120)
+        wrapped = [(k.wrap(label, "regular", ui.TEXT_BODY, value_x - 20),
+                    k.wrap(value, "semibold", ui.TEXT_BODY, width - value_x - pad))
+                   for label, value in rows]
+        height = sum(max(40, max(len(labels), len(lines)) * ui.TEXT_LINE + 16)
+                     for labels, lines in wrapped)
+        update_lines = k.wrap(self.update_text, "regular", ui.TEXT_BODY,
+                              width - 2 * pad) if self.update_text else []
+        image = k.canvas(width, height + len(update_lines) * 22 +
+                         (24 if self.update_progress is not None else 0), ui.MAIN_BG)
+        offset = 0
+        for labels, lines in wrapped:
+            y = offset + 18
+            for index, label in enumerate(labels):
+                k.text(image, pad, y + index * ui.TEXT_LINE, label, "regular",
+                       ui.TEXT_BODY, ui.SUBTLE_INK)
+            for index, line in enumerate(lines):
+                k.text(image, value_x, y + index * ui.TEXT_LINE, line, "semibold",
+                       ui.TEXT_BODY, ui.INK)
+            offset += max(40, max(len(labels), len(lines)) * ui.TEXT_LINE + 16)
         if self.update_text:
-            y = len(rows) * 24 + 8
-            k.text(image, 0, y, self.update_text, "regular", 9, ui.SUBTLE_INK, width=width)
+            for index, line in enumerate(update_lines):
+                k.text(image, pad, height + index * ui.TEXT_LINE + 11, line, "regular",
+                       ui.TEXT_BODY, ui.SUBTLE_INK)
             if self.update_progress is not None:
-                k.rounded(image, (0, y + 11, width, y + 17), 3, ui.CARD_EDGE)
+                y = height + len(update_lines) * 22 + 8
+                k.rounded(image, (0, y, width, y + 6), 3, ui.CARD_EDGE)
                 filled = max(6, width * self.update_progress)
-                k.rounded(image, (0, y + 11, filled, y + 17), 3,
-                          dial.label_ink(self.accent(self.mode)))
+                k.rounded(image, (0, y, filled, y + 6), 3,
+                          ui.accent_ink(self.accent(self.mode)))
         return image
 
     def refresh_identity(self):
@@ -831,6 +1009,8 @@ class App(DashboardPage, ScreensaverPage, GamesPage, WirelessTab):
         self.paint_knob_badge(image, 24, 25, 17)
         k.text(image, 50, 15, self.settings["name"], "semibold", 14, ui.INK, width=NAV_WIDTH - 54)
         link = LINK_NAMES.get(self.link_kind) if self.connected else None
+        if self.page == "settings" and self.link_kind == "usb":
+            link = None
         if link:
             icon, name = link
             k.icon(image, icon, 55, 38, ui.OK_GREEN, 0.42)
@@ -849,7 +1029,7 @@ class App(DashboardPage, ScreensaverPage, GamesPage, WirelessTab):
 
     def identity_power_text(self):
         if self.connected and self.link_kind == "usb":
-            return "USB power"
+            return "" if self.page == "settings" else "USB power"
         return self.battery_text()
 
     def battery_text(self):
@@ -884,17 +1064,9 @@ class App(DashboardPage, ScreensaverPage, GamesPage, WirelessTab):
         badge = badge.resize((size // factor, size // factor), Image.LANCZOS)
         image.paste(badge, (k.px(cx - radius), k.px(cy - radius)), badge)
 
-    def refresh_status(self):
-        image = self.kit.canvas(FORM_WIDTH, 20, PANEL_BG)
-        self.kit.text(image, 0, 10, self.status.get(), "regular", 10, ui.SUBTLE_INK,
-                      width=FORM_WIDTH)
-        self.connection_text.show(image)
-        for button in self.device_rows:
-            button.refresh()
-
     def refresh_power_status(self):
-        width = CARD_WIDTH - FORM_WIDTH - 24
-        image = self.kit.canvas(width, 20, PANEL_BG)
+        width = CARD_WIDTH
+        image = self.kit.canvas(width, 24, ui.MAIN_BG)
         if self.device_power is None:
             text = ("Waiting for device power status." if self.connected else
                     "Connect the knob to check its power mode.")
@@ -903,7 +1075,7 @@ class App(DashboardPage, ScreensaverPage, GamesPage, WirelessTab):
             mode = "Saver on" if enabled else "Saver off"
             screen = f"Screen brightness: {brightness}%" if brightness else "Display off"
             text = f"{mode} - {screen}"
-        self.kit.text(image, 0, 10, text, "regular", 8.5, ui.SUBTLE_INK, width=width)
+        self.kit.text(image, 0, 12, text, "regular", 9.5, ui.SUBTLE_INK, width=width)
         self.power_status.show(image)
 
     def refresh_nav(self):
@@ -922,6 +1094,7 @@ class App(DashboardPage, ScreensaverPage, GamesPage, WirelessTab):
             frame.pack_forget()
         pages[page].pack(side="left", fill="both", expand=True)
         self.refresh_nav()
+        self.refresh_identity()
         if page == "dashboard":
             self.refresh_dashboard()
         elif page == "screensaver":
@@ -950,10 +1123,11 @@ class App(DashboardPage, ScreensaverPage, GamesPage, WirelessTab):
         for frame in self.tabs.values():
             frame.pack_forget()
         self.tabs[key].pack(fill="x", anchor="w")
+        self.root.update_idletasks()
+        self.settings_scroll._fit()
+        self.settings_scroll.canvas.yview_moveto(0)
         for button in self.tab_buttons:
             button.refresh()
-        if self.page == "settings":
-            self.fit_window()
 
     def accent(self, mode):
         """The bar colour for `mode`: its own in the standard style, otherwise
@@ -1005,6 +1179,9 @@ class App(DashboardPage, ScreensaverPage, GamesPage, WirelessTab):
 
     def save_name(self, event=None):
         name = self.name_entry.get().strip() or config.DEFAULT_NAME
+        if self.name_entry.get() != name:
+            self.name_entry.delete(0, "end")
+            self.name_entry.insert(0, name)
         if name != self.settings["name"]:
             self.settings["name"] = name
             config.save(self.settings)
@@ -1032,25 +1209,7 @@ class App(DashboardPage, ScreensaverPage, GamesPage, WirelessTab):
         self.scan_devices()
 
     def show_devices(self):
-        for child in self.device_list.winfo_children():
-            child.destroy()
-        k = self.kit
         self.device_rows = []
-        for port, description in [("", "first Revo1 found")] + list(self.devices):
-            button = ui.Button(self.device_list, PANEL_BG,
-                               lambda hover, p=port, d=description: self.paint_device(p, d, hover),
-                               lambda p=port: self.use_port(p))
-            button.pack(anchor="w", pady=(k.px(6), 0))
-            self.device_rows.append(button)
-        if not self.devices:
-            note = ui.Picture(self.device_list, PANEL_BG)
-            image = k.canvas(FORM_WIDTH, 22, PANEL_BG)
-            k.text(image, 0, 11, "No knob on USB. Once paired, Revo1 reaches it over "
-                   "Bluetooth instead.", "regular", 9,
-                   ui.MUTED_INK)
-            note.show(image)
-            note.pack(anchor="w", pady=(k.px(6), 0))
-        self.fit_window()
 
     def center_window(self):
         """Places the window in the middle of the work area (the screen
@@ -1096,6 +1255,8 @@ class App(DashboardPage, ScreensaverPage, GamesPage, WirelessTab):
         and orientation button stays visible."""
         self.root.update_idletasks()
         page = page or self.settings_page
+        if page is self.settings_page:
+            return
         needed = min(page.winfo_reqheight(),
                      self.root.winfo_screenheight() - self.kit.px(80))
         if needed > self.root.winfo_height():
@@ -1115,10 +1276,42 @@ class App(DashboardPage, ScreensaverPage, GamesPage, WirelessTab):
     def toggle_tray(self):
         self.toggle_setting("minimize_to_tray")
 
+    def set_overlay_style(self, style):
+        if style not in config.OVERLAY_STYLES:
+            raise ValueError(f"Invalid overlay style: {style}")
+        self.settings["overlay_style"] = style
+        config.save(self.settings)
+        self.control_overlay.hide()
+        for button in self.overlay_style_buttons:
+            button.refresh()
+
+    def set_overlay_detail(self, detail):
+        if detail not in config.OVERLAY_DETAILS:
+            raise ValueError(f"Invalid overlay detail: {detail}")
+        self.settings["overlay_detail"] = detail
+        config.save(self.settings)
+        self.control_overlay.hide()
+        for button in self.overlay_detail_buttons:
+            button.refresh()
+
+    def toggle_overlay_mode(self, mode):
+        if mode not in config.OVERLAY_MODES:
+            raise ValueError(f"Invalid overlay control: {mode}")
+        selected = set(self.settings["overlay_modes"])
+        if mode in selected:
+            selected.remove(mode)
+        else:
+            selected.add(mode)
+        self.settings["overlay_modes"] = [item for item in config.OVERLAY_MODES if item in selected]
+        config.save(self.settings)
+        self.control_overlay.hide()
+        for button in self.overlay_mode_buttons:
+            button.refresh()
+
     def toggle_setting(self, key):
         self.settings[key] = not self.settings[key]
         config.save(self.settings)
-        for toggle in [self.tray_toggle, self.battery_toggle] + self.invert_toggles:
+        for toggle in [self.tray_toggle, self.battery_toggle, self.overlay_toggle] + self.invert_toggles:
             toggle.refresh()
         if key == "saver_enabled":
             self.push_saver()
@@ -1130,6 +1323,8 @@ class App(DashboardPage, ScreensaverPage, GamesPage, WirelessTab):
             self.refresh_screensaver()
         elif key == "battery_saver" and self.connected:
             self.bridge.send_power_save(self.settings["battery_saver"])
+        elif key == "control_overlay" and not self.settings["control_overlay"]:
+            self.control_overlay.hide()
 
     def on_unmap(self, event):
         if (event.widget is self.root and self.tray and self.settings["minimize_to_tray"]
@@ -1198,18 +1393,20 @@ class App(DashboardPage, ScreensaverPage, GamesPage, WirelessTab):
             lines[-1].append(action)
             used += 8 + width
         for number, line_actions in enumerate(lines):
-            line = tk.Frame(self.about_actions, bg=PANEL_BG)
+            line = tk.Frame(self.about_actions, bg=ui.MAIN_BG)
             line.pack(anchor="w", pady=(self.kit.px(8) if number else 0, 0))
             widths = self.button_widths([self.pill_width(action[0]) for action in line_actions])
             buttons = []
             for (label, command, primary, enabled), width in zip(line_actions, widths):
                 button = ui.Button(
-                    line, PANEL_BG,
+                    line, ui.MAIN_BG,
                     lambda hover, label=label, primary=primary, enabled=enabled, width=width:
-                        self.paint_pill(label, hover, primary, enabled, width),
+                        self.paint_pill(label, hover, primary, enabled, width, height=40),
                     (command if enabled else (lambda: None)))
                 if not enabled:
-                    button.config(cursor="arrow")
+                    button.config(cursor="arrow", takefocus=False)
+                else:
+                    button.keyboard_access()
                 buttons.append(button)
             self.pack_row(buttons)
         if self.page == "settings" and self.settings_tab == "about":
@@ -1341,11 +1538,24 @@ class App(DashboardPage, ScreensaverPage, GamesPage, WirelessTab):
         try:
             if mode == "Mic":
                 controls.set_microphone_muted(not self.muted["Mic"])
+                actual = controls.microphone_level()
             else:
                 controls.set_volume_muted(not self.muted["Volume"])
+                actual = controls.volume_level()
         except (COMError, OSError, RuntimeError, ValueError) as exc:
             self.status.set(f"{mode} mute failed: {exc}")
+            return
         self.refresh_mute()
+        self.show_control_feedback(overlay.level_feedback(
+            mode, actual, self.muted[mode]))
+
+    def feedback_visible(self, feedback):
+        return self.settings["control_overlay"] and feedback.mode in self.settings["overlay_modes"]
+
+    def show_control_feedback(self, feedback):
+        if self.feedback_visible(feedback):
+            self.control_overlay.show(feedback, self.accent(feedback.mode),
+                                      self.settings["overlay_style"], self.settings["overlay_detail"])
 
     def refresh_external_volume(self):
         self.refresh_mute()
@@ -1414,9 +1624,9 @@ class App(DashboardPage, ScreensaverPage, GamesPage, WirelessTab):
         """The screen's name beside the dial, with a few lines on using it."""
         k = self.kit
         image = k.canvas(SIDE_WIDTH, 40 + 20 * len(lines), ui.MAIN_BG)
-        k.text(image, 0, 18, text, "semibold", 18, colour, width=SIDE_WIDTH)
+        k.text(image, 0, 18, text, "semibold", ui.TEXT_TITLE, colour, width=SIDE_WIDTH)
         for index, line in enumerate(lines):
-            k.text(image, 0, 52 + 20 * index, line, "regular", 10, ui.SUBTLE_INK,
+            k.text(image, 0, 52 + ui.TEXT_LINE * index, line, "regular", ui.TEXT_BODY, ui.SUBTLE_INK,
                    width=SIDE_WIDTH)
         self.label.show(image)
 
@@ -1425,6 +1635,16 @@ class App(DashboardPage, ScreensaverPage, GamesPage, WirelessTab):
         accent = self.accent(self.mode)
         c = dial.CENTER
         games = self.mode == "Games" and not self.menu
+        apps = self.mode == "Launcher" and not self.menu
+        if not games and self.games_panel.winfo_manager():
+            self.games_panel.pack_forget()
+        if not apps and self.launcher_panel.winfo_manager():
+            self.launcher_panel.pack_forget()
+        if apps:
+            self.dial_box.pack_forget()
+            self.launcher_panel.pack(fill="x")
+            self.refresh_launcher()
+            return
         if games:
             self.dial_box.pack_forget()
             self.games_panel.pack(fill="x")
@@ -1454,7 +1674,7 @@ class App(DashboardPage, ScreensaverPage, GamesPage, WirelessTab):
             self.show_dial(image)
             return
 
-        self.set_heading(config.title(self.mode), dial.label_ink(accent), SCREEN_HELP.get(self.mode, ()))
+        self.set_heading(config.title(self.mode), ui.accent_ink(accent), SCREEN_HELP.get(self.mode, ()))
         if self.mode == "Media":
             state = self.media_state or {}
             duration = state.get("duration", 0)
@@ -1537,7 +1757,7 @@ class App(DashboardPage, ScreensaverPage, GamesPage, WirelessTab):
 
     def draw_media_icons(self, pixels, accent, playing):
         c, gap = dial.CENTER, dial.MEDIA_BUTTON_SPACING
-        bright = tuple(v * 170 // 256 for v in accent)
+        bright = tuple((v + 510) // 3 if dial.DARK_THEME else v * 170 // 256 for v in accent)
         # The middle icon is a button, so it shows the action a tap performs.
         self.draw_icon(pixels, "Prev", c - gap, c, dial.ICON_INK, size=dial.MEDIA_SKIP_SIZE)
         self.draw_icon(pixels, "Pause" if playing else "Play", c, c, bright,
@@ -1648,7 +1868,7 @@ class App(DashboardPage, ScreensaverPage, GamesPage, WirelessTab):
         self.comet_direction = 1
 
     def rotate(self, steps):
-        if self.mode == "Games":
+        if not steps or self.mode in ("Games", "Launcher"):
             return
         if self.mode == "Pomodoro":
             # Before a phase starts the knob sets its length; once it has
@@ -1659,6 +1879,9 @@ class App(DashboardPage, ScreensaverPage, GamesPage, WirelessTab):
             else:
                 timer.adjust(steps * 60)
                 self.after_pomodoro_change()
+                self.show_control_feedback(overlay.time_feedback(
+                    "Pomodoro", pomodoro.PHASE_NAMES[timer.phase],
+                    timer.remaining(), timer.total))
             return
         if self.mode in ("Scroll", "Zoom") and steps:
             # Segment indices run anticlockwise, so a clockwise turn decreases them.
@@ -1698,6 +1921,18 @@ class App(DashboardPage, ScreensaverPage, GamesPage, WirelessTab):
                 mode, steps = self.actions.get()
                 if mode is None:
                     return
+                if mode == "__launch__":
+                    token, index, item = steps
+                    try:
+                        launcher.launch(item)
+                        self.events.put(("launch_result", (token, index, True)))
+                        self.events.put(("status", f"Launched {item['name']}"))
+                        self.events.put(("feedback", overlay.Feedback(
+                            "Launcher", "App launched", item["name"])))
+                    except (OSError, ValueError) as exc:
+                        self.events.put(("launch_result", (token, index, False)))
+                        self.events.put(("status", f"Could not launch {item['name']}: {exc}"))
+                    continue
                 if mode == "__mediapoll__":
                     self.events.put(("media", self.media.snapshot()))
                     continue
@@ -1720,7 +1955,11 @@ class App(DashboardPage, ScreensaverPage, GamesPage, WirelessTab):
                         self.media.next_track()
                     elif steps == "PREV":
                         self.media.previous_track()
-                    self.events.put(("media", self.media.snapshot()))
+                    snapshot = self.media.snapshot()
+                    self.events.put(("media", snapshot))
+                    self.events.put(("feedback", overlay.Feedback(
+                        "Media", "Media", {"PLAYPAUSE": {0: "Stopped", 1: "Playing", 2: "Paused"}[snapshot["status"]],
+                                           "NEXT": "Next", "PREV": "Previous"}[steps])))
                     continue
                 try:
                     if mode == "Volume":
@@ -1737,8 +1976,15 @@ class App(DashboardPage, ScreensaverPage, GamesPage, WirelessTab):
                         value = 50
                     else:
                         self.media.seek_clicks(steps)
-                        self.events.put(("media", self.media.snapshot()))
+                        snapshot = self.media.snapshot()
+                        self.events.put(("media", snapshot))
+                        self.events.put(("feedback", overlay.time_feedback(
+                            "Media", "Playback", snapshot["position"], snapshot["duration"])))
                         value = 50
+                    if mode in LEVEL_MODES:
+                        self.events.put(("feedback", overlay.level_feedback(mode, value)))
+                    elif mode in ("Scroll", "Zoom"):
+                        self.events.put(("feedback", overlay.direction_feedback(mode, steps)))
                     self.events.put(("value", (mode, value)))
                 except (COMError, OSError, RuntimeError, ValueError,
                         subprocess.SubprocessError) as exc:
@@ -1749,6 +1995,7 @@ class App(DashboardPage, ScreensaverPage, GamesPage, WirelessTab):
     def push_device_state(self):
         """Sends the app's style and view to the knob, as on a fresh connection."""
         self.state_pushed = time.monotonic()
+        self.bridge.send_theme(ui.ACTIVE_THEME)
         # Start both comets from the same place, even if the device kept
         # running while the app was closed.
         self.reset_comet()
@@ -1766,6 +2013,8 @@ class App(DashboardPage, ScreensaverPage, GamesPage, WirelessTab):
         self.bridge.send_mute(self.muted["Volume"], self.muted["Mic"])
         self.bridge.send_game_best(self.settings["whack_best"])
         self.bridge.request_library()
+        self.launcher_ready = False
+        self.push_launcher()
         try:
             self.refresh_value()
         except (COMError, OSError, RuntimeError, ValueError,
@@ -1777,6 +2026,7 @@ class App(DashboardPage, ScreensaverPage, GamesPage, WirelessTab):
         self.bridge.send_menu()
 
     def poll(self):
+        feedback = None
         try:
             while True:
                 kind, payload = self.events.get_nowait()
@@ -1785,8 +2035,11 @@ class App(DashboardPage, ScreensaverPage, GamesPage, WirelessTab):
                     if payload.startswith("Serial connection error") or payload.startswith("Device not found"):
                         self.connected = False
                 elif kind == "disconnected":
+                    self.launcher_ready = False
                     self.connected = False
                     self.link_kind = None
+                    self.knob_net = None
+                    self.bluetooth_status = "idle"
                     self.refresh_wireless()
                     self.device_version = None
                     self.device_power = None
@@ -1796,6 +2049,10 @@ class App(DashboardPage, ScreensaverPage, GamesPage, WirelessTab):
                         self.upload_state = ("error", "The knob was disconnected")
                     self.refresh_about()
                     self.refresh_screensaver()
+                elif kind == "bluetooth_status":
+                    self.bluetooth_status, text = payload
+                    self.wireless_note = (text, self.bluetooth_status == "error")
+                    self.refresh_wireless()
                 elif kind == "battery":
                     self.device_battery = payload if self.connected and self.link_kind == "ble" else None
                     self.battery_received = time.monotonic()
@@ -1835,6 +2092,9 @@ class App(DashboardPage, ScreensaverPage, GamesPage, WirelessTab):
                         self.connected_port = payload
                         self.link_kind = link_kind(payload)
                         self.connected = True
+                        if self.link_kind == "ble":
+                            self.bluetooth_status = "connected"
+                            self.wireless_note = ("Connected over Bluetooth.", False)
                         self.status.set(f"Connected over {payload}" if self.link_kind != "usb"
                                         else f"Connected on {payload}")
                         self.refresh_wireless()
@@ -1865,8 +2125,28 @@ class App(DashboardPage, ScreensaverPage, GamesPage, WirelessTab):
                         self.toggle_mute()
                 elif kind == "game":
                     self.record_score(payload[0], payload[1])
+                    if payload[0] is not None:
+                        result = overlay.Feedback("Games", "Game score", str(payload[0]))
+                        if self.feedback_visible(result):
+                            feedback = result
                 elif kind == "game_best":
                     self.record_score(None, payload)
+                elif kind == "launch":
+                    self.launch_from_device(*payload)
+                elif kind == "launch_result":
+                    if self.connected and payload[0] == self.launcher_token:
+                        self.bridge.send_launch_result(*payload)
+                elif kind == "launcher_done":
+                    if payload == self.launcher_token:
+                        self.launcher_ready = True
+                        self.launcher_note = "Apps synced. Open App launcher on the knob."
+                        self.refresh_launcher()
+                elif kind == "launcher_error":
+                    if payload[0] == self.launcher_token:
+                        self.launcher_ready = False
+                        self.launcher_note = f"App launcher sync failed: {payload[1]}"
+                        self.status.set(self.launcher_note)
+                        self.refresh_launcher()
                 elif kind == "levels":
                     self.levels_pending = False
                     self.levels = payload
@@ -1891,8 +2171,16 @@ class App(DashboardPage, ScreensaverPage, GamesPage, WirelessTab):
                     self.levels[self.mode] = payload[1]
                     self.render()
                     self.sync()
+                elif kind == "feedback":
+                    if payload.mode in MUTE_MODES:
+                        payload = overlay.level_feedback(
+                            payload.mode, round(payload.fraction * 100), self.muted[payload.mode])
+                    if self.feedback_visible(payload):
+                        feedback = payload
         except queue.Empty:
             pass
+        if feedback is not None:
+            self.show_control_feedback(feedback)
         # The knob's clock drifts and knows nothing of daylight saving.
         if self.device_battery is not None and time.monotonic() - self.battery_received >= 45:
             self.device_battery = None
@@ -1911,16 +2199,15 @@ class App(DashboardPage, ScreensaverPage, GamesPage, WirelessTab):
     def paint_stepper(self, key, hover, width):
         """\u2212 25 min +, for the focus or break length."""
         k = self.kit
-        height = 30
+        height = ui.CONTROL_HEIGHT
         image = k.canvas(width, height, ui.MAIN_BG)
         phase = pomodoro.FOCUS if key == "focus" else pomodoro.BREAK
         current = self.pomodoro.phase == phase
-        k.rounded(image, (0, 0, width, height), 15, "#FFFFFF" if hover else ui.CARD_BG,
-                  dial.label_ink(self.accent("Pomodoro")) if current else ui.CARD_EDGE)
-        k.text(image, 18, height / 2, "\u2212", "semibold", 12, ui.SUBTLE_INK, anchor="mm")
-        k.text(image, width - 18, height / 2, "+", "semibold", 12, ui.SUBTLE_INK, anchor="mm")
+        ink, _ = k.button_surface(image, width, height, hover, current)
+        k.text(image, 18, height / 2, "\u2212", "semibold", 12, ink, anchor="mm")
+        k.text(image, width - 18, height / 2, "+", "semibold", 12, ink, anchor="mm")
         label = f"{pomodoro.PHASE_NAMES[phase]} \u00b7 {self.pomodoro.minutes[phase]} min"
-        k.text(image, width / 2, height / 2, label, "semibold", 9.5, ui.INK, anchor="mm")
+        k.text(image, width / 2, height / 2, label, "semibold", ui.TEXT_BUTTON, ink, anchor="mm")
         return image
 
     def step_pomodoro(self, key, event):
@@ -1942,6 +2229,8 @@ class App(DashboardPage, ScreensaverPage, GamesPage, WirelessTab):
             self.settings[key] = minutes
             config.save(self.settings)
         self.after_pomodoro_change()
+        self.show_control_feedback(overlay.time_feedback(
+            "Pomodoro", pomodoro.PHASE_NAMES[phase], minutes * 60, minutes * 60))
 
     def pomodoro_action(self, key):
         if key == "start":
@@ -1949,6 +2238,9 @@ class App(DashboardPage, ScreensaverPage, GamesPage, WirelessTab):
         else:
             self.pomodoro.reset()
         self.after_pomodoro_change()
+        self.show_control_feedback(overlay.time_feedback(
+            "Pomodoro", "Running" if self.pomodoro.running else "Paused",
+            self.pomodoro.remaining(), self.pomodoro.total))
 
     def after_pomodoro_change(self):
         self.push_pomodoro()
@@ -1987,8 +2279,8 @@ class App(DashboardPage, ScreensaverPage, GamesPage, WirelessTab):
 
     def paint_backlight(self, hover):
         k = self.kit
-        width, height = FORM_WIDTH, 34
-        image = k.canvas(width, height, PANEL_BG)
+        width, height = FORM_WIDTH, 44
+        image = k.canvas(width, height, ui.MAIN_BG)
         value = self.settings["backlight"]
         track = width - 56
         k.icon(image, "Brightness", 10, height / 2, ui.SUBTLE_INK, 0.6)
@@ -1996,10 +2288,10 @@ class App(DashboardPage, ScreensaverPage, GamesPage, WirelessTab):
         filled = left + (right - left) * (value - 5) / 95
         k.rounded(image, (left, height / 2 - 3, right, height / 2 + 3), 3, ui.CARD_EDGE)
         k.rounded(image, (left, height / 2 - 3, max(filled, left + 6), height / 2 + 3), 3,
-                  dial.label_ink(self.accent(self.mode)))
+                  ui.accent_ink(self.accent(self.mode)))
         k.dot(image, filled, height / 2, 10 if hover else 9, ui.CARD_EDGE)
-        k.dot(image, filled, height / 2, 9 if hover else 8, "#FFFFFF")
-        k.dot(image, filled, height / 2, 3, dial.label_ink(self.accent(self.mode)))
+        k.dot(image, filled, height / 2, 9 if hover else 8, ui.SWITCH_KNOB)
+        k.dot(image, filled, height / 2, 3, ui.accent_ink(self.accent(self.mode)))
         k.text(image, width, height / 2, f"{value}%", "semibold", 10, ui.INK, anchor="rm")
         return image
 
@@ -2020,6 +2312,12 @@ class App(DashboardPage, ScreensaverPage, GamesPage, WirelessTab):
         config.save(self.settings)
         if self.connected:
             self.bridge.send_backlight(self.settings["backlight"])
+
+    def step_backlight(self, delta):
+        self.settings["backlight"] = max(5, min(100, self.settings["backlight"] + delta))
+        self.backlight_slider.refresh()
+        self.release_backlight(None)
+        return "break"
 
     def request_close(self):
         """Asks before closing, since the knob stops working without the app.
@@ -2045,6 +2343,7 @@ class App(DashboardPage, ScreensaverPage, GamesPage, WirelessTab):
         return True
 
     def close(self):
+        self.control_overlay.close()
         self.actions.put((None, 0))
         if self.tray:
             self.tray.stop()
