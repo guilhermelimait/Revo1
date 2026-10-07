@@ -130,7 +130,10 @@ def fit_round(image):
     global _MASK
     if _MASK is None:
         _MASK = _round_mask()
-    frame = ImageOps.fit(image.convert("RGB"), (SIZE, SIZE), Image.LANCZOS)
+    rgba = image.convert("RGBA")
+    opaque = Image.new("RGBA", rgba.size, (0, 0, 0, 255))
+    opaque.alpha_composite(rgba)
+    frame = ImageOps.fit(opaque.convert("RGB"), (SIZE, SIZE), Image.LANCZOS)
     black = Image.new("RGB", (SIZE, SIZE), (0, 0, 0))
     return Image.composite(frame, black, _MASK)
 

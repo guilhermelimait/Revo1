@@ -1,5 +1,14 @@
 # Changelog
 
+## 1.1.1 - 2026-10-07
+
+- Composite transparent GIF and image pixels over black before JPEG conversion,
+  preventing hidden palette colours from appearing on the knob.
+- Fix clipped tab labels in Settings and Screensaver by accounting for keyboard
+  focus borders when sizing the tab row.
+- Reimport previously added transparent pictures or GIFs and send the collection
+  again to apply the conversion fix. No firmware update is required from 1.1.0.
+
 ## 1.1.0 - 2026-10-05
 
 Feature release: app launcher, themes, desktop feedback, games, screensavers,

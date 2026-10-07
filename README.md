@@ -16,6 +16,14 @@ companion app. The screen and the app draw the same Nest-style dial: a light,
 sculpted Light or Dark face with a glowing arc in the control's colour, and they stay in
 sync as you turn the knob.
 
+## Latest update: 1.1.1
+
+Fixes clipped Settings and Screensaver tab labels, and coloured patches in
+transparent GIFs and pictures. Reimport affected media and send the collection
+again to update the knob. Existing 1.1.0 firmware remains compatible.
+
+See the [1.1.1 release notes](docs/releases/1.1.1.md).
+
 ## What's new in 1.1.0
 
 **A more personal, polished controller across your PC and round display.**
@@ -325,6 +333,8 @@ in the left sidebar.
   minutes); the line under the buttons says whether the knob is up to date.
   Sending an empty collection clears the knob, which then goes back to its
   menu.
+  Transparent pictures and GIF frames are composited over black; transparent
+  areas do not expose hidden palette colours or the previous picture.
   Videos keep their first 20 seconds at 10 frames per second. The first time
   you add a video, Revo1 asks to download FFmpeg (an LGPL build, about
   80 MB, into `%LOCALAPPDATA%\Revo1\tools`) to read it; if `ffmpeg` is

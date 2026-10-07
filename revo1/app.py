@@ -770,7 +770,9 @@ class App(DashboardPage, ScreensaverPage, GamesPage, LauncherPage, WirelessTab):
         widths = [font.getlength(label) / self.kit.scale + ui.GROUP_GAP for _, label in tabs]
         index = [key for key, _ in tabs].index(key)
         if index == len(tabs) - 1:
-            return CARD_WIDTH - sum(round(width) for width in widths[:-1])
+            # Each keyboard-accessible Tk label adds two physical focus-border pixels.
+            used = sum(self.kit.px(round(width)) for width in widths[:-1])
+            return (self.kit.px(CARD_WIDTH) - used - 2 * len(tabs)) / self.kit.scale
         return round(widths[index])
 
     def paint_tab(self, key, label, hover, tabs=SETTINGS_TABS, current=None):
